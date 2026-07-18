@@ -17,12 +17,12 @@ export default async function handler(req, res) {
   try {
     const results = await Promise.all(
       COMPETITIONS.map(async (comp) => {
-        const r = await fetch(`${BASE}/competitions/${comp.code}/matches?status=SCHEDULED,LIVE,IN_PLAY,PAUSED,FINISHED`, {
+        const r = await fetch(`${BASE}/competitions/${comp.code}/matches?status=SCHEDULED,TIMED,LIVE,IN_PLAY,PAUSED,FINISHED`, {
           headers: { "X-Auth-Token": token },
         });
         if (!r.ok) return { ...comp, matches: [] };
         const data = await r.json();
-        return { ...comp, matches: (data.matches || []).slice(0, 15) };
+        return { ...comp, matches: (data.matches || []).slice(0, 20) };
       })
     );
     res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=120");
@@ -30,4 +30,4 @@ export default async function handler(req, res) {
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
-                           }
+}
