@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { supabase } from "../lib/supabaseClient";
+import { COMPETITIONS } from "../lib/competitions";
 
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED", "LIVE"];
 const UPCOMING_STATUSES = ["SCHEDULED", "TIMED"];
@@ -53,14 +54,51 @@ function matchHref(m, comp) {
   };
 }
 
+function MatchRow({ m, comp }) {
+  const live = statusLabel(m.status);
+  return (
+    <Link href={matchHref(m, comp)} style={st.matchCard}>
+      <div style={st.matchRow}>
+        <div style={st.teamBlock}>
+          {m.homeTeam.crest && (
+            <img src={m.homeTeam.crest} alt="" style={st.crest} onError={(e) => (e.target.style.display = "none")} />
+          )}
+          <span style={st.teamName}>{m.homeTeam.name}</span>
+        </div>
+        <span style={st.score}>
+          {m.score.fullTime.home ?? "–"} : {m.score.fullTime.away ?? "–"}
+        </span>
+        <div style={{ ...st.teamBlock, ...st.teamBlockAway }}>
+          <span style={st.teamName}>{m.awayTeam.name}</span>
+          {m.awayTeam.crest && (
+            <img src={m.awayTeam.crest} alt="" style={st.crest} onError={(e) => (e.target.style.display = "none")} />
+          )}
+        </div>
+      </div>
+      <div style={st.metaRow}>
+        <span style={{ ...st.badge, ...(live === "EN DIRECT" ? st.badgeLive : {}) }}>
+          {live || formatKickoff(m.utcDate)}
+        </span>
+        <span style={st.chevron}>Pronostics →</span>
+      </div>
+    </Link>
+  );
+}
+
 export default function Home() {
   const [session, setSession] = useState(null);
   const [sessionChecked, setSessionChecked] = useState(false);
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState("live"); // "live" | "upcoming"
+  const [tab, setTab] = useState("live"); // "live" | "upcoming" | "competitions"
   const [search, setSearch] = useState("");
+
+  const [competitionQuery, setCompetitionQuery] = useState("");
+  const [selectedCode, setSelectedCode] = useState(null);
+  const [compData, setCompData] = useState(null);
+  const [compLoading, setCompLoading] = useState(false);
+  const [compMatchSearch, setCompMatchSearch] = useState("");
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -138,6 +176,46 @@ export default function Home() {
     );
   }, [data]);
 
+  const filteredCompetitionList = useMemo(() => {
+    const q = normalize(competitionQuery.trim());
+    if (!q) return COMPETITIONS;
+    return COMPETITIONS.filter((c) => normalize(c.name).includes(q) || normalize(c.area).includes(q));
+  }, [competitionQuery]);
+
+  const selectCompetition = (code) => {
+    setSelectedCode(code);
+    setCompData(null);
+    setCompMatchSearch("");
+    setCompLoading(true);
+    fetch(`/api/competition-matches?code=${code}`)
+      .then((r) => r.json())
+      .then((d) => setCompData(d))
+      .catch(() => setCompData({ matches: [] }))
+      .finally(() => setCompLoading(false));
+  };
+
+  const backToCompetitions = () => {
+    setSelectedCode(null);
+    setCompData(null);
+    setCompMatchSearch("");
+  };
+
+  const compMatches = useMemo(() => {
+    if (!compData?.matches) return [];
+    const q = normalize(compMatchSearch.trim());
+    const filtered = q
+      ? compData.matches.filter(
+          (m) => normalize(m.homeTeam.name).includes(q) || normalize(m.awayTeam.name).includes(q)
+        )
+      : compData.matches;
+    return [...filtered].sort((a, b) => {
+      const aLive = LIVE_STATUSES.includes(a.status) ? 0 : 1;
+      const bLive = LIVE_STATUSES.includes(b.status) ? 0 : 1;
+      if (aLive !== bLive) return aLive - bLive;
+      return new Date(a.utcDate) - new Date(b.utcDate);
+    });
+  }, [compData, compMatchSearch]);
+
   return (
     <div style={st.page}>
       <header style={st.header}>
@@ -153,84 +231,121 @@ export default function Home() {
       </header>
 
       <main style={st.main}>
-        <div style={st.searchRow}>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Rechercher une équipe, une compétition…"
-            style={st.searchInput}
-          />
-          {search ? (
-            <button style={st.searchBtn} onClick={() => setSearch("")}>✕</button>
-          ) : (
-            <button style={st.searchBtn} onClick={() => {}}>Rechercher</button>
-          )}
+        <div style={st.tabs}>
+          <button
+            style={{ ...st.tabBtn, ...(tab === "live" ? st.tabBtnActive : {}) }}
+            onClick={() => setTab("live")}
+          >
+            Matchs en ligne{liveCount > 0 ? ` (${liveCount})` : ""}
+          </button>
+          <button
+            style={{ ...st.tabBtn, ...(tab === "upcoming" ? st.tabBtnActive : {}) }}
+            onClick={() => setTab("upcoming")}
+          >
+            Matchs à venir
+          </button>
+          <button
+            style={{ ...st.tabBtn, ...(tab === "competitions" ? st.tabBtnActive : {}) }}
+            onClick={() => setTab("competitions")}
+          >
+            Compétitions
+          </button>
         </div>
 
-        {!searchQuery && (
-          <div style={st.tabs}>
-            <button
-              style={{ ...st.tabBtn, ...(tab === "live" ? st.tabBtnActive : {}) }}
-              onClick={() => setTab("live")}
-            >
-              Matchs en ligne{liveCount > 0 ? ` (${liveCount})` : ""}
-            </button>
-            <button
-              style={{ ...st.tabBtn, ...(tab === "upcoming" ? st.tabBtnActive : {}) }}
-              onClick={() => setTab("upcoming")}
-            >
-              Matchs à venir
-            </button>
-          </div>
+        {tab !== "competitions" && (
+          <>
+            <div style={st.searchRow}>
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Rechercher une équipe, une compétition…"
+                style={st.searchInput}
+              />
+              {search ? (
+                <button style={st.searchBtn} onClick={() => setSearch("")}>✕</button>
+              ) : (
+                <button style={st.searchBtn} onClick={() => {}}>Rechercher</button>
+              )}
+            </div>
+
+            {loading && <p style={st.hint}>Chargement des matchs…</p>}
+            {!loading && !data && <p style={st.hint}>Impossible de charger les matchs pour le moment.</p>}
+            {!loading && data && competitions.length === 0 && (
+              <p style={st.hint}>
+                {searchQuery
+                  ? "Aucun match ne correspond à ta recherche."
+                  : tab === "live"
+                  ? "Aucun match aujourd'hui."
+                  : "Aucun match à venir cette semaine."}
+              </p>
+            )}
+
+            {competitions.map((comp) => (
+              <section key={comp.code} style={st.panel}>
+                <h2 style={st.h2}>{comp.name}</h2>
+                {comp.matches.map((m) => (
+                  <MatchRow key={m.id} m={m} comp={comp} />
+                ))}
+              </section>
+            ))}
+          </>
         )}
 
-        {loading && <p style={st.hint}>Chargement des matchs…</p>}
-        {!loading && !data && <p style={st.hint}>Impossible de charger les matchs pour le moment.</p>}
-        {!loading && data && competitions.length === 0 && (
-          <p style={st.hint}>
-            {searchQuery
-              ? "Aucun match ne correspond à ta recherche."
-              : tab === "live"
-              ? "Aucun match aujourd'hui."
-              : "Aucun match à venir cette semaine."}
-          </p>
+        {tab === "competitions" && !selectedCode && (
+          <>
+            <div style={st.searchRow}>
+              <input
+                value={competitionQuery}
+                onChange={(e) => setCompetitionQuery(e.target.value)}
+                placeholder="Rechercher une compétition (pays, nom…)"
+                style={st.searchInput}
+              />
+              <button style={st.searchBtn} onClick={() => {}}>Rechercher</button>
+            </div>
+            <section style={st.panel}>
+              <h2 style={st.h2}>Choisis une compétition</h2>
+              {filteredCompetitionList.length === 0 && <p style={st.hint}>Aucune compétition trouvée.</p>}
+              {filteredCompetitionList.map((c) => (
+                <button key={c.code} style={st.compRow} onClick={() => selectCompetition(c.code)}>
+                  <span style={st.compName}>{c.name}</span>
+                  <span style={st.compArea}>{c.area}</span>
+                </button>
+              ))}
+            </section>
+          </>
         )}
 
-        {competitions.map((comp) => (
-          <section key={comp.code} style={st.panel}>
-            <h2 style={st.h2}>{comp.name}</h2>
-            {comp.matches.map((m) => {
-              const live = statusLabel(m.status);
-              return (
-                <Link key={m.id} href={matchHref(m, comp)} style={st.matchCard}>
-                  <div style={st.matchRow}>
-                    <div style={st.teamBlock}>
-                      {m.homeTeam.crest && (
-                        <img src={m.homeTeam.crest} alt="" style={st.crest} onError={(e) => (e.target.style.display = "none")} />
-                      )}
-                      <span style={st.teamName}>{m.homeTeam.name}</span>
-                    </div>
-                    <span style={st.score}>
-                      {m.score.fullTime.home ?? "–"} : {m.score.fullTime.away ?? "–"}
-                    </span>
-                    <div style={{ ...st.teamBlock, ...st.teamBlockAway }}>
-                      <span style={st.teamName}>{m.awayTeam.name}</span>
-                      {m.awayTeam.crest && (
-                        <img src={m.awayTeam.crest} alt="" style={st.crest} onError={(e) => (e.target.style.display = "none")} />
-                      )}
-                    </div>
-                  </div>
-                  <div style={st.metaRow}>
-                    <span style={{ ...st.badge, ...(live === "EN DIRECT" ? st.badgeLive : {}) }}>
-                      {live || formatKickoff(m.utcDate)}
-                    </span>
-                    <span style={st.chevron}>Pronostics →</span>
-                  </div>
-                </Link>
-              );
-            })}
-          </section>
-        ))}
+        {tab === "competitions" && selectedCode && (
+          <>
+            <button style={st.backBtn} onClick={backToCompetitions}>← Compétitions</button>
+            <div style={st.searchRow}>
+              <input
+                value={compMatchSearch}
+                onChange={(e) => setCompMatchSearch(e.target.value)}
+                placeholder={`Rechercher un match dans ${compData?.name || "cette compétition"}…`}
+                style={st.searchInput}
+              />
+              {compMatchSearch ? (
+                <button style={st.searchBtn} onClick={() => setCompMatchSearch("")}>✕</button>
+              ) : (
+                <button style={st.searchBtn} onClick={() => {}}>Rechercher</button>
+              )}
+            </div>
+
+            {compLoading && <p style={st.hint}>Chargement des matchs…</p>}
+            {!compLoading && compMatches.length === 0 && (
+              <p style={st.hint}>Aucun match à venir trouvé pour cette compétition.</p>
+            )}
+            {!compLoading && compMatches.length > 0 && (
+              <section style={st.panel}>
+                <h2 style={st.h2}>{compData?.name}</h2>
+                {compMatches.map((m) => (
+                  <MatchRow key={m.id} m={m} comp={compData} />
+                ))}
+              </section>
+            )}
+          </>
+        )}
       </main>
     </div>
   );
@@ -258,12 +373,23 @@ const st = {
   tabs: { display: "flex", gap: 8 },
   tabBtn: {
     flex: 1, background: "#12291E", border: "1px solid #1E3D2C", color: "#7EA694",
-    borderRadius: 999, padding: "10px 8px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+    borderRadius: 999, padding: "10px 8px", fontSize: 12.5, fontWeight: 700, cursor: "pointer",
   },
   tabBtnActive: { background: "#39B577", borderColor: "#39B577", color: "#06121F" },
+  backBtn: {
+    alignSelf: "flex-start", background: "transparent", border: "1px solid #1E3D2C", color: "#E9F1EC",
+    borderRadius: 999, padding: "6px 12px", fontSize: 12, cursor: "pointer",
+  },
   panel: { background: "#12291E", border: "1px solid #1E3D2C", borderRadius: 14, padding: 16 },
   h2: { fontSize: 15, margin: "0 0 10px" },
   hint: { fontSize: 12.5, color: "#7EA694" },
+  compRow: {
+    display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%",
+    background: "transparent", border: "none", borderTop: "1px solid #1E3D2C", padding: "12px 0",
+    color: "#E9F1EC", fontSize: 13.5, cursor: "pointer", textAlign: "left",
+  },
+  compName: { fontWeight: 600 },
+  compArea: { fontSize: 11.5, color: "#7EA694" },
   matchCard: { display: "block", borderTop: "1px solid #1E3D2C", padding: "12px 0", textDecoration: "none", color: "inherit", cursor: "pointer" },
   matchRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 13.5 },
   teamBlock: { flex: 1, display: "flex", alignItems: "center", gap: 6, minWidth: 0 },

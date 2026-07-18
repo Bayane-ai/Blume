@@ -1,14 +1,6 @@
-const BASE = "https://api.football-data.org/v4";
+import { COMPETITIONS } from "../../lib/competitions";
 
-const COMPETITIONS = [
-  { code: "PL", name: "Premier League" },
-  { code: "PD", name: "LaLiga" },
-  { code: "SA", name: "Serie A" },
-  { code: "BL1", name: "Bundesliga" },
-  { code: "FL1", name: "Ligue 1" },
-  { code: "CL", name: "Ligue des Champions" },
-  { code: "WC", name: "Coupe du Monde" },
-];
+const BASE = "https://api.football-data.org/v4";
 
 function isoDate(d) {
   return d.toISOString().slice(0, 10);
