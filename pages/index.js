@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
+import Link from "next/link";
 import { supabase } from "../lib/supabaseClient";
 
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED", "LIVE"];
@@ -21,6 +22,26 @@ function formatKickoff(iso) {
   });
 }
 
+function matchHref(m, comp) {
+  return {
+    pathname: `/match/${m.id}`,
+    query: {
+      competitionCode: comp.code,
+      competitionName: comp.name,
+      homeTeamId: m.homeTeam.id,
+      awayTeamId: m.awayTeam.id,
+      homeTeamName: m.homeTeam.name,
+      awayTeamName: m.awayTeam.name,
+      homeCrest: m.homeTeam.crest || "",
+      awayCrest: m.awayTeam.crest || "",
+      status: m.status,
+      utcDate: m.utcDate,
+      scoreHome: m.score.fullTime.home ?? "",
+      scoreAway: m.score.fullTime.away ?? "",
+    },
+  };
+}
+
 export default function Home() {
   const [session, setSession] = useState(null);
   const [sessionChecked, setSessionChecked] = useState(false);
@@ -28,8 +49,6 @@ export default function Home() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("live"); // "live" | "upcoming"
-  const [analyses, setAnalyses] = useState({});
-  const [analyzing, setAnalyzing] = useState(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -60,30 +79,9 @@ export default function Home() {
     return () => clearInterval(id);
   }, [tab, loadMatches]);
 
-  const analyze = async (match, compCode) => {
-    const key = match.id;
-    setAnalyzing(key);
-    try {
-      const params = new URLSearchParams({
-        competitionCode: compCode,
-        homeTeamId: match.homeTeam.id,
-        awayTeamId: match.awayTeam.id,
-        homeTeamName: match.homeTeam.name,
-        awayTeamName: match.awayTeam.name,
-      });
-      const res = await fetch(`/api/analyze?${params}`);
-      const result = await res.json();
-      setAnalyses((prev) => ({ ...prev, [key]: result }));
-    } catch (e) {
-      setAnalyses((prev) => ({ ...prev, [key]: { available: false, message: "Erreur d'analyse" } }));
-    } finally {
-      setAnalyzing(null);
-    }
-  };
-
   const logout = async () => supabase.auth.signOut();
 
-  // Répartit chaque compétition en deux listes : en direct / terminés vs à venir.
+  // Répartit chaque compétition en deux listes : en ligne / terminés vs à venir.
   const competitions = useMemo(() => {
     if (!data?.competitions) return [];
     return data.competitions
@@ -135,7 +133,7 @@ export default function Home() {
             style={{ ...st.tabBtn, ...(tab === "live" ? st.tabBtnActive : {}) }}
             onClick={() => setTab("live")}
           >
-            Matchs en direct{liveCount > 0 ? ` (${liveCount})` : ""}
+            Matchs en ligne{liveCount > 0 ? ` (${liveCount})` : ""}
           </button>
           <button
             style={{ ...st.tabBtn, ...(tab === "upcoming" ? st.tabBtnActive : {}) }}
@@ -149,7 +147,7 @@ export default function Home() {
         {!loading && !data && <p style={st.hint}>Impossible de charger les matchs pour le moment.</p>}
         {!loading && data && competitions.length === 0 && (
           <p style={st.hint}>
-            {tab === "live" ? "Aucun match en direct ou terminé pour le moment." : "Aucun match à venir pour le moment."}
+            {tab === "live" ? "Aucun match en ligne ou terminé pour le moment." : "Aucun match à venir pour le moment."}
           </p>
         )}
 
@@ -157,11 +155,9 @@ export default function Home() {
           <section key={comp.code} style={st.panel}>
             <h2 style={st.h2}>{comp.name}</h2>
             {comp.matches.map((m) => {
-              const key = m.id;
-              const analysis = analyses[key];
               const live = statusLabel(m.status);
               return (
-                <div key={key} style={st.matchCard}>
+                <Link key={m.id} href={matchHref(m, comp)} style={st.matchCard}>
                   <div style={st.matchRow}>
                     <div style={st.teamBlock}>
                       {m.homeTeam.crest && (
@@ -183,72 +179,9 @@ export default function Home() {
                     <span style={{ ...st.badge, ...(live === "EN DIRECT" ? st.badgeLive : {}) }}>
                       {live || formatKickoff(m.utcDate)}
                     </span>
-                    <button
-                      style={st.analyzeBtn}
-                      onClick={() => analyze(m, comp.code)}
-                      disabled={analyzing === key}
-                    >
-                      {analyzing === key ? "…" : "Analyser"}
-                    </button>
+                    <span style={st.chevron}>Pronostics →</span>
                   </div>
-                  {analysis && (
-                    <div style={st.analysisBox}>
-                      {analysis.available === false ? (
-                        <p style={st.hint}>{analysis.message}</p>
-                      ) : (
-                        <>
-                          <p style={st.sectionLabel}>Résultat</p>
-                          <div style={st.probRow}>
-                            <div style={st.probCell}>
-                              <span style={st.probLabel}>Domicile</span>
-                              <span style={st.probValue}>{analysis.probabilities.home}%</span>
-                            </div>
-                            <div style={st.probCell}>
-                              <span style={st.probLabel}>Nul</span>
-                              <span style={st.probValue}>{analysis.probabilities.draw}%</span>
-                            </div>
-                            <div style={st.probCell}>
-                              <span style={st.probLabel}>Extérieur</span>
-                              <span style={st.probValue}>{analysis.probabilities.away}%</span>
-                            </div>
-                          </div>
-
-                          <p style={st.sectionLabel}>Buts</p>
-                          <div style={st.probRow}>
-                            <div style={st.probCell}>
-                              <span style={st.probLabel}>+2.5 buts</span>
-                              <span style={st.probValue}>{analysis.goals.over25}%</span>
-                            </div>
-                            <div style={st.probCell}>
-                              <span style={st.probLabel}>-2.5 buts</span>
-                              <span style={st.probValue}>{analysis.goals.under25}%</span>
-                            </div>
-                            <div style={st.probCell}>
-                              <span style={st.probLabel}>Les 2 marquent</span>
-                              <span style={st.probValue}>{analysis.goals.bttsYes}%</span>
-                            </div>
-                          </div>
-
-                          <p style={st.sectionLabel}>Scores exacts les plus probables</p>
-                          <div style={st.probRow}>
-                            {analysis.correctScores.map((cs) => (
-                              <div key={cs.score} style={st.probCell}>
-                                <span style={st.probLabel}>{cs.score}</span>
-                                <span style={st.probValue}>{cs.probability}%</span>
-                              </div>
-                            ))}
-                          </div>
-
-                          <p style={st.hint}>
-                            {analysis.home.name} : {analysis.home.position}ᵉ ({analysis.home.points} pts) ·{" "}
-                            {analysis.away.name} : {analysis.away.position}ᵉ ({analysis.away.points} pts)
-                          </p>
-                          <p style={st.noteText}>{analysis.note}</p>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
+                </Link>
               );
             })}
           </section>
@@ -277,7 +210,7 @@ const st = {
   panel: { background: "#12291E", border: "1px solid #1E3D2C", borderRadius: 14, padding: 16 },
   h2: { fontSize: 15, margin: "0 0 10px" },
   hint: { fontSize: 12.5, color: "#7EA694" },
-  matchCard: { borderTop: "1px solid #1E3D2C", padding: "12px 0" },
+  matchCard: { display: "block", borderTop: "1px solid #1E3D2C", padding: "12px 0", textDecoration: "none", color: "inherit", cursor: "pointer" },
   matchRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 13.5 },
   teamBlock: { flex: 1, display: "flex", alignItems: "center", gap: 6, minWidth: 0 },
   teamBlockAway: { justifyContent: "flex-end" },
@@ -287,15 +220,5 @@ const st = {
   metaRow: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 },
   badge: { fontSize: 11, color: "#7EA694" },
   badgeLive: { color: "#D8685E", fontWeight: 700 },
-  analyzeBtn: {
-    background: "transparent", border: "1px solid #39B57766", color: "#39B577",
-    borderRadius: 999, padding: "5px 12px", fontSize: 11.5, fontWeight: 600, cursor: "pointer",
-  },
-  analysisBox: { marginTop: 10, background: "#0B1F16", border: "1px solid #1E3D2C", borderRadius: 10, padding: 12 },
-  sectionLabel: { fontSize: 10, color: "#5C8A73", textTransform: "uppercase", margin: "10px 0 6px", letterSpacing: 0.4 },
-  probRow: { display: "flex", gap: 8, marginBottom: 4 },
-  probCell: { flex: 1, textAlign: "center", background: "#12291E", borderRadius: 8, padding: "8px 4px" },
-  probLabel: { display: "block", fontSize: 9.5, color: "#7EA694", textTransform: "uppercase" },
-  probValue: { fontSize: 15, fontWeight: 700 },
-  noteText: { fontSize: 10.5, color: "#5C8A73", fontStyle: "italic", margin: "4px 0 0" },
+  chevron: { fontSize: 11.5, color: "#39B577", fontWeight: 600 },
 };
