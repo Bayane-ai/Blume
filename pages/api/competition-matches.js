@@ -22,7 +22,7 @@ export default async function handler(req, res) {
   try {
     const [r, table] = await Promise.all([
       fetch(
-        `${BASE}/competitions/${comp.code}/matches?status=SCHEDULED,TIMED,LIVE,IN_PLAY,PAUSED&dateFrom=${dateFrom}&dateTo=${dateTo}`,
+        `${BASE}/competitions/${comp.code}/matches?status=SCHEDULED,TIMED,LIVE,IN_PLAY,PAUSED&dateFrom=${dateFrom}&dateTo=${dateTo}&limit=100`,
         { headers: { "X-Auth-Token": token } }
       ),
       getStandingsTable(comp.code, token),
