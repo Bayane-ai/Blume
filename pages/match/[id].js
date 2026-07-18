@@ -2,35 +2,27 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import MatchInfoBlock from "../../components/MatchInfoBlock";
 
+const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
+const LIVE_REFRESH_MS = 30000; // 30s : score, minute et pronostics recalculés tant que le match est en direct.
+
 export default function MatchPage() {
   const router = useRouter();
   const {
+    id: matchId,
     competitionCode, competitionName, competitionEmblem, homeTeamId, awayTeamId,
     homeTeamName, awayTeamName, homeCrest, awayCrest,
-    status, minute, utcDate, scoreHome, scoreAway,
+    status: initialStatus, minute: initialMinute, utcDate, scoreHome, scoreAway,
   } = router.query;
-
-  const matchForBlock = {
-    id: "current",
-    status: status || "",
-    minute: minute ? Number(minute) : null,
-    utcDate: utcDate || "",
-    competition: { code: competitionCode || "", name: competitionName || "", emblem: competitionEmblem || "" },
-    homeTeam: { name: homeTeamName || "", crest: homeCrest || "" },
-    awayTeam: { name: awayTeamName || "", crest: awayCrest || "" },
-    score: {
-      fullTime: {
-        home: scoreHome !== "" && scoreHome !== undefined ? scoreHome : null,
-        away: scoreAway !== "" && scoreAway !== undefined ? scoreAway : null,
-      },
-    },
-  };
 
   const [pronostic, setPronostic] = useState(null);
   const [loading, setLoading] = useState(false);
   const [hasRequested, setHasRequested] = useState(false);
+  // État réel du match (score/minute/statut) tel que renvoyé par l'API à la dernière
+  // requête — prioritaire sur les query params, qui ne sont qu'un instantané pris au
+  // moment du clic depuis la liste et peuvent être périmés.
+  const [liveState, setLiveState] = useState(null);
 
-  const runAnalysis = useCallback(() => {
+  const runAnalysis = useCallback((silent = false) => {
     if (!router.isReady) return;
     setHasRequested(true);
     if (!competitionCode || !homeTeamId || !awayTeamId) {
@@ -38,27 +30,57 @@ export default function MatchPage() {
       return;
     }
     const params = new URLSearchParams({
-      competitionCode, homeTeamId, awayTeamId, homeTeamName, awayTeamName,
+      matchId: matchId || "", competitionCode, homeTeamId, awayTeamId, homeTeamName, awayTeamName,
     });
-    setLoading(true);
+    if (!silent) setLoading(true);
     fetch(`/api/analyze?${params}`)
       .then((r) => r.json())
       .then((result) => {
         if (result?.error) console.error("Erreur /api/analyze:", result.error);
         setPronostic(result);
+        if (result?.matchStatus) {
+          setLiveState({ status: result.matchStatus, minute: result.matchMinute, score: result.matchScore });
+        }
       })
       .catch((e) => {
         console.error("Erreur /api/analyze:", e);
         setPronostic({ error: "Erreur lors du calcul des pronostics." });
       })
       .finally(() => setLoading(false));
-  }, [router.isReady, competitionCode, homeTeamId, awayTeamId, homeTeamName, awayTeamName]);
+  }, [router.isReady, matchId, competitionCode, homeTeamId, awayTeamId, homeTeamName, awayTeamName]);
 
   // Lance l'analyse automatiquement dès que le match est chargé.
   useEffect(() => {
     if (router.isReady) runAnalysis();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router.isReady]);
+
+  const currentStatus = liveState?.status || initialStatus;
+
+  // Rafraîchissement automatique (score + probabilités) tant que le match est en direct.
+  useEffect(() => {
+    if (!LIVE_STATUSES.includes(currentStatus)) return;
+    const intervalId = setInterval(() => runAnalysis(true), LIVE_REFRESH_MS);
+    return () => clearInterval(intervalId);
+  }, [currentStatus, runAnalysis]);
+
+  const isLiveNow = LIVE_STATUSES.includes(currentStatus);
+
+  const matchForBlock = {
+    id: matchId || "current",
+    status: currentStatus || "",
+    minute: liveState?.minute ?? (initialMinute ? Number(initialMinute) : null),
+    utcDate: utcDate || "",
+    competition: { code: competitionCode || "", name: competitionName || "", emblem: competitionEmblem || "" },
+    homeTeam: { name: homeTeamName || "", crest: homeCrest || "" },
+    awayTeam: { name: awayTeamName || "", crest: awayCrest || "" },
+    score: {
+      fullTime: liveState?.score || {
+        home: scoreHome !== "" && scoreHome !== undefined ? scoreHome : null,
+        away: scoreAway !== "" && scoreAway !== undefined ? scoreAway : null,
+      },
+    },
+  };
 
   return (
     <div style={st.page}>
@@ -72,9 +94,12 @@ export default function MatchPage() {
 
           <div style={st.divider} />
 
-          <h2 style={st.h2}>Pronostics automatiques</h2>
+          <h2 style={st.h2}>{pronostic?.live ? "Pronostics en direct" : "Pronostics automatiques"}</h2>
+          {isLiveNow && (
+            <p style={st.liveHint}>Score et probabilités recalculés automatiquement toutes les 30 secondes.</p>
+          )}
 
-          <button style={st.analyzeBtn} onClick={runAnalysis} disabled={loading}>
+          <button style={st.analyzeBtn} onClick={() => runAnalysis(false)} disabled={loading}>
             {loading ? "Analyse en cours…" : hasRequested ? "Actualiser les pronostics" : "Analyser ce match"}
           </button>
 
@@ -109,7 +134,7 @@ export default function MatchPage() {
                 </div>
               </div>
 
-              <p style={st.sectionLabel}>Buts probables</p>
+              <p style={st.sectionLabel}>Buts probables{pronostic.live ? " (score final estimé)" : ""}</p>
               <div style={st.probRow}>
                 <div style={st.probCell}>
                   <span style={st.probLabel}>Attendus</span>
@@ -127,7 +152,7 @@ export default function MatchPage() {
 
               {(pronostic.correctScores || []).length > 0 && (
                 <>
-                  <p style={st.sectionLabel}>Scores exacts les plus probables</p>
+                  <p style={st.sectionLabel}>Scores {pronostic.live ? "finaux" : "exacts"} les plus probables</p>
                   <div style={st.probRow}>
                     {pronostic.correctScores.map((cs) => (
                       <div key={cs.score} style={st.probCell}>
@@ -171,7 +196,8 @@ const st = {
   main: { maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 },
   panel: { background: "#12291E", border: "1px solid #1E3D2C", borderRadius: 14, padding: 18 },
   divider: { borderTop: "1px solid #1E3D2C", margin: "16px 0" },
-  h2: { fontSize: 15, margin: "0 0 12px" },
+  h2: { fontSize: 15, margin: "0 0 4px" },
+  liveHint: { fontSize: 11, color: "#D8685E", margin: "0 0 12px" },
   hint: { fontSize: 12.5, color: "#7EA694" },
   analyzeBtn: {
     display: "block", width: "100%", background: "#39B577", border: "none", color: "#06121F",
