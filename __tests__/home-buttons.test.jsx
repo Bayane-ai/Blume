@@ -4,6 +4,11 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import Home from "../pages/index";
 
+const pushMock = jest.fn();
+jest.mock("next/router", () => ({
+  useRouter: () => ({ push: pushMock }),
+}));
+
 jest.mock("../lib/supabaseClient", () => ({
   supabase: {
     auth: {
@@ -88,6 +93,7 @@ function mockFetchRouter() {
 describe("Page Matchs — chaque bouton est fonctionnel", () => {
   beforeEach(() => {
     mockFetchRouter();
+    pushMock.mockClear();
   });
 
   test('les onglets "Matchs en ligne" / "Matchs à venir" changent réellement le contenu affiché', async () => {
@@ -138,13 +144,15 @@ describe("Page Matchs — chaque bouton est fonctionnel", () => {
     expect(link).toHaveAttribute("href", "/login");
   });
 
-  test('le bouton "ANALYSER" de chaque carte affiche l\'analyse déjà chargée', async () => {
+  test('le bouton "ANALYSER" de chaque carte mène vers la page des pronostics de ce match', async () => {
     render(<Home />);
     await screen.findByText("Arsenal FC");
 
-    const analyzeButtons = screen.getAllByRole("button", { name: /analyser/i });
+    const analyzeButtons = screen.getAllByRole("button", { name: /^analyser$/i });
     expect(analyzeButtons.length).toBeGreaterThan(0);
     fireEvent.click(analyzeButtons[0]);
-    await screen.findByText(/48.2/);
+
+    expect(pushMock).toHaveBeenCalledTimes(1);
+    expect(pushMock.mock.calls[0][0].pathname).toBe("/match/1");
   });
 });

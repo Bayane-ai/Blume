@@ -1,8 +1,13 @@
 /**
  * @jest-environment jsdom
  */
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import MatchCard from "../components/MatchCard";
+
+const pushMock = jest.fn();
+jest.mock("next/router", () => ({
+  useRouter: () => ({ push: pushMock }),
+}));
 
 const pronostic = {
   available: true,
@@ -32,6 +37,10 @@ function baseMatch(overrides = {}) {
     ...overrides,
   };
 }
+
+beforeEach(() => {
+  pushMock.mockClear();
+});
 
 describe("MatchCard — présentation exacte de la carte", () => {
   test("affiche le bandeau compétition (logo + nom) en haut de la carte", () => {
@@ -73,34 +82,27 @@ describe("MatchCard — présentation exacte de la carte", () => {
     expect(screen.getAllByAltText("").length).toBeGreaterThan(0); // logos d'équipe (alt vide, décoratif)
   });
 
-  test('bouton "ANALYSER" pleine largeur et fonctionnel : révèle l\'analyse déjà calculée, sans requête réseau', () => {
-    global.fetch = jest.fn(() => Promise.reject(new Error("aucun appel réseau ne doit être déclenché")));
-    render(<MatchCard m={baseMatch()} comp={{}} />);
+  test('bouton "ANALYSER" pleine largeur qui mène vers la page dédiée du match, avec ses infos', () => {
+    render(<MatchCard m={baseMatch()} comp={{ code: "PL", name: "Premier League" }} />);
 
-    const btn = screen.getByRole("button", { name: /analyser/i });
+    const btn = screen.getByRole("button", { name: /^analyser$/i });
     expect(btn).toBeInTheDocument();
     expect(btn.tagName).toBe("BUTTON");
 
-    // Rien n'est visible avant le clic.
-    expect(screen.queryByText(/48.2/)).not.toBeInTheDocument();
-
     fireEvent.click(btn);
 
-    // L'analyse apparaît instantanément (donnée déjà présente dans les props).
-    expect(screen.getByText(/48.2/)).toBeInTheDocument();
-    expect(screen.getByText(/54.3/)).toBeInTheDocument();
-    expect(global.fetch).not.toHaveBeenCalled();
-  });
-
-  test('bouton "ANALYSER" affiche un vrai message (pas un écran vide) quand le pronostic est indisponible', () => {
-    render(
-      <MatchCard
-        m={baseMatch({ pronostic: { available: false, message: "Classement indisponible pour cette compétition." } })}
-        comp={{}}
-      />
+    expect(pushMock).toHaveBeenCalledTimes(1);
+    const href = pushMock.mock.calls[0][0];
+    expect(href.pathname).toBe("/match/1");
+    expect(href.query).toEqual(
+      expect.objectContaining({
+        homeTeamId: 10,
+        awayTeamId: 11,
+        homeTeamName: "Arsenal FC",
+        awayTeamName: "Chelsea FC",
+        competitionCode: "PL",
+      })
     );
-    fireEvent.click(screen.getByRole("button", { name: /analyser/i }));
-    expect(screen.getByText("Classement indisponible pour cette compétition.")).toBeInTheDocument();
   });
 
   test("le bouton Analyser n'est pas imbriqué dans un lien (structure HTML valide)", () => {

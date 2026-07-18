@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRouter } from "next/router";
 
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
 
@@ -13,15 +13,34 @@ function hideImg(e) {
   e.target.style.display = "none";
 }
 
+function matchHref(m, comp) {
+  return {
+    pathname: `/match/${m.id}`,
+    query: {
+      competitionCode: m.competition?.code || comp?.code || "",
+      competitionName: m.competition?.name || comp?.name || "",
+      homeTeamId: m.homeTeam?.id ?? "",
+      awayTeamId: m.awayTeam?.id ?? "",
+      homeTeamName: m.homeTeam?.name || "",
+      awayTeamName: m.awayTeam?.name || "",
+      homeCrest: m.homeTeam?.crest || "",
+      awayCrest: m.awayTeam?.crest || "",
+      status: m.status || "",
+      utcDate: m.utcDate || "",
+      scoreHome: m.score?.fullTime?.home ?? "",
+      scoreAway: m.score?.fullTime?.away ?? "",
+    },
+  };
+}
+
 export default function MatchCard({ m, comp }) {
-  const [expanded, setExpanded] = useState(false);
+  const router = useRouter();
   if (!m || !m.homeTeam || !m.awayTeam) return null;
 
   const isLive = LIVE_STATUSES.includes(m.status);
   const isFinished = m.status === "FINISHED";
   const competitionName = m.competition?.name || comp?.name || "Compétition";
   const competitionEmblem = m.competition?.emblem || "";
-  const p = m.pronostic;
 
   const scoreHome = m.score?.fullTime?.home;
   const scoreAway = m.score?.fullTime?.away;
@@ -60,73 +79,14 @@ export default function MatchCard({ m, comp }) {
             )}
           </div>
         </div>
-
-        {expanded && (
-          <>
-            <div style={st.divider} />
-            {(!p || p.available === false) && (
-              <p style={st.hint}>{p?.message || "Pronostics indisponibles pour ce match."}</p>
-            )}
-            {p?.available && p.probabilities && p.goals && (
-              <>
-                <p style={st.sectionLabel}>% de victoire</p>
-                <div style={st.probRow}>
-                  <div style={st.probCell}>
-                    <span style={st.probLabel}>Domicile</span>
-                    <span style={st.probValue}>{p.probabilities.home ?? "–"}%</span>
-                  </div>
-                  <div style={st.probCell}>
-                    <span style={st.probLabel}>Nul</span>
-                    <span style={st.probValue}>{p.probabilities.draw ?? "–"}%</span>
-                  </div>
-                  <div style={st.probCell}>
-                    <span style={st.probLabel}>Extérieur</span>
-                    <span style={st.probValue}>{p.probabilities.away ?? "–"}%</span>
-                  </div>
-                </div>
-
-                <p style={st.sectionLabel}>Buts probables</p>
-                <div style={st.probRow}>
-                  <div style={st.probCell}>
-                    <span style={st.probLabel}>Attendus</span>
-                    <span style={st.probValue}>{p.goals.expectedHome ?? "–"} - {p.goals.expectedAway ?? "–"}</span>
-                  </div>
-                  <div style={st.probCell}>
-                    <span style={st.probLabel}>+2.5 buts</span>
-                    <span style={st.probValue}>{p.goals.over25 ?? "–"}%</span>
-                  </div>
-                  <div style={st.probCell}>
-                    <span style={st.probLabel}>Les 2 marquent</span>
-                    <span style={st.probValue}>{p.goals.bttsYes ?? "–"}%</span>
-                  </div>
-                </div>
-
-                {(p.correctScores || []).length > 0 && (
-                  <>
-                    <p style={st.sectionLabel}>Scores exacts les plus probables</p>
-                    <div style={st.probRow}>
-                      {p.correctScores.map((cs) => (
-                        <div key={cs.score} style={st.probCell}>
-                          <span style={st.probLabel}>{cs.score}</span>
-                          <span style={st.probValue}>{cs.probability}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </>
-            )}
-          </>
-        )}
       </div>
 
       <button
         type="button"
         style={st.analyzeBtn}
-        onClick={() => setExpanded((v) => !v)}
-        aria-expanded={expanded}
+        onClick={() => router.push(matchHref(m, comp))}
       >
-        {expanded ? "MASQUER L’ANALYSE" : "ANALYSER"}
+        ANALYSER
       </button>
     </div>
   );
@@ -152,13 +112,6 @@ const st = {
   crest: { width: 26, height: 26, objectFit: "contain", flexShrink: 0 },
   teamName: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 },
   centerSlot: { fontWeight: 800, color: "#39B577", flexShrink: 0, padding: "0 8px", fontSize: 15 },
-  divider: { borderTop: "1px solid #1E3D2C", margin: "14px 0" },
-  hint: { fontSize: 12.5, color: "#7EA694" },
-  sectionLabel: { fontSize: 10, color: "#5C8A73", textTransform: "uppercase", margin: "10px 0 6px", letterSpacing: 0.4 },
-  probRow: { display: "flex", gap: 8, marginBottom: 4 },
-  probCell: { flex: 1, textAlign: "center", background: "#0B1F16", borderRadius: 8, padding: "8px 4px" },
-  probLabel: { display: "block", fontSize: 9.5, color: "#7EA694", textTransform: "uppercase" },
-  probValue: { fontSize: 14, fontWeight: 700 },
   analyzeBtn: {
     display: "block", width: "100%", background: "#39B577", border: "none", color: "#06121F",
     fontWeight: 800, fontSize: 13.5, borderRadius: "0 0 14px 14px", padding: "13px 0", cursor: "pointer",
