@@ -1,9 +1,23 @@
 import { COMPETITIONS } from "../../lib/competitions";
+import { getStandingsTable } from "../../lib/standingsCache";
+import { computePronostic } from "../../lib/pronostic";
 
 const BASE = "https://api.football-data.org/v4";
 
 function isoDate(d) {
   return d.toISOString().slice(0, 10);
+}
+
+function attachPronostic(m, table) {
+  if (!table) {
+    return { ...m, pronostic: { available: false, message: "Pronostics indisponibles pour le moment." } };
+  }
+  const homeRow = table.find((row) => String(row.team.id) === String(m.homeTeam?.id));
+  const awayRow = table.find((row) => String(row.team.id) === String(m.awayTeam?.id));
+  const pronostic = computePronostic({
+    homeRow, awayRow, homeTeamName: m.homeTeam?.name, awayTeamName: m.awayTeam?.name,
+  });
+  return { ...m, pronostic };
 }
 
 export default async function handler(req, res) {
@@ -34,7 +48,21 @@ export default async function handler(req, res) {
       if (!byCode.has(code)) byCode.set(code, []);
       byCode.get(code).push(m);
     }
-    const results = COMPETITIONS.map((comp) => ({ ...comp, matches: byCode.get(comp.code) || [] }));
+
+    // Un classement par compétition (mis en cache) plutôt qu'un calcul par match : les
+    // pronostics sont prêts pour tous les matchs affichés, sans attendre de clic.
+    const codesWithMatches = [...byCode.keys()];
+    const standingsByCode = {};
+    await Promise.all(
+      codesWithMatches.map(async (code) => {
+        standingsByCode[code] = await getStandingsTable(code, token);
+      })
+    );
+
+    const results = COMPETITIONS.map((comp) => {
+      const matches = (byCode.get(comp.code) || []).map((m) => attachPronostic(m, standingsByCode[comp.code]));
+      return { ...comp, matches };
+    });
 
     res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=120");
     return res.status(200).json({ competitions: results });

@@ -54,15 +54,18 @@ function matchHref(m, comp) {
   };
 }
 
-function MatchRow({ m, comp }) {
+function MatchCard({ m, comp }) {
   if (!m || !m.homeTeam || !m.awayTeam) return null;
   const live = statusLabel(m.status);
+  const p = m.pronostic;
   return (
     <Link href={matchHref(m, comp)} style={st.matchCard}>
       <div style={st.matchRow}>
         <div style={st.teamBlock}>
           {m.homeTeam.crest && (
-            <img src={m.homeTeam.crest} alt="" style={st.crest} onError={(e) => (e.target.style.display = "none")} />
+            <span style={st.crestWrap}>
+              <img src={m.homeTeam.crest} alt="" style={st.crest} onError={(e) => (e.target.parentElement.style.display = "none")} />
+            </span>
           )}
           <span style={st.teamName}>{m.homeTeam.name}</span>
         </div>
@@ -72,16 +75,68 @@ function MatchRow({ m, comp }) {
         <div style={{ ...st.teamBlock, ...st.teamBlockAway }}>
           <span style={st.teamName}>{m.awayTeam.name}</span>
           {m.awayTeam.crest && (
-            <img src={m.awayTeam.crest} alt="" style={st.crest} onError={(e) => (e.target.style.display = "none")} />
+            <span style={st.crestWrap}>
+              <img src={m.awayTeam.crest} alt="" style={st.crest} onError={(e) => (e.target.parentElement.style.display = "none")} />
+            </span>
           )}
         </div>
       </div>
-      <div style={st.metaRow}>
-        <span style={{ ...st.badge, ...(live === "EN DIRECT" ? st.badgeLive : {}) }}>
-          {live || formatKickoff(m.utcDate)}
-        </span>
-        <span style={st.chevron}>Pronostics →</span>
-      </div>
+      <span style={{ ...st.badge, ...(live === "EN DIRECT" ? st.badgeLive : {}) }}>
+        {live || formatKickoff(m.utcDate)}
+      </span>
+
+      {p?.available === false && <p style={{ ...st.hint, marginTop: 10 }}>{p.message || "Pronostics indisponibles."}</p>}
+
+      {p?.available && p.probabilities && p.goals && (
+        <>
+          <div style={st.divider} />
+          <p style={st.sectionLabel}>% de victoire</p>
+          <div style={st.probRow}>
+            <div style={st.probCell}>
+              <span style={st.probLabel}>Domicile</span>
+              <span style={st.probValue}>{p.probabilities.home ?? "–"}%</span>
+            </div>
+            <div style={st.probCell}>
+              <span style={st.probLabel}>Nul</span>
+              <span style={st.probValue}>{p.probabilities.draw ?? "–"}%</span>
+            </div>
+            <div style={st.probCell}>
+              <span style={st.probLabel}>Extérieur</span>
+              <span style={st.probValue}>{p.probabilities.away ?? "–"}%</span>
+            </div>
+          </div>
+
+          <p style={st.sectionLabel}>Buts probables</p>
+          <div style={st.probRow}>
+            <div style={st.probCell}>
+              <span style={st.probLabel}>Attendus</span>
+              <span style={st.probValue}>{p.goals.expectedHome ?? "–"} - {p.goals.expectedAway ?? "–"}</span>
+            </div>
+            <div style={st.probCell}>
+              <span style={st.probLabel}>+2.5 buts</span>
+              <span style={st.probValue}>{p.goals.over25 ?? "–"}%</span>
+            </div>
+            <div style={st.probCell}>
+              <span style={st.probLabel}>Les 2 marquent</span>
+              <span style={st.probValue}>{p.goals.bttsYes ?? "–"}%</span>
+            </div>
+          </div>
+
+          {(p.correctScores || []).length > 0 && (
+            <>
+              <p style={st.sectionLabel}>Scores exacts les plus probables</p>
+              <div style={st.probRow}>
+                {p.correctScores.map((cs) => (
+                  <div key={cs.score} style={st.probCell}>
+                    <span style={st.probLabel}>{cs.score}</span>
+                    <span style={st.probValue}>{cs.probability}%</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </>
+      )}
     </Link>
   );
 }
@@ -295,10 +350,10 @@ export default function Home() {
             )}
 
             {competitions.map((comp) => (
-              <section key={comp.code} style={st.panel}>
+              <section key={comp.code} style={st.compSection}>
                 <h2 style={st.h2}>{comp.name}</h2>
                 {comp.matches.map((m) => (
-                  <MatchRow key={m.id} m={m} comp={comp} />
+                  <MatchCard key={m.id} m={m} comp={comp} />
                 ))}
               </section>
             ))}
@@ -354,10 +409,10 @@ export default function Home() {
               <p style={st.hint}>Aucun match à venir trouvé pour cette compétition.</p>
             )}
             {!compLoading && compMatches.length > 0 && (
-              <section style={st.panel}>
+              <section style={st.compSection}>
                 <h2 style={st.h2}>{compData?.name}</h2>
                 {compMatches.map((m) => (
-                  <MatchRow key={m.id} m={m} comp={compData} />
+                  <MatchCard key={m.id} m={m} comp={compData} />
                 ))}
               </section>
             )}
@@ -398,7 +453,8 @@ const st = {
     borderRadius: 999, padding: "6px 12px", fontSize: 12, cursor: "pointer",
   },
   panel: { background: "#12291E", border: "1px solid #1E3D2C", borderRadius: 14, padding: 16 },
-  h2: { fontSize: 15, margin: "0 0 10px" },
+  compSection: { display: "flex", flexDirection: "column" },
+  h2: { fontSize: 14, margin: "4px 0 10px", color: "#7EA694", textTransform: "uppercase", letterSpacing: 0.4 },
   hint: { fontSize: 12.5, color: "#7EA694" },
   compRow: {
     display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%",
@@ -407,15 +463,28 @@ const st = {
   },
   compName: { fontWeight: 600 },
   compArea: { fontSize: 11.5, color: "#7EA694" },
-  matchCard: { display: "block", borderTop: "1px solid #1E3D2C", padding: "12px 0", textDecoration: "none", color: "inherit", cursor: "pointer" },
-  matchRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 13.5 },
-  teamBlock: { flex: 1, display: "flex", alignItems: "center", gap: 6, minWidth: 0 },
+  matchCard: {
+    display: "block", background: "#12291E", border: "1px solid #1E3D2C", borderRadius: 14,
+    padding: 16, marginBottom: 12, textDecoration: "none", color: "inherit", cursor: "pointer",
+  },
+  matchRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 14 },
+  teamBlock: { flex: 1, display: "flex", alignItems: "center", gap: 8, minWidth: 0 },
   teamBlockAway: { justifyContent: "flex-end" },
-  crest: { width: 18, height: 18, objectFit: "contain", flexShrink: 0 },
-  teamName: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-  score: { fontWeight: 700, color: "#39B577", flexShrink: 0, padding: "0 8px" },
-  metaRow: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 },
-  badge: { fontSize: 11, color: "#7EA694" },
+  crestWrap: {
+    width: 34, height: 34, borderRadius: "50%", flexShrink: 0,
+    display: "flex", alignItems: "center", justifyContent: "center",
+    background: "radial-gradient(circle, rgba(57,181,119,0.25) 0%, rgba(57,181,119,0) 70%)",
+    boxShadow: "0 0 10px rgba(57,181,119,0.35)",
+  },
+  crest: { width: 26, height: 26, objectFit: "contain", filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.4))" },
+  teamName: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 },
+  score: { fontWeight: 800, color: "#39B577", flexShrink: 0, padding: "0 8px", fontSize: 16 },
+  badge: { fontSize: 11, color: "#7EA694", display: "block", marginTop: 8 },
   badgeLive: { color: "#D8685E", fontWeight: 700 },
-  chevron: { fontSize: 11.5, color: "#39B577", fontWeight: 600 },
+  divider: { borderTop: "1px solid #1E3D2C", margin: "14px 0" },
+  sectionLabel: { fontSize: 10, color: "#5C8A73", textTransform: "uppercase", margin: "10px 0 6px", letterSpacing: 0.4 },
+  probRow: { display: "flex", gap: 8, marginBottom: 4 },
+  probCell: { flex: 1, textAlign: "center", background: "#0B1F16", borderRadius: 8, padding: "8px 4px" },
+  probLabel: { display: "block", fontSize: 9.5, color: "#7EA694", textTransform: "uppercase" },
+  probValue: { fontSize: 14, fontWeight: 700 },
 };
