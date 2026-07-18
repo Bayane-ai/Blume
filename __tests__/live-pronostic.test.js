@@ -92,24 +92,65 @@ describe("/api/analyze — relit toujours l'état du match depuis l'API pour un 
   });
 
   test("deux requêtes avec un score différent (avant/après un but) donnent des probabilités différentes", async () => {
-    const { default: handler } = await import("../pages/api/analyze.js");
-
     global.fetch = mockFetchFor({ status: "IN_PLAY", minute: 50, score: { fullTime: { home: 0, away: 0 } } });
+    const { default: handlerBefore } = await import("../pages/api/analyze.js");
     const resBefore = mockRes();
-    await handler(
+    await handlerBefore(
       { query: { matchId: "777", competitionCode: "PL", homeTeamId: "10", awayTeamId: "11", homeTeamName: "A", awayTeamName: "B" } },
       resBefore
     );
 
+    // Simule un nouveau cycle d'actualisation une fois le cache court (partagé entre
+    // visiteurs) expiré : on repart d'un module frais, donc un nouvel appel en amont.
+    jest.resetModules();
+    process.env.FOOTBALL_DATA_TOKEN = TOKEN;
     global.fetch = mockFetchFor({ status: "IN_PLAY", minute: 51, score: { fullTime: { home: 1, away: 0 } } });
+    const { default: handlerAfter } = await import("../pages/api/analyze.js");
     const resAfter = mockRes();
-    await handler(
+    await handlerAfter(
       { query: { matchId: "777", competitionCode: "PL", homeTeamId: "10", awayTeamId: "11", homeTeamName: "A", awayTeamName: "B" } },
       resAfter
     );
 
     expect(resAfter.body.probabilities.home).toBeGreaterThan(resBefore.body.probabilities.home);
     expect(resAfter.body.matchScore).toEqual({ home: 1, away: 0 });
+  });
+
+  test("deux requêtes rapprochées (dans la fenêtre de cache partagé) réutilisent le même appel en amont", async () => {
+    const fetchMock = mockFetchFor({ status: "IN_PLAY", minute: 50, score: { fullTime: { home: 0, away: 0 } } });
+    global.fetch = fetchMock;
+    const { default: handler } = await import("../pages/api/analyze.js");
+
+    await handler(
+      { query: { matchId: "777", competitionCode: "PL", homeTeamId: "10", awayTeamId: "11", homeTeamName: "A", awayTeamName: "B" } },
+      mockRes()
+    );
+    const callsAfterFirst = fetchMock.mock.calls.filter(([url]) => url.includes("/matches/777")).length;
+
+    await handler(
+      { query: { matchId: "777", competitionCode: "PL", homeTeamId: "10", awayTeamId: "11", homeTeamName: "A", awayTeamName: "B" } },
+      mockRes()
+    );
+    const callsAfterSecond = fetchMock.mock.calls.filter(([url]) => url.includes("/matches/777")).length;
+
+    // Deux visiteurs (ou deux polls rapprochés) qui suivent le même match ne doivent
+    // déclencher qu'un seul appel réel à l'API en amont, pas dépasser le quota.
+    expect(callsAfterFirst).toBe(1);
+    expect(callsAfterSecond).toBe(1);
+  });
+
+  test("plusieurs visiteurs qui suivent le même match au même instant ne déclenchent qu'un seul appel réel à l'API en amont", async () => {
+    const fetchMock = mockFetchFor({ status: "IN_PLAY", minute: 50, score: { fullTime: { home: 0, away: 0 } } });
+    global.fetch = fetchMock;
+    const { default: handler } = await import("../pages/api/analyze.js");
+
+    const query = { matchId: "777", competitionCode: "PL", homeTeamId: "10", awayTeamId: "11", homeTeamName: "A", awayTeamName: "B" };
+    await Promise.all(
+      Array.from({ length: 5 }, () => handler({ query }, mockRes()))
+    );
+
+    const matchCalls = fetchMock.mock.calls.filter(([url]) => url.includes("/matches/777")).length;
+    expect(matchCalls).toBe(1);
   });
 
   test("un match terminé ou pas encore commencé n'utilise pas le mode live", async () => {

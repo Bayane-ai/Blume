@@ -5,10 +5,11 @@ import MatchCard from "../components/MatchCard";
 
 const UPCOMING_STATUSES = ["SCHEDULED", "TIMED"];
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED", "LIVE"];
-// Le plan gratuit football-data.org limite à 10 requêtes/minute. On actualise vite
-// (10s) quand l'onglet "Matchs en ligne" est réellement affiché, et beaucoup plus
-// doucement en arrière-plan sinon (juste pour garder le badge de compteur à jour).
-const LIVE_REFRESH_ACTIVE_MS = 10000;
+// Grâce au cache partagé côté serveur (lib/liveListCache.js), actualiser souvent ne
+// multiplie plus les appels en amont : on peut donc actualiser vite (5s) quand
+// l'onglet "Matchs en ligne" est réellement affiché, et plus doucement en
+// arrière-plan sinon (juste pour garder le badge de compteur à jour).
+const LIVE_REFRESH_ACTIVE_MS = 5000;
 const LIVE_REFRESH_BACKGROUND_MS = 45000;
 
 function normalize(str) {

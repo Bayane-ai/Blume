@@ -3,9 +3,9 @@ import { useRouter } from "next/router";
 import MatchInfoBlock from "../../components/MatchInfoBlock";
 
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
-// 10s : le plan gratuit football-data.org limite à 10 requêtes/minute. C'est le rythme
-// le plus rapide qu'on puisse tenir sans redéclencher le blocage de l'API (voir plus bas).
-const LIVE_REFRESH_MS = 10000;
+// 5s : rendu possible sans dépasser le quota de l'API grâce au cache partagé côté
+// serveur (lib/liveMatchCache.js), qui mutualise les appels entre tous les visiteurs.
+const LIVE_REFRESH_MS = 5000;
 
 export default function MatchPage() {
   const router = useRouter();
@@ -104,7 +104,7 @@ export default function MatchPage() {
 
           <h2 style={st.h2}>{pronostic?.live ? "Pronostics en direct" : "Pronostics automatiques"}</h2>
           {isLiveNow && (
-            <p style={st.liveHint}>Score et probabilités recalculés automatiquement toutes les 10 secondes.</p>
+            <p style={st.liveHint}>Score et probabilités recalculés automatiquement toutes les 5 secondes.</p>
           )}
 
           <button style={st.analyzeBtn} onClick={() => runAnalysis(false)} disabled={loading}>

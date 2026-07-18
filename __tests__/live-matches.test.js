@@ -138,3 +138,22 @@ test("propage une vraie erreur API (ex: quota) au lieu de la masquer", async () 
   expect(res.body.matches).toBeUndefined();
   expect(res.body.error).toEqual(expect.stringContaining("429"));
 });
+
+test("plusieurs visiteurs qui actualisent en même temps ne déclenchent qu'un seul appel réel à l'API en amont", async () => {
+  const fetchMock = jest.fn((url) => {
+    if (url.includes("/v4/matches?")) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ matches: [fixtureMatch(1, "PL")] }) });
+    }
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [] }) });
+  });
+  global.fetch = fetchMock;
+
+  const { default: handler } = await import("../pages/api/live-matches.js");
+  // Simule 5 visiteurs qui rechargent la liste au même moment.
+  await Promise.all(
+    Array.from({ length: 5 }, () => handler({}, mockRes()))
+  );
+
+  const matchesCalls = fetchMock.mock.calls.filter(([url]) => url.includes("/v4/matches?")).length;
+  expect(matchesCalls).toBe(1);
+});

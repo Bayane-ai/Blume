@@ -1,7 +1,6 @@
 import { getStandingsTable } from "../../lib/standingsCache";
+import { getLiveMatchesList } from "../../lib/liveListCache";
 import { computePronostic } from "../../lib/pronostic";
-
-const BASE = "https://api.football-data.org/v4";
 
 function attachPronostic(m, table) {
   const homeRow = table?.find((row) => String(row.team.id) === String(m.homeTeam?.id));
@@ -20,16 +19,14 @@ export default async function handler(req, res) {
     // Tous les matchs en direct (IN_PLAY + PAUSED via le pseudo-statut LIVE de
     // football-data.org), sans filtrer par compétition ni par pays, et sans plafond
     // artificiel : on affiche exactement ce que l'API renvoie, jamais plus, jamais moins.
-    // &limit=100 dépasse largement le nombre de matchs simultanément en direct possibles
-    // sur les compétitions couvertes par le token, pour ne jamais en tronquer.
-    const r = await fetch(`${BASE}/matches?status=LIVE&limit=100`, {
-      headers: { "X-Auth-Token": token },
-    });
-    if (!r.ok) {
-      return res.status(r.status).json({ error: `Erreur API football-data (code ${r.status})` });
+    // getLiveMatchesList mutualise l'appel en amont entre tous les visiteurs (quelques
+    // secondes de cache partagé), pour pouvoir actualiser souvent côté client sans
+    // dépasser le quota de l'API, même si plusieurs personnes regardent en même temps.
+    const listResult = await getLiveMatchesList(token);
+    if (listResult.errorStatus) {
+      return res.status(listResult.errorStatus).json({ error: `Erreur API football-data (code ${listResult.errorStatus})` });
     }
-    const data = await r.json();
-    const liveMatches = data.matches || [];
+    const liveMatches = listResult.matches || [];
 
     const codes = [...new Set(liveMatches.map((m) => m.competition?.code).filter(Boolean))];
     const standingsByCode = {};
@@ -41,9 +38,6 @@ export default async function handler(req, res) {
 
     const matches = liveMatches.map((m) => attachPronostic(m, standingsByCode[m.competition?.code]));
 
-    // Pas de cache figé : quelques secondes tout au plus, juste pour absorber des
-    // requêtes quasi simultanées, jamais pour servir une liste de matchs périmée.
-    res.setHeader("Cache-Control", "s-maxage=5, stale-while-revalidate=10");
     return res.status(200).json({ matches });
   } catch (e) {
     return res.status(500).json({ error: e.message });

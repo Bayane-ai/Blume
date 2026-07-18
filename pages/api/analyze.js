@@ -1,8 +1,8 @@
 import { getStandingsTable } from "../../lib/standingsCache";
 import { getTeamRecentForm } from "../../lib/teamForm";
+import { getLiveMatch } from "../../lib/liveMatchCache";
 import { computePronostic, computeLivePronostic } from "../../lib/pronostic";
 
-const BASE = "https://api.football-data.org/v4";
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
 
 async function resolveTeamStats(teamId, table, token) {
@@ -24,17 +24,13 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Le score/la minute affichés doivent toujours venir de l'API en temps réel : on
-    // relit systématiquement l'état du match ici (jamais de cache), plutôt que de faire
-    // confiance à un score potentiellement périmé transmis par le client.
-    let liveMatch = null;
-    if (matchId) {
-      const mr = await fetch(`${BASE}/matches/${matchId}`, { headers: { "X-Auth-Token": token } });
-      if (mr.ok) {
-        const mdata = await mr.json();
-        liveMatch = mdata?.match || mdata;
-      }
-    }
+    // Le score/la minute viennent toujours de l'API, jamais d'une valeur transmise par
+    // le client. Le cache de quelques secondes ici n'est pas "figé" : il sert seulement
+    // à mutualiser les appels entre plusieurs visiteurs qui suivent le même match en
+    // même temps, pour pouvoir actualiser souvent sans dépasser le quota de l'API
+    // (sinon les requêtes échouent et le pronostic retombe silencieusement sur
+    // l'estimation pré-match au lieu de suivre le score réel).
+    const liveMatch = matchId ? await getLiveMatch(matchId, token) : null;
 
     const table = await getStandingsTable(competitionCode, token);
 
