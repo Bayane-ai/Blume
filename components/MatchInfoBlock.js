@@ -3,7 +3,7 @@ const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
 function formatKickoff(iso) {
   if (!iso) return "";
   return new Date(iso).toLocaleString("fr-FR", {
-    weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+    day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
   });
 }
 
@@ -48,17 +48,18 @@ export default function MatchInfoBlock({ m, comp }) {
           )}
           <span style={st.teamName}>{m.homeTeam.name}</span>
         </div>
-        <span style={st.centerSlot}>
-          {hasScore ? `${scoreHome ?? "–"} : ${scoreAway ?? "–"}` : formatKickoff(m.utcDate)}
-        </span>
         <div style={{ ...st.teamBlock, ...st.teamBlockAway }}>
-          <span style={st.teamName}>{m.awayTeam.name}</span>
+          <span style={{ ...st.teamName, ...st.teamNameAway }}>{m.awayTeam.name}</span>
           {m.awayTeam.crest && (
             <span style={st.crestWrap}>
               <img src={m.awayTeam.crest} alt="" style={st.crest} onError={hideCrest} />
             </span>
           )}
         </div>
+      </div>
+
+      <div style={st.centerSlot}>
+        {hasScore ? `${scoreHome ?? "–"} : ${scoreAway ?? "–"}` : formatKickoff(m.utcDate)}
       </div>
     </div>
   );
@@ -74,7 +75,7 @@ const st = {
   },
   liveTag: { fontSize: 11, color: "#D8685E", fontWeight: 800, flexShrink: 0, letterSpacing: 0.3 },
   finishedTag: { fontSize: 11, color: "#7EA694", fontWeight: 600, flexShrink: 0 },
-  teamRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 14 },
+  teamRow: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, fontSize: 14 },
   teamBlock: { flex: 1, display: "flex", alignItems: "center", gap: 10, minWidth: 0 },
   teamBlockAway: { justifyContent: "flex-end" },
   crestWrap: {
@@ -84,6 +85,10 @@ const st = {
     boxShadow: "0 0 12px rgba(57,181,119,0.35)",
   },
   crest: { width: 30, height: 30, objectFit: "contain", filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.4))" },
-  teamName: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 },
-  centerSlot: { fontWeight: 800, color: "#39B577", flexShrink: 0, padding: "0 8px", fontSize: 16 },
+  teamName: {
+    fontWeight: 600, overflowWrap: "break-word", display: "-webkit-box",
+    WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
+  },
+  teamNameAway: { textAlign: "right" },
+  centerSlot: { fontWeight: 800, color: "#39B577", fontSize: 16, textAlign: "center", marginTop: 10 },
 };
