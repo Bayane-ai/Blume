@@ -5,7 +5,11 @@ import MatchCard from "../components/MatchCard";
 
 const UPCOMING_STATUSES = ["SCHEDULED", "TIMED"];
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED", "LIVE"];
-const LIVE_REFRESH_MS = 30000; // 30s : rafraîchit automatiquement les matchs en direct.
+// Le plan gratuit football-data.org limite à 10 requêtes/minute. On actualise vite
+// (10s) quand l'onglet "Matchs en ligne" est réellement affiché, et beaucoup plus
+// doucement en arrière-plan sinon (juste pour garder le badge de compteur à jour).
+const LIVE_REFRESH_ACTIVE_MS = 10000;
+const LIVE_REFRESH_BACKGROUND_MS = 45000;
 
 function normalize(str) {
   return (str || "")
@@ -71,11 +75,13 @@ export default function Home() {
     loadWeekMatches();
   }, [loadLiveMatches, loadWeekMatches]);
 
-  // Rafraîchissement automatique des matchs en direct (scores, minute de jeu).
+  // Rafraîchissement automatique des matchs en direct (scores, minute de jeu) : rapide
+  // pendant que l'onglet est affiché, ralenti en arrière-plan pour rester sous le quota.
   useEffect(() => {
-    const id = setInterval(() => loadLiveMatches(true), LIVE_REFRESH_MS);
+    const intervalMs = tab === "live" ? LIVE_REFRESH_ACTIVE_MS : LIVE_REFRESH_BACKGROUND_MS;
+    const id = setInterval(() => loadLiveMatches(true), intervalMs);
     return () => clearInterval(id);
-  }, [loadLiveMatches]);
+  }, [tab, loadLiveMatches]);
 
   const logout = async () => supabase.auth.signOut();
 

@@ -3,7 +3,9 @@ import { useRouter } from "next/router";
 import MatchInfoBlock from "../../components/MatchInfoBlock";
 
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
-const LIVE_REFRESH_MS = 30000; // 30s : score, minute et pronostics recalculés tant que le match est en direct.
+// 10s : le plan gratuit football-data.org limite à 10 requêtes/minute. C'est le rythme
+// le plus rapide qu'on puisse tenir sans redéclencher le blocage de l'API (voir plus bas).
+const LIVE_REFRESH_MS = 10000;
 
 export default function MatchPage() {
   const router = useRouter();
@@ -49,11 +51,17 @@ export default function MatchPage() {
       .finally(() => setLoading(false));
   }, [router.isReady, matchId, competitionCode, homeTeamId, awayTeamId, homeTeamName, awayTeamName]);
 
-  // Lance l'analyse automatiquement dès que le match est chargé.
+  // Lance l'analyse automatiquement dès que le match est chargé, et à chaque fois qu'on
+  // navigue vers un AUTRE match (Next.js réutilise ce même composant, seul l'id d'URL
+  // change : sans matchId en dépendance, l'ancienne analyse restait affichée).
   useEffect(() => {
-    if (router.isReady) runAnalysis();
+    if (!router.isReady) return;
+    setPronostic(null);
+    setHasRequested(false);
+    setLiveState(null);
+    runAnalysis();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router.isReady]);
+  }, [router.isReady, matchId]);
 
   const currentStatus = liveState?.status || initialStatus;
 
@@ -96,7 +104,7 @@ export default function MatchPage() {
 
           <h2 style={st.h2}>{pronostic?.live ? "Pronostics en direct" : "Pronostics automatiques"}</h2>
           {isLiveNow && (
-            <p style={st.liveHint}>Score et probabilités recalculés automatiquement toutes les 30 secondes.</p>
+            <p style={st.liveHint}>Score et probabilités recalculés automatiquement toutes les 10 secondes.</p>
           )}
 
           <button style={st.analyzeBtn} onClick={() => runAnalysis(false)} disabled={loading}>
