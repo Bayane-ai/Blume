@@ -93,7 +93,7 @@ export default function Home() {
   return (
     <div style={s.page}>
       <header style={s.header}>
-        <h1 style={s.h1}>Table de cotes</h1>
+        <h1 style={s.h1}>Table de cotes</h1><a href="/matches" style={s.smallBtn}>Matchs</a>
         {sessionChecked && (
           session ? (
             <div style={s.headerRight}>
