@@ -180,20 +180,6 @@ export default function MatchPage() {
                 </div>
               </div>
 
-              {(pronostic.correctScores || []).length > 0 && (
-                <>
-                  <p style={st.sectionLabel}>Scores {pronostic.live ? "finaux" : "exacts"} les plus probables</p>
-                  <div style={st.scoresRow}>
-                    {pronostic.correctScores.map((cs) => (
-                      <div key={cs.score} style={st.scoreCell}>
-                        <span style={st.probLabel}>{cs.score}</span>
-                        <span style={st.probValue}>{cs.probability}%</span>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-
               {pronostic.home && pronostic.away && (
                 <p style={st.hint}>
                   {pronostic.home.name} :{" "}
