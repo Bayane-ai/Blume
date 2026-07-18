@@ -3,13 +3,9 @@ import { supabase } from "../lib/supabaseClient";
 import { COMPETITIONS } from "../lib/competitions";
 import MatchCard from "../components/MatchCard";
 
-const LIVE_STATUSES = ["IN_PLAY", "PAUSED", "LIVE"];
 const UPCOMING_STATUSES = ["SCHEDULED", "TIMED"];
-const LIVE_REFRESH_MS = 30000;
-
-function utcDay(iso) {
-  return iso.slice(0, 10);
-}
+const LIVE_STATUSES = ["IN_PLAY", "PAUSED", "LIVE"];
+const LIVE_REFRESH_MS = 30000; // 30s : rafraîchit automatiquement les matchs en direct.
 
 function normalize(str) {
   return (str || "")
@@ -22,10 +18,14 @@ export default function Home() {
   const [session, setSession] = useState(null);
   const [sessionChecked, setSessionChecked] = useState(false);
 
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("live"); // "live" | "upcoming" | "competitions"
   const [search, setSearch] = useState("");
+
+  const [liveData, setLiveData] = useState(null);
+  const [liveLoading, setLiveLoading] = useState(true);
+
+  const [weekData, setWeekData] = useState(null);
+  const [weekLoading, setWeekLoading] = useState(true);
 
   const [competitionQuery, setCompetitionQuery] = useState("");
   const [selectedCode, setSelectedCode] = useState(null);
@@ -42,40 +42,68 @@ export default function Home() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  const loadMatches = useCallback((silent = false) => {
-    if (!silent) setLoading(true);
+  const loadLiveMatches = useCallback((silent = false) => {
+    if (!silent) setLiveLoading(true);
+    return fetch("/api/live-matches")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.error) console.error("Erreur /api/live-matches:", d.error);
+        setLiveData(d);
+      })
+      .catch((e) => console.error("Erreur /api/live-matches:", e))
+      .finally(() => setLiveLoading(false));
+  }, []);
+
+  const loadWeekMatches = useCallback(() => {
+    setWeekLoading(true);
     return fetch("/api/matches")
       .then((r) => r.json())
       .then((d) => {
         if (d?.error) console.error("Erreur /api/matches:", d.error);
-        setData(d);
+        setWeekData(d);
       })
       .catch((e) => console.error("Erreur /api/matches:", e))
-      .finally(() => setLoading(false));
+      .finally(() => setWeekLoading(false));
   }, []);
 
   useEffect(() => {
-    loadMatches();
-  }, [loadMatches]);
+    loadLiveMatches();
+    loadWeekMatches();
+  }, [loadLiveMatches, loadWeekMatches]);
 
-  // Rafraîchissement automatique des matchs du jour.
+  // Rafraîchissement automatique des matchs en direct (scores, minute de jeu).
   useEffect(() => {
-    if (tab !== "live") return;
-    const id = setInterval(() => loadMatches(true), LIVE_REFRESH_MS);
+    const id = setInterval(() => loadLiveMatches(true), LIVE_REFRESH_MS);
     return () => clearInterval(id);
-  }, [tab, loadMatches]);
+  }, [loadLiveMatches]);
 
   const logout = async () => supabase.auth.signOut();
 
-  const today = useMemo(() => utcDay(new Date().toISOString()), []);
   const searchQuery = search.trim();
 
-  // Liste continue (toutes compétitions confondues), triée par priorité de compétition
-  // puis chronologiquement : matchs du jour vs matchs à venir dans la semaine.
-  const feed = useMemo(() => {
-    if (!data?.competitions) return [];
+  // Matchs en direct (statut LIVE/IN_PLAY/PAUSED), sans filtre par compétition ou pays :
+  // exactement ce que l'API renvoie, jamais de matchs inventés pour compléter la liste.
+  const liveFeed = useMemo(() => {
+    if (!liveData?.matches) return [];
+    const validMatches = liveData.matches.filter((m) => m?.homeTeam && m?.awayTeam && m?.utcDate);
+    const q = normalize(searchQuery);
+    const matches = q
+      ? validMatches.filter(
+          (m) =>
+            normalize(m.homeTeam.name).includes(q) ||
+            normalize(m.awayTeam.name).includes(q) ||
+            normalize(m.competition?.name).includes(q)
+        )
+      : validMatches;
+    return matches.map((m) => ({ m, comp: m.competition }));
+  }, [liveData, searchQuery]);
+
+  // Matchs à venir dans la semaine (y compris plus tard aujourd'hui).
+  const weekFeed = useMemo(() => {
+    if (!weekData?.competitions) return [];
     const rows = [];
-    data.competitions.forEach((comp) => {
+    const now = Date.now();
+    weekData.competitions.forEach((comp) => {
       const validMatches = (comp.matches || []).filter((m) => m?.homeTeam && m?.awayTeam && m?.utcDate);
       let matches;
       if (searchQuery) {
@@ -86,33 +114,18 @@ export default function Home() {
             normalize(m.awayTeam.name).includes(q) ||
             normalize(comp.name).includes(q)
         );
-      } else if (tab === "live") {
-        matches = validMatches.filter((m) => utcDay(m.utcDate) === today);
       } else {
         matches = validMatches.filter(
-          (m) => UPCOMING_STATUSES.includes(m.status) && utcDay(m.utcDate) > today
+          (m) => UPCOMING_STATUSES.includes(m.status) && new Date(m.utcDate).getTime() > now
         );
       }
       matches.forEach((m) => rows.push({ m, comp }));
     });
-    rows.sort((a, b) => {
-      if (!searchQuery && tab === "live") {
-        const aLive = LIVE_STATUSES.includes(a.m.status) ? 0 : 1;
-        const bLive = LIVE_STATUSES.includes(b.m.status) ? 0 : 1;
-        if (aLive !== bLive) return aLive - bLive;
-      }
-      return new Date(a.m.utcDate) - new Date(b.m.utcDate);
-    });
+    rows.sort((a, b) => new Date(a.m.utcDate) - new Date(b.m.utcDate));
     return rows;
-  }, [data, tab, today, searchQuery]);
+  }, [weekData, searchQuery]);
 
-  const liveCount = useMemo(() => {
-    if (!data?.competitions) return 0;
-    return data.competitions.reduce(
-      (n, comp) => n + (comp.matches || []).filter((m) => LIVE_STATUSES.includes(m.status)).length,
-      0
-    );
-  }, [data]);
+  const liveCount = liveData?.matches?.length || 0;
 
   const filteredCompetitionList = useMemo(() => {
     const q = normalize(competitionQuery.trim());
@@ -160,6 +173,10 @@ export default function Home() {
       return new Date(a.utcDate) - new Date(b.utcDate);
     });
   }, [compData, compMatchSearch]);
+
+  const loading = tab === "live" ? liveLoading : weekLoading;
+  const data = tab === "live" ? liveData : weekData;
+  const feed = tab === "live" ? liveFeed : weekFeed;
 
   return (
     <div style={st.page}>
@@ -220,7 +237,7 @@ export default function Home() {
                 {searchQuery
                   ? "Aucun match ne correspond à ta recherche."
                   : tab === "live"
-                  ? "Aucun match aujourd'hui."
+                  ? "Aucun match en direct actuellement."
                   : "Aucun match à venir cette semaine."}
               </p>
             )}
