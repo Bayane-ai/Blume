@@ -270,7 +270,10 @@ export default function Home() {
 
             {loading && <p style={st.hint}>Chargement des matchs…</p>}
             {!loading && !data && <p style={st.hint}>Impossible de charger les matchs pour le moment.</p>}
-            {!loading && data && competitions.length === 0 && (
+            {!loading && data?.error && (
+              <p style={st.hint}>Erreur de chargement des matchs : {data.error}</p>
+            )}
+            {!loading && data && !data.error && competitions.length === 0 && (
               <p style={st.hint}>
                 {searchQuery
                   ? "Aucun match ne correspond à ta recherche."
@@ -333,7 +336,10 @@ export default function Home() {
             </div>
 
             {compLoading && <p style={st.hint}>Chargement des matchs…</p>}
-            {!compLoading && compMatches.length === 0 && (
+            {!compLoading && compData?.error && (
+              <p style={st.hint}>Erreur de chargement des matchs : {compData.error}</p>
+            )}
+            {!compLoading && !compData?.error && compMatches.length === 0 && (
               <p style={st.hint}>Aucun match à venir trouvé pour cette compétition.</p>
             )}
             {!compLoading && compMatches.length > 0 && (

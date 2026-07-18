@@ -22,7 +22,7 @@ export default async function handler(req, res) {
       `${BASE}/competitions/${comp.code}/matches?status=SCHEDULED,TIMED,LIVE,IN_PLAY,PAUSED&dateFrom=${dateFrom}&dateTo=${dateTo}`,
       { headers: { "X-Auth-Token": token } }
     );
-    if (!r.ok) return res.status(200).json({ ...comp, matches: [] });
+    if (!r.ok) return res.status(r.status).json({ ...comp, error: `Erreur API football-data (code ${r.status})`, matches: [] });
     const data = await r.json();
     res.setHeader("Cache-Control", "s-maxage=120, stale-while-revalidate=300");
     return res.status(200).json({ ...comp, matches: (data.matches || []).slice(0, 100) });
