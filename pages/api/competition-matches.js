@@ -31,11 +31,8 @@ export default async function handler(req, res) {
     const data = await r.json();
 
     const matches = (data.matches || []).slice(0, 100).map((m) => {
-      if (!table) {
-        return { ...m, pronostic: { available: false, message: "Pronostics indisponibles pour le moment." } };
-      }
-      const homeRow = table.find((row) => String(row.team.id) === String(m.homeTeam?.id));
-      const awayRow = table.find((row) => String(row.team.id) === String(m.awayTeam?.id));
+      const homeRow = table?.find((row) => String(row.team.id) === String(m.homeTeam?.id));
+      const awayRow = table?.find((row) => String(row.team.id) === String(m.awayTeam?.id));
       const pronostic = computePronostic({
         homeRow, awayRow, homeTeamName: m.homeTeam?.name, awayTeamName: m.awayTeam?.name,
       });

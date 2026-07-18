@@ -1,5 +1,16 @@
 import { getStandingsTable } from "../../lib/standingsCache";
+import { getTeamRecentForm } from "../../lib/teamForm";
 import { computePronostic } from "../../lib/pronostic";
+
+async function resolveTeamStats(teamId, table, token) {
+  const row = table?.find((r) => String(r.team.id) === String(teamId));
+  if (row && row.playedGames) return { stats: row, source: "classement" };
+
+  const recentForm = await getTeamRecentForm(teamId, token);
+  if (recentForm) return { stats: recentForm, source: "forme récente" };
+
+  return { stats: null, source: "estimation moyenne" };
+}
 
 export default async function handler(req, res) {
   const token = process.env.FOOTBALL_DATA_TOKEN;
@@ -11,15 +22,23 @@ export default async function handler(req, res) {
 
   try {
     const table = await getStandingsTable(competitionCode, token);
-    if (!table) {
-      return res.status(200).json({
-        available: false,
-        message: "Classement indisponible pour cette compétition (ex : Coupe du Monde).",
-      });
-    }
-    const homeRow = table.find((row) => String(row.team.id) === String(homeTeamId));
-    const awayRow = table.find((row) => String(row.team.id) === String(awayTeamId));
-    const result = computePronostic({ homeRow, awayRow, homeTeamName, awayTeamName });
+
+    // Une équipe absente du classement (phase à élimination directe, coupe sans tableau
+    // de classement, etc.) ne doit pas bloquer le pronostic : on se rabat sur ses derniers
+    // matchs joués, pour que l'analyse fonctionne quel que soit le moment de la recherche.
+    const [homeResolved, awayResolved] = await Promise.all([
+      resolveTeamStats(homeTeamId, table, token),
+      resolveTeamStats(awayTeamId, table, token),
+    ]);
+
+    const result = computePronostic({
+      homeRow: homeResolved.stats,
+      awayRow: awayResolved.stats,
+      homeTeamName,
+      awayTeamName,
+      homeSource: homeResolved.source,
+      awaySource: awayResolved.source,
+    });
     return res.status(200).json(result);
   } catch (e) {
     return res.status(500).json({ error: e.message });

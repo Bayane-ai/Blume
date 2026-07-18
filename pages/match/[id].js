@@ -141,8 +141,15 @@ export default function MatchPage() {
 
               {pronostic.home && pronostic.away && (
                 <p style={st.hint}>
-                  {pronostic.home.name} : {pronostic.home.position}ᵉ ({pronostic.home.points} pts) ·{" "}
-                  {pronostic.away.name} : {pronostic.away.position}ᵉ ({pronostic.away.points} pts)
+                  {pronostic.home.name} :{" "}
+                  {pronostic.home.position != null
+                    ? `${pronostic.home.position}ᵉ (${pronostic.home.points} pts)`
+                    : pronostic.home.source || "estimation"}
+                  {" · "}
+                  {pronostic.away.name} :{" "}
+                  {pronostic.away.position != null
+                    ? `${pronostic.away.position}ᵉ (${pronostic.away.points} pts)`
+                    : pronostic.away.source || "estimation"}
                 </p>
               )}
               {pronostic.note && <p style={st.noteText}>{pronostic.note}</p>}

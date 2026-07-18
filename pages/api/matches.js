@@ -9,11 +9,10 @@ function isoDate(d) {
 }
 
 function attachPronostic(m, table) {
-  if (!table) {
-    return { ...m, pronostic: { available: false, message: "Pronostics indisponibles pour le moment." } };
-  }
-  const homeRow = table.find((row) => String(row.team.id) === String(m.homeTeam?.id));
-  const awayRow = table.find((row) => String(row.team.id) === String(m.awayTeam?.id));
+  const homeRow = table?.find((row) => String(row.team.id) === String(m.homeTeam?.id));
+  const awayRow = table?.find((row) => String(row.team.id) === String(m.awayTeam?.id));
+  // computePronostic se rabat sur une estimation moyenne si une équipe est absente du
+  // classement (phase à élimination directe, etc.) : le pronostic est toujours disponible.
   const pronostic = computePronostic({
     homeRow, awayRow, homeTeamName: m.homeTeam?.name, awayTeamName: m.awayTeam?.name,
   });
