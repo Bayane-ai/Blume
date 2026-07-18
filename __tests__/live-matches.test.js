@@ -1,7 +1,7 @@
 /**
  * Vérifie /api/live-matches : appelle la vraie API football-data.org avec le statut
- * LIVE, sans filtrer par compétition ni pays, n'invente jamais de matchs, et plafonne
- * à 20 matchs maximum.
+ * LIVE, sans filtrer par compétition ni pays, n'invente jamais de matchs, et n'applique
+ * aucun plafond artificiel — tous les matchs en direct renvoyés par l'API sont affichés.
  */
 
 const TOKEN = "test-token";
@@ -37,7 +37,7 @@ function fixtureMatch(id, code) {
 
 test("interroge la vraie API avec status=LIVE, sans filtre de compétition dans l'URL", async () => {
   global.fetch = jest.fn((url) => {
-    expect(url).toBe("https://api.football-data.org/v4/matches?status=LIVE");
+    expect(url).toBe("https://api.football-data.org/v4/matches?status=LIVE&limit=100");
     return Promise.resolve({ ok: true, json: () => Promise.resolve({ matches: [] }) });
   });
 
@@ -66,7 +66,7 @@ test("n'invente jamais de matchs : si l'API n'en renvoie que 3, la réponse en c
   expect(res.body.matches.map((m) => m.id).sort()).toEqual([1, 2, 3]);
 });
 
-test("plafonne à 20 matchs si l'API en renvoie plus", async () => {
+test("n'applique aucun plafond artificiel : si l'API renvoie 35 matchs en direct, les 35 sont affichés", async () => {
   const many = Array.from({ length: 35 }, (_, i) => fixtureMatch(i + 1, "PL"));
   global.fetch = jest.fn((url) => {
     if (url.includes("/v4/matches?")) {
@@ -79,7 +79,26 @@ test("plafonne à 20 matchs si l'API en renvoie plus", async () => {
   const res = mockRes();
   await handler({}, res);
 
-  expect(res.body.matches.length).toBeLessThanOrEqual(20);
+  expect(res.body.matches).toHaveLength(35);
+});
+
+test("un match d'une compétition présente en fin de liste (ex : Coupe du Monde) n'est pas tronqué", async () => {
+  // Reproduit le bug rapporté : un match de Coupe du Monde arrivant après plus de 20
+  // autres matchs en direct dans la réponse de l'API ne doit plus être coupé.
+  const otherMatches = Array.from({ length: 22 }, (_, i) => fixtureMatch(i + 1, "PL"));
+  const worldCupMatch = fixtureMatch(999, "WC");
+  global.fetch = jest.fn((url) => {
+    if (url.includes("/v4/matches?")) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ matches: [...otherMatches, worldCupMatch] }) });
+    }
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [] }) });
+  });
+
+  const { default: handler } = await import("../pages/api/live-matches.js");
+  const res = mockRes();
+  await handler({}, res);
+
+  expect(res.body.matches.some((m) => m.id === 999)).toBe(true);
 });
 
 test("chaque match renvoyé porte déjà son pronostic (calculé côté serveur)", async () => {
