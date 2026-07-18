@@ -20,6 +20,7 @@ describe("Pronostics détaillés — corners, tirs, cartons", () => {
       expect(stat.away).toBeGreaterThanOrEqual(0);
     }
     expect(result.statsNote).toEqual(expect.stringContaining("estimation"));
+    expect(result.goals.expectedTotal).toBeCloseTo(result.goals.expectedHome + result.goals.expectedAway, 5);
   });
 
   test("computeLivePronostic renvoie aussi ces stats détaillées", () => {
@@ -29,6 +30,7 @@ describe("Pronostics détaillés — corners, tirs, cartons", () => {
     expect(live.extraStats).toBeDefined();
     expect(live.extraStats.corners.total).toBe(live.extraStats.corners.home + live.extraStats.corners.away);
     expect(live.statsNote).toEqual(expect.stringContaining("estimation"));
+    expect(live.goals.expectedTotal).toBeCloseTo(live.goals.expectedHome + live.goals.expectedAway, 5);
   });
 
   test("une équipe nettement plus offensive obtient une part plus élevée de corners et de tirs", () => {

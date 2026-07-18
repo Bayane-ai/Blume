@@ -144,12 +144,32 @@ export default function MatchPage() {
                 </div>
               </div>
 
-              <p style={st.sectionLabel}>Buts probables{pronostic.live ? " (score final estimé)" : ""}</p>
-              <div style={st.probRow}>
-                <div style={st.probCell}>
-                  <span style={st.probLabel}>Attendus</span>
-                  <span style={st.probValue}>{pronostic.goals.expectedHome ?? "–"} - {pronostic.goals.expectedAway ?? "–"}</span>
+              <p style={st.sectionLabel}>Statistiques probables{pronostic.live ? " (estimation fin de match)" : ""} — total du match</p>
+              <div style={st.scoresRow}>
+                <div style={st.scoreCell}>
+                  <span style={st.probLabel}>Buts</span>
+                  <span style={st.probValue}>{pronostic.goals.expectedTotal ?? "–"}</span>
                 </div>
+                {pronostic.extraStats && (
+                  <>
+                    <div style={st.scoreCell}>
+                      <span style={st.probLabel}>Corners</span>
+                      <span style={st.probValue}>{pronostic.extraStats.corners.total}</span>
+                    </div>
+                    <div style={st.scoreCell}>
+                      <span style={st.probLabel}>Tirs/occasions</span>
+                      <span style={st.probValue}>{pronostic.extraStats.shots.total}</span>
+                    </div>
+                    <div style={st.scoreCell}>
+                      <span style={st.probLabel}>Cartons</span>
+                      <span style={st.probValue}>{pronostic.extraStats.cards.total}</span>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <p style={st.sectionLabel}>Autres probabilités</p>
+              <div style={st.probRow}>
                 <div style={st.probCell}>
                   <span style={st.probLabel}>+2.5 buts</span>
                   <span style={st.probValue}>{pronostic.goals.over25 ?? "–"}%</span>
@@ -159,58 +179,6 @@ export default function MatchPage() {
                   <span style={st.probValue}>{pronostic.goals.bttsYes ?? "–"}%</span>
                 </div>
               </div>
-
-              {pronostic.extraStats && (
-                <>
-                  <p style={st.sectionLabel}>Corners probables</p>
-                  <div style={st.probRow}>
-                    <div style={st.probCell}>
-                      <span style={st.probLabel}>Domicile</span>
-                      <span style={st.probValue}>{pronostic.extraStats.corners.home}</span>
-                    </div>
-                    <div style={st.probCell}>
-                      <span style={st.probLabel}>Total</span>
-                      <span style={st.probValue}>{pronostic.extraStats.corners.total}</span>
-                    </div>
-                    <div style={st.probCell}>
-                      <span style={st.probLabel}>Extérieur</span>
-                      <span style={st.probValue}>{pronostic.extraStats.corners.away}</span>
-                    </div>
-                  </div>
-
-                  <p style={st.sectionLabel}>Tirs / occasions probables</p>
-                  <div style={st.probRow}>
-                    <div style={st.probCell}>
-                      <span style={st.probLabel}>Domicile</span>
-                      <span style={st.probValue}>{pronostic.extraStats.shots.home}</span>
-                    </div>
-                    <div style={st.probCell}>
-                      <span style={st.probLabel}>Total</span>
-                      <span style={st.probValue}>{pronostic.extraStats.shots.total}</span>
-                    </div>
-                    <div style={st.probCell}>
-                      <span style={st.probLabel}>Extérieur</span>
-                      <span style={st.probValue}>{pronostic.extraStats.shots.away}</span>
-                    </div>
-                  </div>
-
-                  <p style={st.sectionLabel}>Cartons probables</p>
-                  <div style={st.probRow}>
-                    <div style={st.probCell}>
-                      <span style={st.probLabel}>Domicile</span>
-                      <span style={st.probValue}>{pronostic.extraStats.cards.home}</span>
-                    </div>
-                    <div style={st.probCell}>
-                      <span style={st.probLabel}>Total</span>
-                      <span style={st.probValue}>{pronostic.extraStats.cards.total}</span>
-                    </div>
-                    <div style={st.probCell}>
-                      <span style={st.probLabel}>Extérieur</span>
-                      <span style={st.probValue}>{pronostic.extraStats.cards.away}</span>
-                    </div>
-                  </div>
-                </>
-              )}
 
               {(pronostic.correctScores || []).length > 0 && (
                 <>
