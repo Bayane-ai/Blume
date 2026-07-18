@@ -75,6 +75,18 @@ describe("MatchCard — présentation exacte de la carte", () => {
     expect(screen.getByText(/1\s*:\s*0/)).toBeInTheDocument();
   });
 
+  test("affiche l'heure (pas un score partiel) si un seul des deux scores est renseigné", () => {
+    // Cas limite : si scoreAway est absent alors que scoreHome est présent, on ne doit
+    // pas afficher "1 : –" mais bien retomber sur l'heure du match.
+    render(
+      <MatchCard
+        m={baseMatch({ status: "SCHEDULED", score: { fullTime: { home: 1, away: null } } })}
+        comp={{}}
+      />
+    );
+    expect(screen.queryByText(/1\s*:\s*–/)).not.toBeInTheDocument();
+  });
+
   test("affiche l'équipe à domicile à gauche (avec logo) et l'équipe extérieure à droite (avec logo)", () => {
     render(<MatchCard m={baseMatch()} comp={{}} />);
     expect(screen.getByText("Arsenal FC")).toBeInTheDocument();

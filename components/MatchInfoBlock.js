@@ -24,7 +24,8 @@ export default function MatchInfoBlock({ m, comp }) {
 
   const scoreHome = m.score?.fullTime?.home;
   const scoreAway = m.score?.fullTime?.away;
-  const hasScore = scoreHome !== null && scoreHome !== undefined;
+  const hasScore =
+    scoreHome !== null && scoreHome !== undefined && scoreAway !== null && scoreAway !== undefined;
 
   return (
     <div>

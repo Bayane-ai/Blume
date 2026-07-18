@@ -158,6 +158,58 @@ export default function MatchPage() {
                 </div>
               </div>
 
+              {pronostic.extraStats && (
+                <>
+                  <p style={st.sectionLabel}>Corners probables</p>
+                  <div style={st.probRow}>
+                    <div style={st.probCell}>
+                      <span style={st.probLabel}>Domicile</span>
+                      <span style={st.probValue}>{pronostic.extraStats.corners.home}</span>
+                    </div>
+                    <div style={st.probCell}>
+                      <span style={st.probLabel}>Total</span>
+                      <span style={st.probValue}>{pronostic.extraStats.corners.total}</span>
+                    </div>
+                    <div style={st.probCell}>
+                      <span style={st.probLabel}>Extérieur</span>
+                      <span style={st.probValue}>{pronostic.extraStats.corners.away}</span>
+                    </div>
+                  </div>
+
+                  <p style={st.sectionLabel}>Tirs / occasions probables</p>
+                  <div style={st.probRow}>
+                    <div style={st.probCell}>
+                      <span style={st.probLabel}>Domicile</span>
+                      <span style={st.probValue}>{pronostic.extraStats.shots.home}</span>
+                    </div>
+                    <div style={st.probCell}>
+                      <span style={st.probLabel}>Total</span>
+                      <span style={st.probValue}>{pronostic.extraStats.shots.total}</span>
+                    </div>
+                    <div style={st.probCell}>
+                      <span style={st.probLabel}>Extérieur</span>
+                      <span style={st.probValue}>{pronostic.extraStats.shots.away}</span>
+                    </div>
+                  </div>
+
+                  <p style={st.sectionLabel}>Cartons probables</p>
+                  <div style={st.probRow}>
+                    <div style={st.probCell}>
+                      <span style={st.probLabel}>Domicile</span>
+                      <span style={st.probValue}>{pronostic.extraStats.cards.home}</span>
+                    </div>
+                    <div style={st.probCell}>
+                      <span style={st.probLabel}>Total</span>
+                      <span style={st.probValue}>{pronostic.extraStats.cards.total}</span>
+                    </div>
+                    <div style={st.probCell}>
+                      <span style={st.probLabel}>Extérieur</span>
+                      <span style={st.probValue}>{pronostic.extraStats.cards.away}</span>
+                    </div>
+                  </div>
+                </>
+              )}
+
               {(pronostic.correctScores || []).length > 0 && (
                 <>
                   <p style={st.sectionLabel}>Scores {pronostic.live ? "finaux" : "exacts"} les plus probables</p>
@@ -186,6 +238,7 @@ export default function MatchPage() {
                 </p>
               )}
               {pronostic.note && <p style={st.noteText}>{pronostic.note}</p>}
+              {pronostic.statsNote && <p style={st.noteText}>{pronostic.statsNote}</p>}
             </>
           )}
         </section>
