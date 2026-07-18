@@ -97,9 +97,9 @@ export default function MatchPage() {
           <p style={{ ...st.badge, ...(live === "EN DIRECT" ? st.badgeLive : {}) }}>
             {live || formatKickoff(utcDate)}
           </p>
-        </section>
 
-        <section style={st.panel}>
+          <div style={st.divider} />
+
           <h2 style={st.h2}>Pronostics automatiques</h2>
 
           <button style={st.analyzeBtn} onClick={runAnalysis} disabled={loading}>
@@ -191,6 +191,7 @@ const st = {
   },
   main: { maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 },
   panel: { background: "#12291E", border: "1px solid #1E3D2C", borderRadius: 14, padding: 18 },
+  divider: { borderTop: "1px solid #1E3D2C", margin: "16px 0" },
   compName: { fontSize: 11, color: "#7EA694", textTransform: "uppercase", margin: "0 0 10px" },
   matchRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 15 },
   teamBlock: { flex: 1, display: "flex", alignItems: "center", gap: 10, minWidth: 0 },
