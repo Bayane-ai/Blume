@@ -161,9 +161,9 @@ export default function MatchPage() {
               {(pronostic.correctScores || []).length > 0 && (
                 <>
                   <p style={st.sectionLabel}>Scores {pronostic.live ? "finaux" : "exacts"} les plus probables</p>
-                  <div style={st.probRow}>
+                  <div style={st.scoresRow}>
                     {pronostic.correctScores.map((cs) => (
-                      <div key={cs.score} style={st.probCell}>
+                      <div key={cs.score} style={st.scoreCell}>
                         <span style={st.probLabel}>{cs.score}</span>
                         <span style={st.probValue}>{cs.probability}%</span>
                       </div>
@@ -215,6 +215,8 @@ const st = {
   sectionLabel: { fontSize: 10, color: "#5C8A73", textTransform: "uppercase", margin: "14px 0 6px", letterSpacing: 0.4 },
   probRow: { display: "flex", gap: 8, marginBottom: 4 },
   probCell: { flex: 1, textAlign: "center", background: "#0B1F16", borderRadius: 8, padding: "10px 4px" },
+  scoresRow: { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 4 },
+  scoreCell: { flex: "1 1 calc(33.333% - 6px)", minWidth: 72, textAlign: "center", background: "#0B1F16", borderRadius: 8, padding: "10px 4px" },
   probLabel: { display: "block", fontSize: 9.5, color: "#7EA694", textTransform: "uppercase" },
   probValue: { fontSize: 15, fontWeight: 700 },
   noteText: { fontSize: 10.5, color: "#5C8A73", fontStyle: "italic", margin: "8px 0 0" },
