@@ -38,23 +38,24 @@ function matchHref(m, comp) {
   return {
     pathname: `/match/${m.id}`,
     query: {
-      competitionCode: comp.code,
-      competitionName: comp.name,
-      homeTeamId: m.homeTeam.id,
-      awayTeamId: m.awayTeam.id,
-      homeTeamName: m.homeTeam.name,
-      awayTeamName: m.awayTeam.name,
-      homeCrest: m.homeTeam.crest || "",
-      awayCrest: m.awayTeam.crest || "",
-      status: m.status,
-      utcDate: m.utcDate,
-      scoreHome: m.score.fullTime.home ?? "",
-      scoreAway: m.score.fullTime.away ?? "",
+      competitionCode: comp?.code || "",
+      competitionName: comp?.name || "",
+      homeTeamId: m.homeTeam?.id ?? "",
+      awayTeamId: m.awayTeam?.id ?? "",
+      homeTeamName: m.homeTeam?.name || "",
+      awayTeamName: m.awayTeam?.name || "",
+      homeCrest: m.homeTeam?.crest || "",
+      awayCrest: m.awayTeam?.crest || "",
+      status: m.status || "",
+      utcDate: m.utcDate || "",
+      scoreHome: m.score?.fullTime?.home ?? "",
+      scoreAway: m.score?.fullTime?.away ?? "",
     },
   };
 }
 
 function MatchRow({ m, comp }) {
+  if (!m || !m.homeTeam || !m.awayTeam) return null;
   const live = statusLabel(m.status);
   return (
     <Link href={matchHref(m, comp)} style={st.matchCard}>
@@ -66,7 +67,7 @@ function MatchRow({ m, comp }) {
           <span style={st.teamName}>{m.homeTeam.name}</span>
         </div>
         <span style={st.score}>
-          {m.score.fullTime.home ?? "–"} : {m.score.fullTime.away ?? "–"}
+          {m.score?.fullTime?.home ?? "–"} : {m.score?.fullTime?.away ?? "–"}
         </span>
         <div style={{ ...st.teamBlock, ...st.teamBlockAway }}>
           <span style={st.teamName}>{m.awayTeam.name}</span>
@@ -113,8 +114,11 @@ export default function Home() {
     if (!silent) setLoading(true);
     return fetch("/api/matches")
       .then((r) => r.json())
-      .then((d) => setData(d))
-      .catch(() => {})
+      .then((d) => {
+        if (d?.error) console.error("Erreur /api/matches:", d.error);
+        setData(d);
+      })
+      .catch((e) => console.error("Erreur /api/matches:", e))
       .finally(() => setLoading(false));
   }, []);
 
@@ -139,19 +143,20 @@ export default function Home() {
     if (!data?.competitions) return [];
     return data.competitions
       .map((comp) => {
+        const validMatches = (comp.matches || []).filter((m) => m?.homeTeam && m?.awayTeam && m?.utcDate);
         let matches;
         if (searchQuery) {
           const q = normalize(searchQuery);
-          matches = comp.matches.filter(
+          matches = validMatches.filter(
             (m) =>
               normalize(m.homeTeam.name).includes(q) ||
               normalize(m.awayTeam.name).includes(q) ||
               normalize(comp.name).includes(q)
           );
         } else if (tab === "live") {
-          matches = comp.matches.filter((m) => utcDay(m.utcDate) === today);
+          matches = validMatches.filter((m) => utcDay(m.utcDate) === today);
         } else {
-          matches = comp.matches.filter(
+          matches = validMatches.filter(
             (m) => UPCOMING_STATUSES.includes(m.status) && utcDay(m.utcDate) > today
           );
         }
@@ -171,7 +176,7 @@ export default function Home() {
   const liveCount = useMemo(() => {
     if (!data?.competitions) return 0;
     return data.competitions.reduce(
-      (n, comp) => n + comp.matches.filter((m) => LIVE_STATUSES.includes(m.status)).length,
+      (n, comp) => n + (comp.matches || []).filter((m) => LIVE_STATUSES.includes(m.status)).length,
       0
     );
   }, [data]);
@@ -189,8 +194,14 @@ export default function Home() {
     setCompLoading(true);
     fetch(`/api/competition-matches?code=${code}`)
       .then((r) => r.json())
-      .then((d) => setCompData(d))
-      .catch(() => setCompData({ matches: [] }))
+      .then((d) => {
+        if (d?.error) console.error("Erreur /api/competition-matches:", d.error);
+        setCompData(d);
+      })
+      .catch((e) => {
+        console.error("Erreur /api/competition-matches:", e);
+        setCompData({ error: true, matches: [] });
+      })
       .finally(() => setCompLoading(false));
   };
 
@@ -202,12 +213,13 @@ export default function Home() {
 
   const compMatches = useMemo(() => {
     if (!compData?.matches) return [];
+    const validMatches = compData.matches.filter((m) => m?.homeTeam && m?.awayTeam && m?.utcDate);
     const q = normalize(compMatchSearch.trim());
     const filtered = q
-      ? compData.matches.filter(
+      ? validMatches.filter(
           (m) => normalize(m.homeTeam.name).includes(q) || normalize(m.awayTeam.name).includes(q)
         )
-      : compData.matches;
+      : validMatches;
     return [...filtered].sort((a, b) => {
       const aLive = LIVE_STATUSES.includes(a.status) ? 0 : 1;
       const bLive = LIVE_STATUSES.includes(b.status) ? 0 : 1;
@@ -269,9 +281,8 @@ export default function Home() {
             </div>
 
             {loading && <p style={st.hint}>Chargement des matchs…</p>}
-            {!loading && !data && <p style={st.hint}>Impossible de charger les matchs pour le moment.</p>}
-            {!loading && data?.error && (
-              <p style={st.hint}>Erreur de chargement des matchs : {data.error}</p>
+            {!loading && (!data || data?.error) && (
+              <p style={st.hint}>Les matchs ne sont pas disponibles pour le moment. Réessaie dans quelques minutes.</p>
             )}
             {!loading && data && !data.error && competitions.length === 0 && (
               <p style={st.hint}>
