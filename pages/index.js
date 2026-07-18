@@ -5,11 +5,11 @@ import MatchCard from "../components/MatchCard";
 
 const UPCOMING_STATUSES = ["SCHEDULED", "TIMED"];
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED", "LIVE"];
-// Grâce au cache partagé côté serveur (lib/liveListCache.js), actualiser souvent ne
-// multiplie plus les appels en amont : on peut donc actualiser vite (5s) quand
-// l'onglet "Matchs en ligne" est réellement affiché, et plus doucement en
-// arrière-plan sinon (juste pour garder le badge de compteur à jour).
-const LIVE_REFRESH_ACTIVE_MS = 5000;
+// Grâce au cache partagé côté serveur (lib/liveListCache.js, actualisé toutes les
+// 2,5s), on peut interroger /api/live-matches très souvent depuis le client sans
+// multiplier les appels en amont : la plupart des requêtes retombent sur le cache,
+// et dès qu'un but est marqué, la requête suivante (au plus 2s après) le reflète.
+const LIVE_REFRESH_ACTIVE_MS = 2000;
 const LIVE_REFRESH_BACKGROUND_MS = 45000;
 
 function normalize(str) {
