@@ -22,6 +22,17 @@ function formatKickoff(iso) {
   });
 }
 
+function utcDay(iso) {
+  return iso.slice(0, 10);
+}
+
+function normalize(str) {
+  return (str || "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+}
+
 function matchHref(m, comp) {
   return {
     pathname: `/match/${m.id}`,
@@ -49,6 +60,7 @@ export default function Home() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("live"); // "live" | "upcoming"
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -72,7 +84,7 @@ export default function Home() {
     loadMatches();
   }, [loadMatches]);
 
-  // Rafraîchissement automatique des matchs en direct.
+  // Rafraîchissement automatique des matchs du jour.
   useEffect(() => {
     if (tab !== "live") return;
     const id = setInterval(() => loadMatches(true), LIVE_REFRESH_MS);
@@ -81,28 +93,42 @@ export default function Home() {
 
   const logout = async () => supabase.auth.signOut();
 
-  // Répartit chaque compétition en deux listes : en ligne / terminés vs à venir.
+  const today = useMemo(() => utcDay(new Date().toISOString()), []);
+  const searchQuery = search.trim();
+
+  // Répartit chaque compétition : matchs du jour vs matchs à venir dans la semaine.
   const competitions = useMemo(() => {
     if (!data?.competitions) return [];
     return data.competitions
       .map((comp) => {
-        const matches =
-          tab === "live"
-            ? comp.matches.filter((m) => LIVE_STATUSES.includes(m.status) || m.status === "FINISHED")
-            : comp.matches.filter((m) => UPCOMING_STATUSES.includes(m.status));
+        let matches;
+        if (searchQuery) {
+          const q = normalize(searchQuery);
+          matches = comp.matches.filter(
+            (m) =>
+              normalize(m.homeTeam.name).includes(q) ||
+              normalize(m.awayTeam.name).includes(q) ||
+              normalize(comp.name).includes(q)
+          );
+        } else if (tab === "live") {
+          matches = comp.matches.filter((m) => utcDay(m.utcDate) === today);
+        } else {
+          matches = comp.matches.filter(
+            (m) => UPCOMING_STATUSES.includes(m.status) && utcDay(m.utcDate) > today
+          );
+        }
         const sorted = [...matches].sort((a, b) => {
-          if (tab === "live") {
+          if (!searchQuery && tab === "live") {
             const aLive = LIVE_STATUSES.includes(a.status) ? 0 : 1;
             const bLive = LIVE_STATUSES.includes(b.status) ? 0 : 1;
             if (aLive !== bLive) return aLive - bLive;
-            return new Date(b.utcDate) - new Date(a.utcDate);
           }
           return new Date(a.utcDate) - new Date(b.utcDate);
         });
         return { ...comp, matches: sorted };
       })
       .filter((comp) => comp.matches.length > 0);
-  }, [data, tab]);
+  }, [data, tab, today, searchQuery]);
 
   const liveCount = useMemo(() => {
     if (!data?.competitions) return 0;
@@ -117,7 +143,6 @@ export default function Home() {
       <header style={st.header}>
         <h1 style={st.h1}>Matchs</h1>
         <div style={st.headerRight}>
-          <a href="/calculateur" style={st.smallBtn}>Calculateur</a>
           {sessionChecked &&
             (session ? (
               <button onClick={logout} style={st.smallBtn}>Déconnexion</button>
@@ -128,26 +153,46 @@ export default function Home() {
       </header>
 
       <main style={st.main}>
-        <div style={st.tabs}>
-          <button
-            style={{ ...st.tabBtn, ...(tab === "live" ? st.tabBtnActive : {}) }}
-            onClick={() => setTab("live")}
-          >
-            Matchs en ligne{liveCount > 0 ? ` (${liveCount})` : ""}
-          </button>
-          <button
-            style={{ ...st.tabBtn, ...(tab === "upcoming" ? st.tabBtnActive : {}) }}
-            onClick={() => setTab("upcoming")}
-          >
-            Matchs à venir
-          </button>
+        <div style={st.searchRow}>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Rechercher une équipe, une compétition…"
+            style={st.searchInput}
+          />
+          {search ? (
+            <button style={st.searchBtn} onClick={() => setSearch("")}>✕</button>
+          ) : (
+            <button style={st.searchBtn} onClick={() => {}}>Rechercher</button>
+          )}
         </div>
+
+        {!searchQuery && (
+          <div style={st.tabs}>
+            <button
+              style={{ ...st.tabBtn, ...(tab === "live" ? st.tabBtnActive : {}) }}
+              onClick={() => setTab("live")}
+            >
+              Matchs en ligne{liveCount > 0 ? ` (${liveCount})` : ""}
+            </button>
+            <button
+              style={{ ...st.tabBtn, ...(tab === "upcoming" ? st.tabBtnActive : {}) }}
+              onClick={() => setTab("upcoming")}
+            >
+              Matchs à venir
+            </button>
+          </div>
+        )}
 
         {loading && <p style={st.hint}>Chargement des matchs…</p>}
         {!loading && !data && <p style={st.hint}>Impossible de charger les matchs pour le moment.</p>}
         {!loading && data && competitions.length === 0 && (
           <p style={st.hint}>
-            {tab === "live" ? "Aucun match en ligne ou terminé pour le moment." : "Aucun match à venir pour le moment."}
+            {searchQuery
+              ? "Aucun match ne correspond à ta recherche."
+              : tab === "live"
+              ? "Aucun match aujourd'hui."
+              : "Aucun match à venir cette semaine."}
           </p>
         )}
 
@@ -201,6 +246,15 @@ const st = {
     borderRadius: 999, padding: "6px 12px", fontSize: 12, textDecoration: "none", cursor: "pointer",
   },
   main: { maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 },
+  searchRow: { display: "flex", gap: 8 },
+  searchInput: {
+    flex: 1, background: "#12291E", border: "1px solid #1E3D2C", color: "#E9F1EC",
+    borderRadius: 999, padding: "10px 16px", fontSize: 13,
+  },
+  searchBtn: {
+    background: "#39B577", border: "none", color: "#06121F", fontWeight: 700,
+    borderRadius: 999, padding: "0 18px", fontSize: 13, cursor: "pointer",
+  },
   tabs: { display: "flex", gap: 8 },
   tabBtn: {
     flex: 1, background: "#12291E", border: "1px solid #1E3D2C", color: "#7EA694",
