@@ -1,32 +1,30 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/router";
-
-const LIVE_STATUSES = ["IN_PLAY", "PAUSED", "LIVE"];
-
-function statusLabel(status) {
-  if (LIVE_STATUSES.includes(status)) return "EN DIRECT";
-  if (status === "FINISHED") return "Terminé";
-  return null;
-}
-
-function formatKickoff(iso) {
-  if (!iso) return "";
-  return new Date(iso).toLocaleString("fr-FR", {
-    weekday: "long",
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
+import MatchInfoBlock from "../../components/MatchInfoBlock";
 
 export default function MatchPage() {
   const router = useRouter();
   const {
-    competitionCode, competitionName, homeTeamId, awayTeamId,
+    competitionCode, competitionName, competitionEmblem, homeTeamId, awayTeamId,
     homeTeamName, awayTeamName, homeCrest, awayCrest,
-    status, utcDate, scoreHome, scoreAway,
+    status, minute, utcDate, scoreHome, scoreAway,
   } = router.query;
+
+  const matchForBlock = {
+    id: "current",
+    status: status || "",
+    minute: minute ? Number(minute) : null,
+    utcDate: utcDate || "",
+    competition: { code: competitionCode || "", name: competitionName || "", emblem: competitionEmblem || "" },
+    homeTeam: { name: homeTeamName || "", crest: homeCrest || "" },
+    awayTeam: { name: awayTeamName || "", crest: awayCrest || "" },
+    score: {
+      fullTime: {
+        home: scoreHome !== "" && scoreHome !== undefined ? scoreHome : null,
+        away: scoreAway !== "" && scoreAway !== undefined ? scoreAway : null,
+      },
+    },
+  };
 
   const [pronostic, setPronostic] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -62,8 +60,6 @@ export default function MatchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router.isReady]);
 
-  const live = statusLabel(status);
-
   return (
     <div style={st.page}>
       <header style={st.header}>
@@ -72,31 +68,7 @@ export default function MatchPage() {
 
       <main style={st.main}>
         <section style={st.panel}>
-          <p style={st.compName}>{competitionName}</p>
-          <div style={st.matchRow}>
-            <div style={st.teamBlock}>
-              {homeCrest ? (
-                <span style={st.crestWrap}>
-                  <img src={homeCrest} alt="" style={st.crest} onError={(e) => (e.target.parentElement.style.display = "none")} />
-                </span>
-              ) : null}
-              <span style={st.teamName}>{homeTeamName}</span>
-            </div>
-            <span style={st.score}>
-              {scoreHome !== "" && scoreHome !== undefined ? scoreHome : "–"} : {scoreAway !== "" && scoreAway !== undefined ? scoreAway : "–"}
-            </span>
-            <div style={{ ...st.teamBlock, ...st.teamBlockAway }}>
-              <span style={st.teamName}>{awayTeamName}</span>
-              {awayCrest ? (
-                <span style={st.crestWrap}>
-                  <img src={awayCrest} alt="" style={st.crest} onError={(e) => (e.target.parentElement.style.display = "none")} />
-                </span>
-              ) : null}
-            </div>
-          </div>
-          <p style={{ ...st.badge, ...(live === "EN DIRECT" ? st.badgeLive : {}) }}>
-            {live || formatKickoff(utcDate)}
-          </p>
+          <MatchInfoBlock m={matchForBlock} />
 
           <div style={st.divider} />
 
@@ -192,21 +164,6 @@ const st = {
   main: { maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 },
   panel: { background: "#12291E", border: "1px solid #1E3D2C", borderRadius: 14, padding: 18 },
   divider: { borderTop: "1px solid #1E3D2C", margin: "16px 0" },
-  compName: { fontSize: 11, color: "#7EA694", textTransform: "uppercase", margin: "0 0 10px" },
-  matchRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 15 },
-  teamBlock: { flex: 1, display: "flex", alignItems: "center", gap: 10, minWidth: 0 },
-  teamBlockAway: { justifyContent: "flex-end" },
-  crestWrap: {
-    width: 44, height: 44, borderRadius: "50%", flexShrink: 0,
-    display: "flex", alignItems: "center", justifyContent: "center",
-    background: "radial-gradient(circle, rgba(57,181,119,0.25) 0%, rgba(57,181,119,0) 70%)",
-    boxShadow: "0 0 12px rgba(57,181,119,0.35)",
-  },
-  crest: { width: 34, height: 34, objectFit: "contain", filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.4))" },
-  teamName: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 },
-  score: { fontWeight: 800, fontSize: 20, color: "#39B577", flexShrink: 0, padding: "0 10px" },
-  badge: { fontSize: 12, color: "#7EA694", margin: "12px 0 0" },
-  badgeLive: { color: "#D8685E", fontWeight: 700 },
   h2: { fontSize: 15, margin: "0 0 12px" },
   hint: { fontSize: 12.5, color: "#7EA694" },
   analyzeBtn: {
