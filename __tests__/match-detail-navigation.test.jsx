@@ -45,7 +45,7 @@ test("naviguer d'un match à un autre (même composant réutilisé par Next.js) 
     homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC",
   };
   const { rerender } = render(<MatchPage />);
-  await waitFor(() => expect(screen.getByText(/Arsenal FC/)).toBeInTheDocument());
+  await waitFor(() => expect(screen.getAllByText(/Arsenal FC/).length).toBeGreaterThan(0));
 
   // Simule une navigation client-side vers un AUTRE match : Next.js réutilise ce même
   // composant, seul router.query change (pas de remount).
@@ -55,6 +55,6 @@ test("naviguer d'un match à un autre (même composant réutilisé par Next.js) 
   };
   rerender(<MatchPage />);
 
-  await waitFor(() => expect(screen.getByText(/Liverpool FC/)).toBeInTheDocument());
+  await waitFor(() => expect(screen.getAllByText(/Liverpool FC/).length).toBeGreaterThan(0));
   expect(screen.queryByText(/Arsenal FC/)).not.toBeInTheDocument();
 });

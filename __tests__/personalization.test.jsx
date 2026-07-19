@@ -87,7 +87,7 @@ test("taper une recherche la sauvegarde sur le compte après une pause (pas à c
 
 test("épingler une compétition en favori appelle la sauvegarde et bascule l'icône", async () => {
   render(<Home />);
-  fireEvent.click(await screen.findByRole("button", { name: /compétitions/i }));
+  fireEvent.click(await screen.findByRole("button", { name: "Compétitions" }));
 
   const star = await screen.findByRole("button", { name: "Ajouter Ligue des Champions aux favoris" });
   fireEvent.click(star);

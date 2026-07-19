@@ -1,8 +1,16 @@
 /**
  * @jest-environment jsdom
  */
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import Home from "../pages/index";
+
+// Le bandeau "EN DIRECT" du match phare fait aussi partie du texte accessible de son
+// bouton, ce qui peut entrer en collision avec l'onglet "En direct" pour une requête
+// par rôle : on borne donc les clics sur les onglets à leur conteneur (identifié via
+// le bouton "Tous", sans ambiguïté possible).
+function tabsContainer() {
+  return screen.getByRole("button", { name: /^tous/i }).parentElement;
+}
 
 const pushMock = jest.fn();
 const replaceMock = jest.fn();
@@ -69,23 +77,6 @@ function weekMatchesFixture() {
   };
 }
 
-function competitionMatchesFixture(code) {
-  return {
-    code,
-    name: "Ligue des Champions",
-    matches: [
-      {
-        id: 99, status: "SCHEDULED", minute: null, utcDate: new Date(Date.now() + 2 * 24 * 3600000).toISOString(),
-        competition: { code, name: "Ligue des Champions", emblem: "" },
-        homeTeam: { id: 20, name: "Real Madrid", crest: "" },
-        awayTeam: { id: 21, name: "Bayern Munich", crest: "" },
-        score: { fullTime: { home: null, away: null } },
-        pronostic: { available: true, probabilities: { home: 40, draw: 30, away: 30 }, goals: { expectedHome: 1, expectedAway: 1, over25: 40, bttsYes: 40 }, correctScores: [], home: {}, away: {} },
-      },
-    ],
-  };
-}
-
 function mockFetchRouter() {
   global.fetch = jest.fn((url) => {
     if (url.startsWith("/api/live-matches")) {
@@ -93,10 +84,6 @@ function mockFetchRouter() {
     }
     if (url.startsWith("/api/matches")) {
       return Promise.resolve({ json: () => Promise.resolve(weekMatchesFixture()) });
-    }
-    if (url.startsWith("/api/competition-matches")) {
-      const code = new URL(url, "http://localhost").searchParams.get("code");
-      return Promise.resolve({ json: () => Promise.resolve(competitionMatchesFixture(code)) });
     }
     return Promise.reject(new Error(`URL inattendue dans le test : ${url}`));
   });
@@ -110,42 +97,47 @@ describe("Page Matchs — chaque bouton est fonctionnel", () => {
     mockSession = { user: { email: "test@example.com" } };
   });
 
-  test('les onglets "Matchs en ligne" / "Matchs à venir" changent réellement le contenu affiché', async () => {
+  test('l\'onglet "Tous" mélange direct et à venir ; "En direct" / "À venir" filtrent réellement la liste', async () => {
     render(<Home />);
-    await screen.findByText("Arsenal FC");
+    // "Tous" (par défaut) : les deux matchs sont dans la liste (2 boutons ANALYSER).
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /^analyser$/i })).toHaveLength(2));
+
+    fireEvent.click(within(tabsContainer()).getByRole("button", { name: /^en direct/i }));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /^analyser$/i })).toHaveLength(1));
+    // Le match phare (toujours affiché) peut aussi montrer Arsenal FC : on vérifie que
+    // Liverpool FC, lui, a bien disparu de la page (liste ET match phare).
     expect(screen.queryByText("Liverpool FC")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /matchs à venir/i }));
-
-    await screen.findByText("Liverpool FC");
-    expect(screen.queryByText("Arsenal FC")).not.toBeInTheDocument();
+    fireEvent.click(within(tabsContainer()).getByRole("button", { name: /^à venir/i }));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /^analyser$/i })).toHaveLength(1));
+    expect(screen.getByText("Liverpool FC")).toBeInTheDocument();
   });
 
-  test('l\'onglet "Compétitions" liste de vraies compétitions, et en choisir une charge ses vrais matchs', async () => {
+  test('l\'onglet "Compétitions" liste de vraies compétitions, et en choisir une navigue vers sa page dédiée', async () => {
     render(<Home />);
-    await screen.findByText("Arsenal FC");
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /^analyser$/i }).length).toBeGreaterThan(0));
 
-    fireEvent.click(screen.getByRole("button", { name: /compétitions/i }));
-    const champions = await screen.findByRole("button", { name: /^ligue des champions/i });
+    fireEvent.click(within(tabsContainer()).getByRole("button", { name: /^compétitions/i }));
+    const champions = await waitFor(() => {
+      const buttons = screen.getAllByRole("button", { name: /^ligue des champions/i });
+      expect(buttons.length).toBeGreaterThan(0);
+      return buttons[0];
+    });
     fireEvent.click(champions);
 
-    await screen.findByText("Real Madrid");
-    expect(screen.getByText("Bayern Munich")).toBeInTheDocument();
-    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("/api/competition-matches?code=CL"));
-
-    fireEvent.click(screen.getByRole("button", { name: "← Compétitions" }));
-    expect(await screen.findByRole("button", { name: /^ligue des champions/i })).toBeInTheDocument();
+    expect(pushMock).toHaveBeenCalledWith("/competition/CL");
   });
 
   test("la recherche filtre réellement les matchs, sans bouton factice inactif", async () => {
     render(<Home />);
-    await screen.findByText("Arsenal FC");
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /^analyser$/i })).toHaveLength(2));
 
     const input = screen.getByPlaceholderText(/rechercher une équipe/i);
     expect(screen.queryByRole("button", { name: /^rechercher$/i })).not.toBeInTheDocument();
 
-    fireEvent.change(input, { target: { value: "chelsea" } });
-    await screen.findByText("Chelsea FC");
+    fireEvent.change(input, { target: { value: "liverpool" } });
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /^analyser$/i })).toHaveLength(1));
+    expect(screen.getByText("Liverpool FC")).toBeInTheDocument();
 
     const clearBtn = screen.getByRole("button", { name: "✕" });
     fireEvent.click(clearBtn);
@@ -154,7 +146,7 @@ describe("Page Matchs — chaque bouton est fonctionnel", () => {
 
   test("un compte connecté voit son email et un bouton de déconnexion (l'accès n'est plus possible sans compte)", async () => {
     render(<Home />);
-    await screen.findByText("Arsenal FC");
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /^analyser$/i }).length).toBeGreaterThan(0));
     expect(screen.getByText("test@example.com")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /déconnexion/i })).toBeInTheDocument();
   });
@@ -170,17 +162,18 @@ describe("Page Matchs — chaque bouton est fonctionnel", () => {
 
   test('le bouton "ANALYSER" de chaque carte mène vers la page des pronostics de ce match', async () => {
     render(<Home />);
-    await screen.findByText("Arsenal FC");
-
-    const analyzeButtons = screen.getAllByRole("button", { name: /^analyser$/i });
-    expect(analyzeButtons.length).toBeGreaterThan(0);
+    const analyzeButtons = await waitFor(() => {
+      const btns = screen.getAllByRole("button", { name: /^analyser$/i });
+      expect(btns.length).toBeGreaterThan(0);
+      return btns;
+    });
     fireEvent.click(analyzeButtons[0]);
 
     expect(pushMock).toHaveBeenCalledTimes(1);
     expect(pushMock.mock.calls[0][0].pathname).toBe("/match/1");
   });
 
-  test('l\'onglet "Matchs en ligne" affiche un message clair quand aucun match n\'est en direct', async () => {
+  test('l\'onglet "En direct" affiche un message clair quand aucun match n\'est en direct', async () => {
     global.fetch = jest.fn((url) => {
       if (url.startsWith("/api/live-matches")) {
         return Promise.resolve({ json: () => Promise.resolve({ matches: [] }) });
@@ -192,6 +185,23 @@ describe("Page Matchs — chaque bouton est fonctionnel", () => {
     });
 
     render(<Home />);
+    const enDirect = await screen.findByRole("button", { name: /^en direct/i });
+    fireEvent.click(enDirect);
     expect(await screen.findByText("Aucun match en direct actuellement.")).toBeInTheDocument();
+  });
+
+  test('le filtre région "Europe" regroupe toutes les ligues européennes (pas seulement les compétitions dont l\'aire vaut littéralement "Europe")', async () => {
+    render(<Home />);
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /^analyser$/i }).length).toBeGreaterThan(0));
+
+    fireEvent.click(within(tabsContainer()).getByRole("button", { name: /^compétitions/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Europe", exact: true }));
+
+    const list = screen.getByText("Choisis une compétition").closest("section");
+    // La Premier League a pour aire "Angleterre", pas "Europe" — elle doit quand même
+    // apparaître dans le filtre "Europe".
+    expect(within(list).getByText("Premier League")).toBeInTheDocument();
+    // La Coupe du Monde ("Monde") ne doit pas apparaître.
+    expect(within(list).queryByText("Coupe du Monde")).not.toBeInTheDocument();
   });
 });

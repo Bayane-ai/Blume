@@ -1,7 +1,7 @@
 import { useRouter } from "next/router";
 import MatchInfoBlock from "./MatchInfoBlock";
 
-function matchHref(m, comp) {
+export function matchHref(m, comp) {
   return {
     pathname: `/match/${m.id}`,
     query: {

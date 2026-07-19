@@ -4,7 +4,7 @@
  * Un incident passager (quota API, réseau) pendant un rafraîchissement automatique en
  * arrière-plan ne doit jamais faire disparaître des matchs déjà affichés à l'écran.
  */
-import { render, screen, act } from "@testing-library/react";
+import { render, screen, act, waitFor } from "@testing-library/react";
 import Home from "../pages/index";
 
 const pushMock = jest.fn();
@@ -63,7 +63,7 @@ test("un incident passager pendant l'actualisation silencieuse (direct) ne fait 
   });
 
   render(<Home />);
-  await screen.findByText("Arsenal FC");
+  await waitFor(() => expect(screen.getAllByText("Arsenal FC").length).toBeGreaterThan(0));
 
   // Laisse le temps à au moins un cycle d'actualisation silencieuse (toutes les 2s) de
   // se déclencher et d'échouer.
@@ -72,6 +72,6 @@ test("un incident passager pendant l'actualisation silencieuse (direct) ne fait 
   });
 
   expect(liveCallCount).toBeGreaterThan(1);
-  expect(screen.getByText("Arsenal FC")).toBeInTheDocument();
+  expect(screen.getAllByText("Arsenal FC").length).toBeGreaterThan(0);
   expect(screen.queryByText(/ne sont pas disponibles/i)).not.toBeInTheDocument();
 }, 10000);

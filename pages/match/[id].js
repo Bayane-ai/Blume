@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import MatchInfoBlock from "../../components/MatchInfoBlock";
+import FormBadges from "../../components/FormBadges";
+import PronosticResults from "../../components/PronosticResults";
 import { useRequireAuth } from "../../lib/useRequireAuth";
 
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
@@ -9,6 +11,16 @@ const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
 // entre tous les visiteurs suivant ce match. Dès qu'un but est marqué, la requête
 // suivante (au plus 2s après) le reflète.
 const LIVE_REFRESH_MS = 2000;
+
+function formatKickoff(iso) {
+  if (!iso) return null;
+  const date = new Date(iso);
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+  const time = date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  if (isToday) return `Aujourd'hui - ${time}`;
+  return date.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }) + ` - ${time}`;
+}
 
 export default function MatchPage() {
   const { sessionChecked, authorized } = useRequireAuth();
@@ -109,15 +121,65 @@ export default function MatchPage() {
   }
   if (!authorized) return null;
 
+  const kickoff = formatKickoff(utcDate);
+  const venue = pronostic?.venue;
+  const referee = pronostic?.referee;
+
   return (
     <div style={st.page}>
       <header style={st.header}>
-        <a href="/" style={st.smallBtn}>← Matchs</a>
+        <a href="/" style={st.smallBtn}>← Retour au dashboard</a>
       </header>
 
       <main style={st.main}>
         <section style={st.panel}>
           <MatchInfoBlock m={matchForBlock} />
+
+          {pronostic?.home && pronostic?.away && (
+            <div style={st.formRow}>
+              <div style={st.formCell}>
+                <FormBadges form={pronostic.home.form} />
+              </div>
+              <div style={st.formCell}>
+                <FormBadges form={pronostic.away.form} />
+              </div>
+            </div>
+          )}
+
+          {homeTeamName && awayTeamName && (
+            <p style={st.descText}>
+              {homeTeamName} affronte {awayTeamName}
+              {competitionName ? ` en ${competitionName}` : ""}. Retrouve ci-dessous l'analyse statistique :
+              probabilités 1X2, buts/corners/tirs probables et score exact estimé.
+            </p>
+          )}
+
+          <div style={st.infoGrid}>
+            <div style={st.infoCell}>
+              <span style={st.infoLabel}>Coup d'envoi</span>
+              <span style={st.infoValue}>{kickoff || "Indisponible"}</span>
+            </div>
+            <div style={st.infoCell}>
+              <span style={st.infoLabel}>Stade</span>
+              <span style={st.infoValue}>{venue || "Indisponible"}</span>
+            </div>
+            <div style={st.infoCell}>
+              <span style={st.infoLabel}>Arbitre</span>
+              <span style={st.infoValue}>{referee || "Indisponible"}</span>
+            </div>
+          </div>
+
+          {(homeCrest || awayCrest) && (
+            <div style={st.vsBlock}>
+              <span style={st.vsCrestWrap}>
+                {homeCrest && <img src={homeCrest} alt="" style={st.vsCrest} onError={(e) => (e.target.style.display = "none")} />}
+              </span>
+              <span style={st.vsLabel}>VS</span>
+              <span style={st.vsCrestWrap}>
+                {awayCrest && <img src={awayCrest} alt="" style={st.vsCrest} onError={(e) => (e.target.style.display = "none")} />}
+              </span>
+            </div>
+          )}
 
           <div style={st.divider} />
 
@@ -130,90 +192,7 @@ export default function MatchPage() {
             {loading ? "Analyse en cours…" : hasRequested ? "Actualiser les pronostics" : "Analyser ce match"}
           </button>
 
-          {!loading && pronostic?.error && (
-            <p style={{ ...st.hint, marginTop: 14 }}>{pronostic.error}</p>
-          )}
-
-          {!loading && !pronostic?.error && pronostic?.available === false && (
-            <p style={{ ...st.hint, marginTop: 14 }}>{pronostic.message || "Pronostics indisponibles pour ce match."}</p>
-          )}
-
-          {!loading && hasRequested && !pronostic?.error && pronostic?.available !== false &&
-            !(pronostic?.available && pronostic?.probabilities && pronostic?.goals) && (
-              <p style={{ ...st.hint, marginTop: 14 }}>Pronostics indisponibles pour ce match pour le moment.</p>
-          )}
-
-          {!loading && !pronostic?.error && pronostic?.available && pronostic.probabilities && pronostic.goals && (
-            <>
-              <p style={st.sectionLabel}>% de victoire</p>
-              <div style={st.probRow}>
-                <div style={st.probCell}>
-                  <span style={st.probLabel}>Domicile</span>
-                  <span style={st.probValue}>{pronostic.probabilities.home ?? "–"}%</span>
-                </div>
-                <div style={st.probCell}>
-                  <span style={st.probLabel}>Nul</span>
-                  <span style={st.probValue}>{pronostic.probabilities.draw ?? "–"}%</span>
-                </div>
-                <div style={st.probCell}>
-                  <span style={st.probLabel}>Extérieur</span>
-                  <span style={st.probValue}>{pronostic.probabilities.away ?? "–"}%</span>
-                </div>
-              </div>
-
-              <p style={st.sectionLabel}>Statistiques probables{pronostic.live ? " (estimation fin de match)" : ""} — total du match</p>
-              <div style={st.scoresRow}>
-                <div style={st.scoreCell}>
-                  <span style={st.probLabel}>Buts</span>
-                  <span style={st.probValue}>{pronostic.goals.expectedTotal ?? "–"}</span>
-                </div>
-                {pronostic.extraStats && (
-                  <>
-                    <div style={st.scoreCell}>
-                      <span style={st.probLabel}>Corners</span>
-                      <span style={st.probValue}>{pronostic.extraStats.corners.total}</span>
-                    </div>
-                    <div style={st.scoreCell}>
-                      <span style={st.probLabel}>Tirs/occasions</span>
-                      <span style={st.probValue}>{pronostic.extraStats.shots.total}</span>
-                    </div>
-                    <div style={st.scoreCell}>
-                      <span style={st.probLabel}>Cartons</span>
-                      <span style={st.probValue}>{pronostic.extraStats.cards.total}</span>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              <p style={st.sectionLabel}>Autres probabilités</p>
-              <div style={st.probRow}>
-                <div style={st.probCell}>
-                  <span style={st.probLabel}>+2.5 buts</span>
-                  <span style={st.probValue}>{pronostic.goals.over25 ?? "–"}%</span>
-                </div>
-                <div style={st.probCell}>
-                  <span style={st.probLabel}>Les 2 marquent</span>
-                  <span style={st.probValue}>{pronostic.goals.bttsYes ?? "–"}%</span>
-                </div>
-              </div>
-
-              {pronostic.home && pronostic.away && (
-                <p style={st.hint}>
-                  {pronostic.home.name} :{" "}
-                  {pronostic.home.position != null
-                    ? `${pronostic.home.position}ᵉ (${pronostic.home.points} pts)`
-                    : pronostic.home.source || "estimation"}
-                  {" · "}
-                  {pronostic.away.name} :{" "}
-                  {pronostic.away.position != null
-                    ? `${pronostic.away.position}ᵉ (${pronostic.away.points} pts)`
-                    : pronostic.away.source || "estimation"}
-                </p>
-              )}
-              {pronostic.note && <p style={st.noteText}>{pronostic.note}</p>}
-              {pronostic.statsNote && <p style={st.noteText}>{pronostic.statsNote}</p>}
-            </>
-          )}
+          {!loading && hasRequested && <PronosticResults pronostic={pronostic} loading={loading} />}
         </section>
       </main>
     </div>
@@ -229,6 +208,17 @@ const st = {
   },
   main: { maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 },
   panel: { background: "#12291E", border: "1px solid #1E3D2C", borderRadius: 14, padding: 18 },
+  formRow: { display: "flex", justifyContent: "space-between", marginTop: 12 },
+  formCell: { display: "flex" },
+  descText: { fontSize: 12, color: "#7EA694", margin: "14px 0 0", lineHeight: 1.5 },
+  infoGrid: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 },
+  infoCell: { flex: "1 1 calc(33.333% - 6px)", minWidth: 100, background: "#0B1F16", borderRadius: 8, padding: "8px 10px" },
+  infoLabel: { display: "block", fontSize: 9.5, color: "#7EA694", textTransform: "uppercase" },
+  infoValue: { fontSize: 12.5, fontWeight: 600 },
+  vsBlock: { display: "flex", alignItems: "center", justifyContent: "center", gap: 16, margin: "18px 0 4px" },
+  vsCrestWrap: { width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center" },
+  vsCrest: { width: 40, height: 40, objectFit: "contain" },
+  vsLabel: { fontSize: 12, fontWeight: 800, color: "#39B577", background: "#0B1F16", borderRadius: 999, padding: "4px 10px" },
   divider: { borderTop: "1px solid #1E3D2C", margin: "16px 0" },
   h2: { fontSize: 15, margin: "0 0 4px" },
   liveHint: { fontSize: 11, color: "#D8685E", margin: "0 0 12px" },
@@ -238,12 +228,4 @@ const st = {
     fontWeight: 800, fontSize: 15, borderRadius: 999, padding: "14px 0", cursor: "pointer",
     boxShadow: "0 0 18px rgba(57,181,119,0.45)",
   },
-  sectionLabel: { fontSize: 10, color: "#5C8A73", textTransform: "uppercase", margin: "14px 0 6px", letterSpacing: 0.4 },
-  probRow: { display: "flex", gap: 8, marginBottom: 4 },
-  probCell: { flex: 1, textAlign: "center", background: "#0B1F16", borderRadius: 8, padding: "10px 4px" },
-  scoresRow: { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 4 },
-  scoreCell: { flex: "1 1 calc(33.333% - 6px)", minWidth: 72, textAlign: "center", background: "#0B1F16", borderRadius: 8, padding: "10px 4px" },
-  probLabel: { display: "block", fontSize: 9.5, color: "#7EA694", textTransform: "uppercase" },
-  probValue: { fontSize: 15, fontWeight: 700 },
-  noteText: { fontSize: 10.5, color: "#5C8A73", fontStyle: "italic", margin: "8px 0 0" },
 };

@@ -68,6 +68,10 @@ export default async function handler(req, res) {
       result.matchStatus = liveMatch.status;
       result.matchMinute = liveMatch.minute;
       result.matchScore = liveMatch.score?.fullTime || null;
+      // Non fournis par l'API pour tous les matchs/compétitions : null quand absent,
+      // affiché comme "Indisponible" côté client plutôt que masqué silencieusement.
+      result.venue = liveMatch.venue || null;
+      result.referee = liveMatch.referees?.[0]?.name || null;
     }
 
     // Même raison que dans live-matches.js : sous charge, Vercel peut répartir les
