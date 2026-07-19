@@ -56,17 +56,6 @@ async function installApiMocks(page) {
       return route.fulfill({ json: result });
     }
 
-    if (path === "/api/compare") {
-      const homeTeamName = params.get("homeTeamName") || "Équipe A";
-      const awayTeamName = params.get("awayTeamName") || "Équipe B";
-      return route.fulfill({
-        json: pronostic({
-          home: { name: homeTeamName, position: 3, points: 55, form: "WWDLW", source: "classement" },
-          away: { name: awayTeamName, position: 7, points: 44, form: "LWDDL", source: "classement" },
-        }),
-      });
-    }
-
     return route.fulfill({ status: 404, json: { error: `Route non simulée : ${path}` } });
   });
 }

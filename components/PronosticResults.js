@@ -1,7 +1,6 @@
 // Affiche un résultat de pronostic (probabilités, buts/corners/tirs/cartons,
-// classement des deux équipes). Partagé entre la page d'un match réel
-// (pages/match/[id].js) et la page d'analyse libre (pages/analyse.js) pour ne pas
-// dupliquer ce bloc et garder un comportement identique partout.
+// classement des deux équipes), utilisé par la page d'un match réel
+// (pages/match/[id].js).
 export default function PronosticResults({ pronostic, loading }) {
   if (loading) return null;
 

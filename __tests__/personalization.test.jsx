@@ -10,7 +10,7 @@ import { render, screen, fireEvent, act } from "@testing-library/react";
 import Home from "../pages/index";
 
 jest.mock("next/router", () => ({
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({ pathname: "/", push: jest.fn(), replace: jest.fn() }),
 }));
 
 jest.mock("../lib/supabaseClient", () => ({
@@ -85,13 +85,7 @@ test("taper une recherche la sauvegarde sur le compte après une pause (pas à c
   expect(saveSearch).toHaveBeenCalledWith("user-1", "liverpool");
 });
 
-test("épingler une compétition en favori appelle la sauvegarde et bascule l'icône", async () => {
-  render(<Home />);
-  fireEvent.click(await screen.findByRole("button", { name: "Compétitions" }));
-
-  const star = await screen.findByRole("button", { name: "Ajouter Ligue des Champions aux favoris" });
-  fireEvent.click(star);
-
-  expect(addFavoriteCompetition).toHaveBeenCalledWith("user-1", "CL", "Ligue des Champions");
-  expect(await screen.findByRole("button", { name: "Retirer Ligue des Champions des favoris" })).toBeInTheDocument();
-});
+// Le bouton "Compétitions" (et donc les favoris de compétition depuis l'accueil) a
+// été retiré de la navigation par PROMPT 2 — voir lib/personalization.js pour les
+// fonctions elles-mêmes, toujours disponibles pour l'étape 6 du plan (retour des
+// boutons de compétitions).

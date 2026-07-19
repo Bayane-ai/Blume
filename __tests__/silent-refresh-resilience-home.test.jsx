@@ -9,7 +9,7 @@ import Home from "../pages/index";
 
 const pushMock = jest.fn();
 jest.mock("next/router", () => ({
-  useRouter: () => ({ push: pushMock, replace: jest.fn() }),
+  useRouter: () => ({ pathname: "/", push: pushMock, replace: jest.fn() }),
 }));
 
 jest.mock("../lib/supabaseClient", () => ({

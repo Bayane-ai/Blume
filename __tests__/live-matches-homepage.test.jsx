@@ -6,11 +6,11 @@
  * vrai score exact, sans aucun match fictif ni plafond artificiel, et se rafraîchir
  * automatiquement sans rechargement de page.
  */
-import { render, screen, waitFor, act, within, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, act, within } from "@testing-library/react";
 import Home from "../pages/index";
 
 jest.mock("next/router", () => ({
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({ pathname: "/", push: jest.fn(), replace: jest.fn() }),
 }));
 
 jest.mock("../lib/supabaseClient", () => ({
@@ -113,9 +113,6 @@ test("le score affiché est exactement le vrai score renvoyé par l'API pour cha
 test("aucun match fictif : la page n'affiche que ce que l'API a réellement renvoyé, jamais plus", async () => {
   mockFetchWith([]);
   render(<Home />);
-
-  const tabs = await screen.findByTestId("home-tabs");
-  fireEvent.click(within(tabs).getByRole("button", { name: /^en direct/i }));
 
   await waitFor(() => expect(screen.getByText("Aucun match en direct actuellement.")).toBeInTheDocument());
   expect(screen.queryAllByRole("button", { name: /^analyser$/i })).toHaveLength(0);
