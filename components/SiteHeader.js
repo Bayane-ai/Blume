@@ -2,8 +2,9 @@ import { useRouter } from "next/router";
 import { supabase } from "../lib/supabaseClient";
 
 // PROMPT 2 du plan : navigation du site réduite à SEULEMENT deux boutons, partagés
-// par les deux pages du site — aucun autre lien de navigation (l'ancienne
-// Compétitions/Analyse IA sera réintégrée proprement à l'étape 6 du plan).
+// par les deux pages du site — aucun autre lien de navigation (le filtrage par
+// compétition/journée est réintégré directement sur ces deux pages à l'étape 6,
+// voir components/FilterCarousel.js, sans ajouter de 3e bouton ici).
 // Liens en <a> classiques (comme le lien "Se connecter" déjà existant) plutôt que
 // next/link : chaque page recharge ses propres données réelles à l'arrivée, et ça
 // évite de dépendre du RouterContext de next/link dans les tests.
