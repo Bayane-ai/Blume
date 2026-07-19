@@ -2,6 +2,33 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../lib/supabaseClient";
 
+// Traduit les erreurs Supabase Auth (souvent en anglais, parfois peu claires) en
+// messages compréhensibles. Le cas le plus trompeur : un compte fraîchement créé
+// dont l'email n'est pas encore confirmé ne peut pas se connecter — Supabase répond
+// alors une erreur qui peut donner l'impression, à tort, que c'est le mot de passe
+// qui est refusé.
+function friendlyAuthError(error) {
+  const code = error?.code || "";
+  const msg = (error?.message || "").toLowerCase();
+
+  if (code === "email_not_confirmed" || msg.includes("email not confirmed")) {
+    return "Ton adresse email n'est pas encore confirmée. Vérifie ta boîte mail (et les spams) et clique sur le lien reçu avant de te connecter.";
+  }
+  if (code === "invalid_credentials" || msg.includes("invalid login credentials")) {
+    return "Email ou mot de passe incorrect.";
+  }
+  if (code === "user_already_exists" || msg.includes("already registered")) {
+    return "Un compte existe déjà avec cet email. Connecte-toi plutôt.";
+  }
+  if (code === "weak_password" || msg.includes("password should be at least")) {
+    return "Le mot de passe doit contenir au moins 6 caractères.";
+  }
+  if (code === "over_email_send_rate_limit" || msg.includes("rate limit")) {
+    return "Trop de tentatives en peu de temps. Réessaie dans quelques minutes.";
+  }
+  return error?.message || "Une erreur est survenue.";
+}
+
 export default function Login() {
   const router = useRouter();
   const [mode, setMode] = useState("signin"); // "signin" | "signup"
@@ -10,6 +37,7 @@ export default function Login() {
   const [error, setError] = useState(null);
   const [info, setInfo] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [showResend, setShowResend] = useState(false);
 
   // Déjà connecté ? Inutile de repasser par cette page : direction l'application.
   useEffect(() => {
@@ -22,6 +50,7 @@ export default function Login() {
     e.preventDefault();
     setError(null);
     setInfo(null);
+    setShowResend(false);
     setLoading(true);
     try {
       if (mode === "signin") {
@@ -34,10 +63,21 @@ export default function Login() {
         setInfo("Compte créé. Vérifie ta boîte mail pour confirmer, puis reviens te connecter.");
       }
     } catch (err) {
-      setError(err.message);
+      setError(friendlyAuthError(err));
+      if (err?.code === "email_not_confirmed" || (err?.message || "").toLowerCase().includes("email not confirmed")) {
+        setShowResend(true);
+      }
     } finally {
       setLoading(false);
     }
+  };
+
+  const resendConfirmation = async () => {
+    setError(null);
+    setInfo(null);
+    const { error } = await supabase.auth.resend({ type: "signup", email });
+    if (error) setError(friendlyAuthError(error));
+    else setInfo("Email de confirmation renvoyé. Vérifie ta boîte mail (et les spams).");
   };
 
   return (
@@ -62,6 +102,11 @@ export default function Login() {
           style={styles.input}
         />
         {error && <p style={styles.error}>{error}</p>}
+        {showResend && (
+          <button type="button" onClick={resendConfirmation} style={styles.switchBtn}>
+            Renvoyer l'email de confirmation
+          </button>
+        )}
         {info && <p style={styles.info}>{info}</p>}
         <button type="submit" disabled={loading} style={styles.btn}>
           {loading ? "..." : mode === "signin" ? "Se connecter" : "Créer le compte"}

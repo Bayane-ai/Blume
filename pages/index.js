@@ -2,6 +2,10 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useRequireAuth } from "../lib/useRequireAuth";
 import { COMPETITIONS } from "../lib/competitions";
+import {
+  getRecentSearches, saveSearch, getFavoriteCompetitionCodes,
+  addFavoriteCompetition, removeFavoriteCompetition,
+} from "../lib/personalization";
 import MatchCard from "../components/MatchCard";
 
 const UPCOMING_STATUSES = ["SCHEDULED", "TIMED"];
@@ -29,9 +33,12 @@ function normalize(str) {
 
 export default function Home() {
   const { session, sessionChecked, authorized } = useRequireAuth();
+  const userId = session?.user?.id;
 
   const [tab, setTab] = useState("live"); // "live" | "upcoming" | "competitions"
   const [search, setSearch] = useState("");
+  const [recentSearches, setRecentSearches] = useState([]);
+  const [favoriteCodes, setFavoriteCodes] = useState(new Set());
 
   const [liveData, setLiveData] = useState(null);
   const [liveLoading, setLiveLoading] = useState(true);
@@ -113,9 +120,46 @@ export default function Home() {
     return () => clearInterval(id);
   }, [authorized, tab, loadWeekMatches]);
 
+  // Historique de recherche et favoris : personnels à chaque compte (Supabase, avec
+  // RLS — voir supabase/migrations/0001_personalization.sql), jamais partagés entre
+  // deux comptes différents.
+  useEffect(() => {
+    if (!authorized || !userId) return;
+    getRecentSearches(userId).then(setRecentSearches);
+    getFavoriteCompetitionCodes(userId).then(setFavoriteCodes);
+  }, [authorized, userId]);
+
   const logout = async () => supabase.auth.signOut();
 
   const searchQuery = search.trim();
+
+  // Sauvegarde la recherche sur le compte une fois que la personne s'arrête de
+  // taper (pas à chaque frappe), pour la retrouver comme suggestion la prochaine fois.
+  useEffect(() => {
+    if (!authorized || !userId || !searchQuery) return;
+    const id = setTimeout(() => {
+      saveSearch(userId, searchQuery);
+      setRecentSearches((prev) => {
+        const withoutDup = prev.filter((q) => q.toLowerCase() !== searchQuery.toLowerCase());
+        return [searchQuery, ...withoutDup].slice(0, 8);
+      });
+    }, 800);
+    return () => clearTimeout(id);
+  }, [authorized, userId, searchQuery]);
+
+  const toggleFavoriteCompetition = (code, label) => {
+    setFavoriteCodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) {
+        next.delete(code);
+        removeFavoriteCompetition(userId, code);
+      } else {
+        next.add(code);
+        addFavoriteCompetition(userId, code, label);
+      }
+      return next;
+    });
+  };
 
   // Matchs en direct (statut LIVE/IN_PLAY/PAUSED), sans filtre par compétition ou pays :
   // exactement ce que l'API renvoie, jamais de matchs inventés pour compléter la liste.
@@ -165,9 +209,13 @@ export default function Home() {
 
   const filteredCompetitionList = useMemo(() => {
     const q = normalize(competitionQuery.trim());
-    if (!q) return COMPETITIONS;
-    return COMPETITIONS.filter((c) => normalize(c.name).includes(q) || normalize(c.area).includes(q));
-  }, [competitionQuery]);
+    const base = q ? COMPETITIONS.filter((c) => normalize(c.name).includes(q) || normalize(c.area).includes(q)) : COMPETITIONS;
+    return [...base].sort((a, b) => {
+      const aFav = favoriteCodes.has(a.code) ? 0 : 1;
+      const bFav = favoriteCodes.has(b.code) ? 0 : 1;
+      return aFav - bFav;
+    });
+  }, [competitionQuery, favoriteCodes]);
 
   const loadCompetitionMatches = useCallback((code, silent = false) => {
     if (!silent) setCompLoading(true);
@@ -288,6 +336,16 @@ export default function Home() {
               )}
             </div>
 
+            {!search && recentSearches.length > 0 && (
+              <div style={st.chipsRow}>
+                {recentSearches.map((q) => (
+                  <button key={q} type="button" style={st.chip} onClick={() => setSearch(q)}>
+                    {q}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {loading && <p style={st.hint}>Chargement des matchs…</p>}
             {!loading && (!data || data?.error) && (
               <p style={st.hint}>Les matchs ne sont pas disponibles pour le moment. Réessaie dans quelques minutes.</p>
@@ -325,10 +383,20 @@ export default function Home() {
               <h2 style={st.h2}>Choisis une compétition</h2>
               {filteredCompetitionList.length === 0 && <p style={st.hint}>Aucune compétition trouvée.</p>}
               {filteredCompetitionList.map((c) => (
-                <button key={c.code} style={st.compRow} onClick={() => selectCompetition(c.code)}>
-                  <span style={st.compRowName}>{c.name}</span>
-                  <span style={st.compRowArea}>{c.area}</span>
-                </button>
+                <div key={c.code} style={st.compRowWrap}>
+                  <button
+                    type="button"
+                    style={st.favStar}
+                    onClick={() => toggleFavoriteCompetition(c.code, c.name)}
+                    aria-label={favoriteCodes.has(c.code) ? `Retirer ${c.name} des favoris` : `Ajouter ${c.name} aux favoris`}
+                  >
+                    {favoriteCodes.has(c.code) ? "★" : "☆"}
+                  </button>
+                  <button type="button" style={st.compRow} onClick={() => selectCompetition(c.code)}>
+                    <span style={st.compRowName}>{c.name}</span>
+                    <span style={st.compRowArea}>{c.area}</span>
+                  </button>
+                </div>
               ))}
             </section>
           </>
@@ -398,10 +466,20 @@ const st = {
   panel: { background: "#12291E", border: "1px solid #1E3D2C", borderRadius: 14, padding: 16 },
   h2: { fontSize: 14, margin: "0 0 10px", color: "#7EA694", textTransform: "uppercase", letterSpacing: 0.4 },
   hint: { fontSize: 12.5, color: "#7EA694" },
+  chipsRow: { display: "flex", flexWrap: "wrap", gap: 6 },
+  chip: {
+    background: "#12291E", border: "1px solid #1E3D2C", color: "#7EA694",
+    borderRadius: 999, padding: "6px 12px", fontSize: 12, cursor: "pointer",
+  },
+  compRowWrap: { display: "flex", alignItems: "center", borderTop: "1px solid #1E3D2C" },
   compRow: {
-    display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%",
-    background: "transparent", border: "none", borderTop: "1px solid #1E3D2C", padding: "12px 0",
+    flex: 1, display: "flex", justifyContent: "space-between", alignItems: "center",
+    background: "transparent", border: "none", padding: "12px 0",
     color: "#E9F1EC", fontSize: 13.5, cursor: "pointer", textAlign: "left",
+  },
+  favStar: {
+    background: "transparent", border: "none", color: "#F5C518", fontSize: 18,
+    cursor: "pointer", padding: "12px 8px 12px 0", lineHeight: 1,
   },
   compRowName: { fontWeight: 600 },
   compRowArea: { fontSize: 11.5, color: "#7EA694" },

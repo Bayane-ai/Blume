@@ -126,7 +126,7 @@ describe("Page Matchs — chaque bouton est fonctionnel", () => {
     await screen.findByText("Arsenal FC");
 
     fireEvent.click(screen.getByRole("button", { name: /compétitions/i }));
-    const champions = await screen.findByRole("button", { name: /ligue des champions/i });
+    const champions = await screen.findByRole("button", { name: /^ligue des champions/i });
     fireEvent.click(champions);
 
     await screen.findByText("Real Madrid");
@@ -134,7 +134,7 @@ describe("Page Matchs — chaque bouton est fonctionnel", () => {
     expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("/api/competition-matches?code=CL"));
 
     fireEvent.click(screen.getByRole("button", { name: "← Compétitions" }));
-    expect(await screen.findByRole("button", { name: /ligue des champions/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^ligue des champions/i })).toBeInTheDocument();
   });
 
   test("la recherche filtre réellement les matchs, sans bouton factice inactif", async () => {
