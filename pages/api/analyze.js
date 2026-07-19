@@ -81,6 +81,13 @@ export default async function handler(req, res) {
       result.referee = liveMatch.referees?.[0]?.name || null;
     }
 
+    // La ressource "match" de football-data.org (plan utilisé ici) ne fournit pas de
+    // fil d'événements minute par minute (buts/cartons/remplacements) — seulement le
+    // score et l'état du match. `events` reste donc toujours null : jamais de donnée
+    // inventée pour remplir la timeline (components/MatchTimeline.js), qui affiche un
+    // message clair à la place plutôt qu'une section vide ou une erreur.
+    result.events = null;
+
     // Même raison que dans live-matches.js : sous charge, Vercel peut répartir les
     // requêtes sur plusieurs instances qui ne partagent pas leur cache mémoire
     // (liveMatchCache.js). Cet en-tête fait que le réseau Vercel mutualise réellement

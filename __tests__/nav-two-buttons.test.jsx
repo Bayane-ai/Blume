@@ -98,9 +98,12 @@ test('exactement deux boutons de navigation existent : "Matchs en ligne" et "Mat
   expect(links[0]).toHaveAttribute("href", "/");
   expect(links[1]).toHaveAttribute("href", "/a-venir");
 
-  // Aucun autre bouton de navigation (ancien "Tous", "Compétitions", "Analyse IA").
+  // Aucun autre bouton de NAVIGATION (ancien onglet "Tous", ancien onglet
+  // "Compétitions" isolé, "Analyse IA") — le bouton "Toutes les compétitions" du
+  // carrousel de filtres (PROMPT 6) n'est pas un lien de navigation, c'est un filtre
+  // de la liste déjà affichée, donc légitime ici.
   expect(screen.queryByText(/^tous\b/i)).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: /compétitions/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Compétitions", exact: true })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /analyse ia/i })).not.toBeInTheDocument();
 });
 

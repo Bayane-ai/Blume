@@ -45,6 +45,21 @@ const liveMatches = [
       away: { name: "FC Barcelona", position: 2, points: 65, form: "WWDWW", source: "classement" },
     }),
   },
+  // Compétition hors Europe (Brésil) : sert à vérifier que "Matchs en ligne" affiche
+  // bien des matchs de compétitions variées du monde entier, pas seulement les
+  // grandes ligues européennes.
+  {
+    id: 103, status: "IN_PLAY", minute: 58, utcDate: new Date().toISOString(), matchday: 15,
+    competition: { code: "BSA", name: "Campeonato Brasileiro Série A", emblem: "" },
+    homeTeam: { id: 50, name: "Flamengo", crest: "" },
+    awayTeam: { id: 51, name: "Palmeiras", crest: "" },
+    score: { fullTime: { home: 1, away: 1 } },
+    pronostic: pronostic({
+      live: true, minute: 58, currentScore: { home: 1, away: 1 },
+      home: { name: "Flamengo", position: 1, points: 40, form: "WWDWW", source: "classement" },
+      away: { name: "Palmeiras", position: 2, points: 38, form: "WDWWL", source: "classement" },
+    }),
+  },
 ];
 
 function upcomingMatch(id, code, name, home, away, hoursFromNow, matchday) {
@@ -98,6 +113,10 @@ const standingsByCompetition = {
     { position: 2, points: 15, playedGames: 8, won: 5, draw: 0, lost: 3, goalsFor: 18, goalsAgainst: 12, form: "LWWLW", team: { id: 31, name: "Paris Saint-Germain", crest: "" } },
   ],
   WC: [], // pas de classement structuré (phase à élimination directe) : cas "Indisponible" à vérifier
+  BSA: [
+    { position: 1, points: 40, playedGames: 15, won: 12, draw: 4, lost: 0, goalsFor: 32, goalsAgainst: 10, form: "WWDWW", team: { id: 50, name: "Flamengo", crest: "" } },
+    { position: 2, points: 38, playedGames: 15, won: 11, draw: 5, lost: 0, goalsFor: 30, goalsAgainst: 12, form: "WDWWL", team: { id: 51, name: "Palmeiras", crest: "" } },
+  ],
 };
 
 module.exports = { pronostic, liveMatches, upcomingByCompetition, finishedMatch, standingsByCompetition };

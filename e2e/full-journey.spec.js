@@ -51,7 +51,7 @@ test.describe("Écran 1 — Matchs en ligne (accueil)", () => {
     await expect(featured.getByText("Arsenal FC")).toBeVisible();
 
     await expect(page.getByText("Les plus populaires", { exact: true })).toBeVisible();
-    await expect(page.getByText("Live : 2", { exact: true })).toBeVisible();
+    await expect(page.getByText("Live : 3", { exact: true })).toBeVisible();
 
     await expect(page.locator('input[type="text"], input:not([type])').first()).toBeVisible();
 
@@ -63,10 +63,25 @@ test.describe("Écran 1 — Matchs en ligne (accueil)", () => {
     await page.goto("/");
 
     const list = page.getByTestId("match-list");
-    await expect(list.getByText("ANALYSER")).toHaveCount(2);
+    await expect(list.getByText("ANALYSER")).toHaveCount(3);
     await expect(list.getByText("Premier League")).toBeVisible();
     await expect(list.getByText(/LIVE · 32/)).toBeVisible();
     await expect(list.getByText("1 : 0", { exact: true })).toBeVisible();
+  });
+
+  test("BLOC 4 : affiche des matchs de compétitions variées du monde entier, pas seulement les grandes ligues européennes", async ({ page }) => {
+    await page.goto("/");
+    const list = page.getByTestId("match-list");
+
+    await expect(list.getByText("Premier League")).toBeVisible();
+    await expect(list.getByText("LaLiga")).toBeVisible();
+    // Compétition sud-américaine, hors des "grandes ligues" européennes habituelles.
+    await expect(list.getByText("Campeonato Brasileiro Série A")).toBeVisible();
+    await expect(list.getByText("Flamengo")).toBeVisible();
+
+    // Elle apparaît aussi comme un vrai filtre de compétition (PROMPT 6), pas
+    // seulement dans la liste.
+    await expect(page.getByTestId("competition-filter").getByRole("button", { name: "Campeonato Brasileiro Série A" })).toBeVisible();
   });
 });
 
@@ -183,8 +198,10 @@ test.describe("Écran 3 — Analyser un match", () => {
     await expect(page).toHaveURL(/\/match\/201/);
     await expect(page.getByText("Liverpool FC").first()).toBeVisible();
 
-    // Match pas encore commencé : aucun score nulle part, seulement les pronostics.
-    await expect(page.getByText(/^\d+\s*:\s*\d+$/)).toHaveCount(0);
+    // Match pas encore commencé : aucun score réel dans l'en-tête, l'heure du coup
+    // d'envoi s'affiche à la place.
+    await expect(page.getByTestId("live-score")).toHaveCount(0);
+    await expect(page.getByTestId("header-kickoff")).toBeVisible();
     await expect(page.getByTestId("prob-home")).toBeVisible();
   });
 
@@ -224,7 +241,7 @@ test.describe("Écran 3 — Analyser un match", () => {
 });
 
 test.describe("Écran 3 — Page détail d'un match", () => {
-  test("équipes, forme récente, coup d'envoi/stade/arbitre, lien retour fonctionnel", async ({ page }) => {
+  test("équipes, forme récente, coup d'envoi/stade/arbitre, flèche de retour fonctionnelle", async ({ page }) => {
     await page.goto("/");
     await page.getByTestId("match-list").getByText("ANALYSER").first().click();
     await expect(page).toHaveURL(/\/match\/101/);
@@ -236,8 +253,40 @@ test.describe("Écran 3 — Page détail d'un match", () => {
     await expect(page.getByText("Emirates Stadium", { exact: true })).toBeVisible();
     await expect(page.getByText("Michael Oliver", { exact: true })).toBeVisible();
 
-    await page.getByRole("link", { name: /retour au dashboard/i }).click();
+    await page.getByRole("button", { name: "Retour" }).click();
     await expect(page).toHaveURL("/");
+  });
+});
+
+test.describe("BLOC — En-tête et timeline d'un match en direct", () => {
+  test("l'en-tête d'un match en direct affiche le vrai score et la vraie minute, et se met à jour tout seul", async ({ page }) => {
+    const errors = trackErrors(page);
+    await page.goto("/");
+    await page.getByTestId("match-list").getByText("ANALYSER").first().click(); // match 101, IN_PLAY, 1-0, 32'
+    await expect(page).toHaveURL(/\/match\/101/);
+
+    // Flèche de retour + compétition centrée en haut de l'en-tête.
+    await expect(page.getByRole("button", { name: "Retour" })).toBeVisible();
+    await expect(page.locator("header", { hasText: "Premier League" })).toBeVisible();
+
+    // Score réel au centre, au format "X - X", minute en direct juste en dessous.
+    await expect(page.getByTestId("live-score")).toHaveText("1 - 0");
+    await expect(page.getByTestId("live-minute")).toHaveText("32’");
+
+    expect(errors.consoleErrors, `Erreurs console : ${errors.consoleErrors.join(" | ")}`).toEqual([]);
+  });
+
+  test('BLOC 3 : sans événements fournis par l\'API (le cas réel aujourd\'hui), la timeline affiche un message clair — jamais une section vide ni une erreur', async ({ page }) => {
+    const errors = trackErrors(page);
+    await page.goto("/");
+    await page.getByTestId("match-list").getByText("ANALYSER").nth(2).click(); // match 103, Flamengo-Palmeiras
+    await expect(page).toHaveURL(/\/match\/103/);
+
+    await expect(page.getByRole("heading", { name: "Moments forts" })).toBeVisible();
+    await expect(page.getByTestId("timeline-empty")).toHaveText("Événements non disponibles pour ce match.");
+    await expect(page.getByTestId("match-timeline")).toHaveCount(0);
+
+    expect(errors.consoleErrors, `Erreurs console : ${errors.consoleErrors.join(" | ")}`).toEqual([]);
   });
 });
 

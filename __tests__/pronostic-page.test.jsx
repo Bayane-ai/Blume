@@ -99,9 +99,11 @@ test("match à venir (pas encore commencé) : aucun score n'est affiché, unique
 
   await waitFor(() => expect(screen.getByText("30%")).toBeInTheDocument());
 
-  // Aucun score affiché nulle part sur la page (motif "chiffre : chiffre").
-  expect(screen.queryByText(/^\d+\s*:\s*\d+$/)).not.toBeInTheDocument();
-  // Le coup d'envoi, lui, doit être visible à la place.
+  // Aucun score réel affiché dans l'en-tête (le match n'a pas commencé) — un score
+  // exact PRÉDIT peut légitimement apparaître plus bas, dans les pronostics.
+  expect(screen.queryByTestId("live-score")).not.toBeInTheDocument();
+  // Le coup d'envoi, lui, doit être visible à la place (dans l'en-tête et le détail).
+  expect(screen.getByTestId("header-kickoff")).toBeInTheDocument();
   expect(screen.getByText(/^\d{2}\/\d{2} - \d{2}:\d{2}$|^Aujourd'hui/)).toBeInTheDocument();
 });
 
@@ -143,8 +145,8 @@ test("match en direct : le score et la minute affichés viennent de l'API et se 
   // Attend la résolution du premier appel réel à /api/analyze (pas seulement
   // l'instantané des query params pris au moment du clic, qui peut être périmé).
   await waitFor(() => expect(screen.getByText("55%")).toBeInTheDocument());
-  expect(screen.getAllByText("1 : 0").length).toBeGreaterThan(0);
-  expect(screen.getByText(/LIVE · 40/)).toBeInTheDocument();
+  expect(screen.getByTestId("live-score")).toHaveTextContent("1 - 0");
+  expect(screen.getByTestId("live-minute")).toHaveTextContent("40’");
 
   // Laisse un cycle d'actualisation automatique (2s) se déclencher.
   await act(async () => {
@@ -153,7 +155,6 @@ test("match en direct : le score et la minute affichés viennent de l'API et se 
 
   expect(call).toBeGreaterThan(1);
   await waitFor(() => expect(screen.getByText("78%")).toBeInTheDocument());
-  expect(screen.getAllByText("2 : 0").length).toBeGreaterThan(0);
-  expect(screen.getByText(/LIVE · 42/)).toBeInTheDocument();
-  expect(screen.queryByText("1 : 0")).not.toBeInTheDocument();
+  expect(screen.getByTestId("live-score")).toHaveTextContent("2 - 0");
+  expect(screen.getByTestId("live-minute")).toHaveTextContent("42’");
 }, 10000);

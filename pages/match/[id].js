@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import MatchInfoBlock from "../../components/MatchInfoBlock";
+import MatchHeaderHero from "../../components/MatchHeaderHero";
+import MatchTimeline from "../../components/MatchTimeline";
 import FormBadges from "../../components/FormBadges";
 import PronosticResults from "../../components/PronosticResults";
 import { useRequireAuth } from "../../lib/useRequireAuth";
@@ -63,7 +64,10 @@ export default function MatchPage() {
         }
         setPronostic(result);
         if (result?.matchStatus) {
-          setLiveState({ status: result.matchStatus, minute: result.matchMinute, score: result.matchScore });
+          setLiveState({
+            status: result.matchStatus, minute: result.matchMinute, score: result.matchScore,
+            events: result.events,
+          });
         }
       })
       .catch((e) => {
@@ -127,14 +131,10 @@ export default function MatchPage() {
 
   return (
     <div style={st.page}>
-      <header style={st.header}>
-        <a href="/" style={st.smallBtn}>← Retour au dashboard</a>
-      </header>
+      <MatchHeaderHero m={matchForBlock} isLive={isLiveNow} />
 
       <main style={st.main}>
         <section style={st.panel}>
-          <MatchInfoBlock m={matchForBlock} />
-
           {pronostic?.home && pronostic?.away && (
             <div style={st.formRow}>
               <div style={st.formCell}>
@@ -169,18 +169,6 @@ export default function MatchPage() {
             </div>
           </div>
 
-          {(homeCrest || awayCrest) && (
-            <div style={st.vsBlock}>
-              <span style={st.vsCrestWrap}>
-                {homeCrest && <img src={homeCrest} alt="" style={st.vsCrest} onError={(e) => (e.target.style.display = "none")} />}
-              </span>
-              <span style={st.vsLabel}>VS</span>
-              <span style={st.vsCrestWrap}>
-                {awayCrest && <img src={awayCrest} alt="" style={st.vsCrest} onError={(e) => (e.target.style.display = "none")} />}
-              </span>
-            </div>
-          )}
-
           <div style={st.divider} />
 
           <h2 style={st.h2}>{pronostic?.live ? "Pronostics en direct" : "Pronostics automatiques"}</h2>
@@ -194,6 +182,11 @@ export default function MatchPage() {
 
           {!loading && hasRequested && <PronosticResults pronostic={pronostic} loading={loading} />}
         </section>
+
+        <section style={st.panel}>
+          <h2 style={st.h2}>Moments forts</h2>
+          <MatchTimeline events={liveState?.events} homeTeamId={homeTeamId} />
+        </section>
       </main>
     </div>
   );
@@ -201,11 +194,6 @@ export default function MatchPage() {
 
 const st = {
   page: { minHeight: "100vh", padding: "20px 16px 60px" },
-  header: { maxWidth: 640, margin: "0 auto 20px" },
-  smallBtn: {
-    background: "transparent", border: "1px solid #1E3D2C", color: "#E9F1EC",
-    borderRadius: 999, padding: "6px 12px", fontSize: 12, textDecoration: "none",
-  },
   main: { maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 },
   panel: { background: "#12291E", border: "1px solid #1E3D2C", borderRadius: 14, padding: 18 },
   formRow: { display: "flex", justifyContent: "space-between", marginTop: 12 },
@@ -215,10 +203,6 @@ const st = {
   infoCell: { flex: "1 1 calc(33.333% - 6px)", minWidth: 100, background: "#0B1F16", borderRadius: 8, padding: "8px 10px" },
   infoLabel: { display: "block", fontSize: 9.5, color: "#7EA694", textTransform: "uppercase" },
   infoValue: { fontSize: 12.5, fontWeight: 600 },
-  vsBlock: { display: "flex", alignItems: "center", justifyContent: "center", gap: 16, margin: "18px 0 4px" },
-  vsCrestWrap: { width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center" },
-  vsCrest: { width: 40, height: 40, objectFit: "contain" },
-  vsLabel: { fontSize: 12, fontWeight: 800, color: "#39B577", background: "#0B1F16", borderRadius: 999, padding: "4px 10px" },
   divider: { borderTop: "1px solid #1E3D2C", margin: "16px 0" },
   h2: { fontSize: 15, margin: "0 0 4px" },
   liveHint: { fontSize: 11, color: "#D8685E", margin: "0 0 12px" },
