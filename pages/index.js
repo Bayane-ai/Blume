@@ -341,8 +341,14 @@ export default function Home() {
       <header style={st.header}>
         <span style={st.logo}>Blume</span>
         <div style={st.headerRight}>
-          <span style={st.userEmail}>{session.user?.email}</span>
-          <button onClick={logout} style={st.smallBtn}>Déconnexion</button>
+          {session ? (
+            <>
+              <span style={st.userEmail}>{session.user?.email}</span>
+              <button onClick={logout} style={st.smallBtn}>Déconnexion</button>
+            </>
+          ) : (
+            <a href="/login" style={st.smallBtn}>Se connecter</a>
+          )}
         </div>
       </header>
 

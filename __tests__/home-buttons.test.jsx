@@ -151,13 +151,15 @@ describe("Page Matchs — chaque bouton est fonctionnel", () => {
     expect(screen.getByRole("button", { name: /déconnexion/i })).toBeInTheDocument();
   });
 
-  test("sans session, la page redirige vers /login au lieu d'afficher les matchs", async () => {
+  test("sans session, l'application reste accessible (connexion temporairement optionnelle) avec un lien Se connecter", async () => {
     mockSession = null;
 
     render(<Home />);
 
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/login"));
-    expect(screen.queryByText("Arsenal FC")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /^analyser$/i }).length).toBeGreaterThan(0));
+    expect(replaceMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: /se connecter/i })).toHaveAttribute("href", "/login");
+    expect(screen.queryByRole("button", { name: /déconnexion/i })).not.toBeInTheDocument();
   });
 
   test('le bouton "ANALYSER" de chaque carte mène vers la page des pronostics de ce match', async () => {
