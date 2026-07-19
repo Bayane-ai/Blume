@@ -62,7 +62,7 @@ describe("MatchCard — présentation exacte de la carte", () => {
 
   test("affiche l'heure du match (pas de score) quand il n'a pas commencé", () => {
     render(<MatchCard m={baseMatch({ status: "SCHEDULED" })} comp={{}} />);
-    expect(screen.queryByText(/–\s*:\s*–/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/–\s*-\s*–/)).not.toBeInTheDocument();
   });
 
   test("affiche le score quand le match est en direct ou terminé", () => {
@@ -72,19 +72,40 @@ describe("MatchCard — présentation exacte de la carte", () => {
         comp={{}}
       />
     );
-    expect(screen.getByText(/1\s*:\s*0/)).toBeInTheDocument();
+    expect(screen.getByText(/1\s*-\s*0/)).toBeInTheDocument();
   });
 
   test("affiche l'heure (pas un score partiel) si un seul des deux scores est renseigné", () => {
     // Cas limite : si scoreAway est absent alors que scoreHome est présent, on ne doit
-    // pas afficher "1 : –" mais bien retomber sur l'heure du match.
+    // pas afficher "1 - –" mais bien retomber sur l'heure du match.
     render(
       <MatchCard
         m={baseMatch({ status: "SCHEDULED", score: { fullTime: { home: 1, away: null } } })}
         comp={{}}
       />
     );
-    expect(screen.queryByText(/1\s*:\s*–/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/1\s*-\s*–/)).not.toBeInTheDocument();
+  });
+
+  test("affiche la minute en rouge à côté du score quand le match est en direct", () => {
+    render(
+      <MatchCard
+        m={baseMatch({ status: "IN_PLAY", minute: 63, score: { fullTime: { home: 1, away: 0 } } })}
+        comp={{}}
+      />
+    );
+    expect(screen.getByTestId("card-minute")).toHaveTextContent("63’");
+  });
+
+  test('affiche "MT" à la place de la minute quand le match est à la mi-temps', () => {
+    render(
+      <MatchCard
+        m={baseMatch({ status: "PAUSED", minute: 45, score: { fullTime: { home: 1, away: 1 } } })}
+        comp={{}}
+      />
+    );
+    expect(screen.getByTestId("card-minute")).toHaveTextContent("MT");
+    expect(screen.getByTestId("card-score")).toHaveTextContent("1 - 1");
   });
 
   test("affiche l'équipe à domicile à gauche (avec logo) et l'équipe extérieure à droite (avec logo)", () => {

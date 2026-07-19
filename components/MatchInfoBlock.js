@@ -18,6 +18,7 @@ export default function MatchInfoBlock({ m, comp }) {
   if (!m || !m.homeTeam || !m.awayTeam) return null;
 
   const isLive = LIVE_STATUSES.includes(m.status);
+  const isPaused = m.status === "PAUSED";
   const isFinished = m.status === "FINISHED";
   const competitionName = m.competition?.name || comp?.name || "Compétition";
   const competitionEmblem = m.competition?.emblem || "";
@@ -59,8 +60,15 @@ export default function MatchInfoBlock({ m, comp }) {
         </div>
       </div>
 
-      <div style={st.centerSlot}>
-        {hasScore ? `${scoreHome ?? "–"} : ${scoreAway ?? "–"}` : formatKickoff(m.utcDate)}
+      <div style={st.centerRow}>
+        <span style={st.centerSlot} data-testid="card-score">
+          {hasScore ? `${scoreHome ?? "–"} - ${scoreAway ?? "–"}` : formatKickoff(m.utcDate)}
+        </span>
+        {isLive && (
+          <span style={st.cardMinute} data-testid="card-minute">
+            {isPaused ? "MT" : m.minute != null ? `${m.minute}’` : ""}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -91,5 +99,7 @@ const st = {
     WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
   },
   teamNameAway: { textAlign: "right" },
-  centerSlot: { fontWeight: 800, color: "#39B577", fontSize: 16, textAlign: "center", marginTop: 10 },
+  centerRow: { display: "flex", alignItems: "baseline", justifyContent: "center", gap: 8, marginTop: 10 },
+  centerSlot: { fontWeight: 800, color: "#39B577", fontSize: 20, textAlign: "center" },
+  cardMinute: { fontWeight: 800, color: "#D8685E", fontSize: 12.5, letterSpacing: 0.3 },
 };

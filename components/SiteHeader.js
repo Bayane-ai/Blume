@@ -33,7 +33,8 @@ export default function SiteHeader({ session }) {
           href="/"
           style={{ ...st.navBtn, ...(router.pathname === "/" ? st.navBtnActive : {}) }}
         >
-          Matchs en ligne
+          <span style={st.liveDot} aria-hidden="true" />
+          Live
         </a>
         <a
           href="/a-venir"
@@ -61,6 +62,11 @@ const st = {
     flex: "1 1 auto", textAlign: "center", background: "#12291E", border: "1px solid #1E3D2C",
     color: "#7EA694", borderRadius: 999, padding: "10px 8px", fontSize: 13, fontWeight: 700,
     cursor: "pointer", textDecoration: "none",
+  },
+  liveDot: {
+    display: "inline-block", width: 8, height: 8, borderRadius: "50%",
+    background: "#FF3B30", marginRight: 6, boxShadow: "0 0 6px rgba(255,59,48,0.9)",
+    verticalAlign: "middle",
   },
   navBtnActive: { background: "#39B577", border: "1px solid #39B577", color: "#06121F" },
 };

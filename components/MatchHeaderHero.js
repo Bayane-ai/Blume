@@ -18,6 +18,7 @@ function hideCrest(e) {
 export default function MatchHeaderHero({ m, comp, isLive }) {
   const router = useRouter();
   const competitionName = m?.competition?.name || comp?.name || "Compétition";
+  const isPaused = m?.status === "PAUSED";
 
   const scoreHome = m?.score?.fullTime?.home;
   const scoreAway = m?.score?.fullTime?.away;
@@ -58,9 +59,9 @@ export default function MatchHeaderHero({ m, comp, isLive }) {
               {formatKickoffTime(m?.utcDate)}
             </span>
           )}
-          {isLive && m?.minute != null && (
+          {isLive && (isPaused || m?.minute != null) && (
             <span style={st.liveMinute} data-testid="live-minute">
-              {m.minute}’
+              {isPaused ? "MT" : `${m.minute}’`}
             </span>
           )}
         </div>

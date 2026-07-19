@@ -76,7 +76,7 @@ test("l'onglet Résultats affiche un vrai résultat (score final)", async () => 
 
   fireEvent.click(screen.getByRole("button", { name: "Résultats" }));
   await screen.findByText("Arsenal FC");
-  expect(screen.getByText(/2\s*:\s*1/)).toBeInTheDocument();
+  expect(screen.getByText(/2\s*-\s*1/)).toBeInTheDocument();
 });
 
 test("l'onglet Classement affiche le vrai classement", async () => {

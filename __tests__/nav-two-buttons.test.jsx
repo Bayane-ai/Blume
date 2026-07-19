@@ -86,14 +86,14 @@ beforeEach(() => {
   mockFetchRouter();
 });
 
-test('exactement deux boutons de navigation existent : "Matchs en ligne" et "Matchs à venir", et rien d\'autre', async () => {
+test('exactement deux boutons de navigation existent : "Live" et "Matchs à venir", et rien d\'autre', async () => {
   mockPathname = "/";
   render(<Home />);
 
   const nav = await screen.findByTestId("main-nav");
   const links = within(nav).getAllByRole("link");
   expect(links).toHaveLength(2);
-  expect(links[0]).toHaveTextContent("Matchs en ligne");
+  expect(links[0]).toHaveTextContent("Live");
   expect(links[1]).toHaveTextContent("Matchs à venir");
   expect(links[0]).toHaveAttribute("href", "/");
   expect(links[1]).toHaveAttribute("href", "/a-venir");
@@ -107,12 +107,12 @@ test('exactement deux boutons de navigation existent : "Matchs en ligne" et "Mat
   expect(screen.queryByRole("button", { name: /analyse ia/i })).not.toBeInTheDocument();
 });
 
-test('"Matchs en ligne" est le bouton actif sur l\'accueil et affiche le vrai match en direct (score exact)', async () => {
+test('"Live" est le bouton actif sur l\'accueil et affiche le vrai match en direct (score exact)', async () => {
   mockPathname = "/";
   render(<Home />);
 
   await waitFor(() => expect(screen.getAllByText("Arsenal FC").length).toBeGreaterThan(0));
-  expect(screen.getAllByText("2 : 1").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("2 - 1").length).toBeGreaterThan(0);
   // Rien de la page "à venir" ne doit apparaître ici.
   expect(screen.queryByText("Real Madrid")).not.toBeInTheDocument();
 });
@@ -130,7 +130,7 @@ test('"Matchs à venir" mène à une vraie page (pas un lien mort) affichant le 
 
   // Aucun match en direct de l'autre page, aucun score affiché (pas encore joué).
   expect(screen.queryByText("Arsenal FC")).not.toBeInTheDocument();
-  expect(screen.queryByText(/^\d+\s*:\s*\d+$/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/^\d+\s*-\s*\d+$/)).not.toBeInTheDocument();
 });
 
 test('"Matchs à venir" affiche un message clair (jamais une page vide) quand l\'API ne renvoie aucun match', async () => {

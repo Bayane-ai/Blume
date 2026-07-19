@@ -106,8 +106,8 @@ test("le score affiché est exactement le vrai score renvoyé par l'API pour cha
   mockFetchWith(fixture);
 
   render(<Home />);
-  await waitFor(() => expect(screen.getAllByText("0 : 2").length).toBeGreaterThan(0));
-  expect(screen.queryByText("2 : 0")).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getAllByText("0 - 2").length).toBeGreaterThan(0));
+  expect(screen.queryByText("2 - 0")).not.toBeInTheDocument();
 });
 
 test("aucun match fictif : la page n'affiche que ce que l'API a réellement renvoyé, jamais plus", async () => {
@@ -145,12 +145,15 @@ test("se rafraîchit automatiquement (sans rechargement) : un nouveau score appa
   });
 
   render(<Home />);
-  await waitFor(() => expect(screen.getAllByText("0 : 0").length).toBeGreaterThan(0));
+  await waitFor(() => expect(screen.getAllByText("0 - 0").length).toBeGreaterThan(0));
+  expect(screen.getAllByTestId("card-minute")[0]).toHaveTextContent("11’");
 
   await act(async () => {
     await new Promise((r) => setTimeout(r, 2200)); // laisse un cycle de 2s se déclencher
   });
 
   expect(call).toBeGreaterThan(1);
-  expect(screen.getAllByText("1 : 0").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("1 - 0").length).toBeGreaterThan(0);
+  // La minute affichée en rouge à côté du score doit elle aussi s'être actualisée.
+  expect(screen.getAllByTestId("card-minute")[0]).toHaveTextContent(`${10 + call}’`);
 }, 10000);

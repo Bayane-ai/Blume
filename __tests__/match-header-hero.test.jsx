@@ -77,6 +77,14 @@ test("le score se met à jour tout seul si les props changent (vrai score temps 
   expect(screen.getByTestId("live-minute")).toHaveTextContent("23’");
 });
 
+test('un match à la mi-temps (PAUSED) affiche "MT" à la place de la minute', () => {
+  const halftime = liveMatch({ status: "PAUSED", minute: 45 });
+  render(<MatchHeaderHero m={halftime} isLive />);
+
+  expect(screen.getByTestId("live-score")).toHaveTextContent("2 - 1");
+  expect(screen.getByTestId("live-minute")).toHaveTextContent("MT");
+});
+
 test("la flèche de retour revient en arrière dans l'historique", () => {
   render(<MatchHeaderHero m={liveMatch()} isLive />);
   fireEvent.click(screen.getByRole("button", { name: "Retour" }));

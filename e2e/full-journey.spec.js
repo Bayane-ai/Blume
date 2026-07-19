@@ -40,7 +40,10 @@ test.describe("Écran 1 — Matchs en ligne (accueil)", () => {
     // Navigation : exactement deux boutons.
     const nav = page.getByTestId("main-nav");
     await expect(nav.getByRole("link")).toHaveCount(2);
-    await expect(nav.getByRole("link", { name: "Matchs en ligne" })).toBeVisible();
+    const liveLink = nav.getByRole("link", { name: "Live" });
+    await expect(liveLink).toBeVisible();
+    // Bouton "Live" marqué visuellement par un point rouge à côté du texte.
+    await expect(liveLink.locator("span").first()).toBeVisible();
     await expect(nav.getByRole("link", { name: "Matchs à venir" })).toBeVisible();
 
     await expect(page.getByRole("heading", { name: /football en direct/i })).toBeVisible();
@@ -66,7 +69,9 @@ test.describe("Écran 1 — Matchs en ligne (accueil)", () => {
     await expect(list.getByText("ANALYSER")).toHaveCount(3);
     await expect(list.getByText("Premier League")).toBeVisible();
     await expect(list.getByText(/LIVE · 32/)).toBeVisible();
-    await expect(list.getByText("1 : 0", { exact: true })).toBeVisible();
+    await expect(list.getByText("1 - 0", { exact: true })).toBeVisible();
+    // Minute en rouge à côté du score (badge dédié, distinct du bandeau LIVE du haut).
+    await expect(list.getByTestId("card-minute").first()).toHaveText("32’");
   });
 
   test("BLOC 4 : affiche des matchs de compétitions variées du monde entier, pas seulement les grandes ligues européennes", async ({ page }) => {
@@ -97,7 +102,7 @@ test.describe("Écran 2 — Matchs à venir", () => {
 
     const nav = page.getByTestId("main-nav");
     await expect(nav.getByRole("link", { name: "Matchs à venir" })).toBeVisible();
-    await expect(nav.getByRole("link", { name: "Matchs en ligne" })).toBeVisible();
+    await expect(nav.getByRole("link", { name: "Live" })).toBeVisible();
 
     const list = page.getByTestId("match-list");
     await expect(list.getByText("Liverpool FC")).toBeVisible();
@@ -108,9 +113,9 @@ test.describe("Écran 2 — Matchs à venir", () => {
     expect(errors.consoleErrors, `Erreurs console : ${errors.consoleErrors.join(" | ")}`).toEqual([]);
   });
 
-  test('revenir sur "Matchs en ligne" depuis "Matchs à venir" affiche de nouveau les matchs en direct', async ({ page }) => {
+  test('revenir sur "Live" depuis "Matchs à venir" affiche de nouveau les matchs en direct', async ({ page }) => {
     await page.goto("/a-venir");
-    await page.getByTestId("main-nav").getByRole("link", { name: "Matchs en ligne" }).click();
+    await page.getByTestId("main-nav").getByRole("link", { name: "Live" }).click();
     await expect(page).toHaveURL("/");
     await expect(page.getByTestId("match-list").getByText("Arsenal FC").first()).toBeVisible();
   });
@@ -308,7 +313,7 @@ test.describe("Écran 4 — Page d'une compétition (accessible par lien direct)
 
     await page.getByRole("button", { name: "Résultats", exact: true }).click();
     await expect(page.getByText("Arsenal FC").first()).toBeVisible();
-    await expect(page.getByText("3 : 1", { exact: true })).toBeVisible();
+    await expect(page.getByText("3 - 1", { exact: true })).toBeVisible();
 
     await page.getByRole("button", { name: "Classement", exact: true }).click();
     await expect(page.getByText("Arsenal FC").first()).toBeVisible();

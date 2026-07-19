@@ -124,9 +124,9 @@ test('"Matchs en ligne" : chaque carte affiche compétition + équipes + score (
   });
 
   const fixtures = [
-    { comp: "Premier League", home: "Arsenal FC", away: "Chelsea FC", score: "1 : 0" },
-    { comp: "LaLiga", home: "Real Madrid", away: "Barcelona", score: "2 : 2" },
-    { comp: "Serie A", home: "Juventus FC", away: "AC Milan", score: "3 : 1" },
+    { comp: "Premier League", home: "Arsenal FC", away: "Chelsea FC", score: "1 - 0" },
+    { comp: "LaLiga", home: "Real Madrid", away: "Barcelona", score: "2 - 2" },
+    { comp: "Serie A", home: "Juventus FC", away: "AC Milan", score: "3 - 1" },
   ];
 
   const buttons = within(list).getAllByRole("button", { name: /^analyser$/i });
@@ -162,7 +162,7 @@ test('"Matchs à venir" : chaque carte affiche compétition + équipes + heure (
     expect(card.getByText(f.comp)).toBeInTheDocument();
     expect(card.getByText(f.home)).toBeInTheDocument();
     expect(card.getByText(f.away)).toBeInTheDocument();
-    expect(card.queryByText(/^\d+\s*:\s*\d+$/)).not.toBeInTheDocument();
+    expect(card.queryByText(/^\d+\s*-\s*\d+$/)).not.toBeInTheDocument();
   });
 });
 
