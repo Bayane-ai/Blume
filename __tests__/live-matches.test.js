@@ -49,6 +49,16 @@ test("interroge la vraie API avec status=LIVE, sans filtre de compétition dans 
   expect(res.body.matches).toEqual([]);
 });
 
+test("renvoie un en-tête Cache-Control pour que le réseau Vercel mutualise les réponses entre toutes les instances", async () => {
+  global.fetch = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ matches: [] }) }));
+
+  const { default: handler } = await import("../pages/api/live-matches.js");
+  const res = mockRes();
+  await handler({}, res);
+
+  expect(res.setHeader).toHaveBeenCalledWith("Cache-Control", expect.stringContaining("s-maxage"));
+});
+
 test("n'invente jamais de matchs : si l'API n'en renvoie que 3, la réponse en contient exactement 3", async () => {
   const threeMatches = [fixtureMatch(1, "PL"), fixtureMatch(2, "PD"), fixtureMatch(3, "SA")];
   global.fetch = jest.fn((url) => {

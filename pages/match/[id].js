@@ -40,7 +40,13 @@ export default function MatchPage() {
     fetch(`/api/analyze?${params}`)
       .then((r) => r.json())
       .then((result) => {
-        if (result?.error) console.error("Erreur /api/analyze:", result.error);
+        if (result?.error) {
+          console.error("Erreur /api/analyze:", result.error);
+          // Rafraîchissement silencieux (live) : une erreur passagère (quota API,
+          // réseau) ne doit pas faire disparaître un pronostic déjà affiché — on
+          // garde le dernier résultat connu et on réessaie au prochain cycle.
+          if (silent) return;
+        }
         setPronostic(result);
         if (result?.matchStatus) {
           setLiveState({ status: result.matchStatus, minute: result.matchMinute, score: result.matchScore });
@@ -48,7 +54,7 @@ export default function MatchPage() {
       })
       .catch((e) => {
         console.error("Erreur /api/analyze:", e);
-        setPronostic({ error: "Erreur lors du calcul des pronostics." });
+        if (!silent) setPronostic({ error: "Erreur lors du calcul des pronostics." });
       })
       .finally(() => setLoading(false));
   }, [router.isReady, matchId, competitionCode, homeTeamId, awayTeamId, homeTeamName, awayTeamName]);

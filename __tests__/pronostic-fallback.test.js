@@ -14,6 +14,7 @@ function mockRes() {
     res.body = body;
     return res;
   });
+  res.setHeader = jest.fn();
   return res;
 }
 

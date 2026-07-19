@@ -70,6 +70,14 @@ export default async function handler(req, res) {
       result.matchScore = liveMatch.score?.fullTime || null;
     }
 
+    // Même raison que dans live-matches.js : sous charge, Vercel peut répartir les
+    // requêtes sur plusieurs instances qui ne partagent pas leur cache mémoire
+    // (liveMatchCache.js). Cet en-tête fait que le réseau Vercel mutualise réellement
+    // les réponses (par match, via l'URL complète en clé de cache) entre toutes les
+    // instances, ce qui borne le nombre d'appels à l'API football-data.org même si
+    // plusieurs visiteurs suivent le même match en même temps sur des instances
+    // différentes.
+    res.setHeader("Cache-Control", "s-maxage=3, stale-while-revalidate=20");
     return res.status(200).json(result);
   } catch (e) {
     return res.status(500).json({ error: e.message });

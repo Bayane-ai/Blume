@@ -11,6 +11,13 @@ const LIVE_STATUSES = ["IN_PLAY", "PAUSED", "LIVE"];
 // et dès qu'un but est marqué, la requête suivante (au plus 2s après) le reflète.
 const LIVE_REFRESH_ACTIVE_MS = 2000;
 const LIVE_REFRESH_BACKGROUND_MS = 45000;
+// Les matchs à venir et par compétition changent moins vite, mais un rafraîchissement
+// périodique permet quand même de : voir un match basculer en direct sans recharger la
+// page, et surtout de se rétablir tout seul après un incident passager de l'API (quota,
+// réseau) sans jamais laisser l'utilisateur bloqué sur un message d'erreur permanent.
+const WEEK_REFRESH_ACTIVE_MS = 60000;
+const WEEK_REFRESH_BACKGROUND_MS = 5 * 60000;
+const COMP_REFRESH_MS = 60000;
 
 function normalize(str) {
   return (str || "")
@@ -47,27 +54,44 @@ export default function Home() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
+  // silent=true (rafraîchissement automatique en arrière-plan) : une erreur passagère
+  // (quota API, réseau) ne doit jamais effacer des matchs déjà affichés à l'écran — on
+  // se contente de réessayer au prochain cycle. silent=false (chargement initial ou
+  // action explicite de l'utilisateur) : on reflète le résultat tel quel, y compris
+  // une éventuelle erreur, pour donner un retour clair.
   const loadLiveMatches = useCallback((silent = false) => {
     if (!silent) setLiveLoading(true);
     return fetch("/api/live-matches")
       .then((r) => r.json())
       .then((d) => {
-        if (d?.error) console.error("Erreur /api/live-matches:", d.error);
+        if (d?.error) {
+          console.error("Erreur /api/live-matches:", d.error);
+          if (silent) return;
+        }
         setLiveData(d);
       })
-      .catch((e) => console.error("Erreur /api/live-matches:", e))
+      .catch((e) => {
+        console.error("Erreur /api/live-matches:", e);
+        if (!silent) setLiveData({ error: true, matches: [] });
+      })
       .finally(() => setLiveLoading(false));
   }, []);
 
-  const loadWeekMatches = useCallback(() => {
-    setWeekLoading(true);
+  const loadWeekMatches = useCallback((silent = false) => {
+    if (!silent) setWeekLoading(true);
     return fetch("/api/matches")
       .then((r) => r.json())
       .then((d) => {
-        if (d?.error) console.error("Erreur /api/matches:", d.error);
+        if (d?.error) {
+          console.error("Erreur /api/matches:", d.error);
+          if (silent) return;
+        }
         setWeekData(d);
       })
-      .catch((e) => console.error("Erreur /api/matches:", e))
+      .catch((e) => {
+        console.error("Erreur /api/matches:", e);
+        if (!silent) setWeekData({ error: true, competitions: [] });
+      })
       .finally(() => setWeekLoading(false));
   }, []);
 
@@ -83,6 +107,15 @@ export default function Home() {
     const id = setInterval(() => loadLiveMatches(true), intervalMs);
     return () => clearInterval(id);
   }, [tab, loadLiveMatches]);
+
+  // Même principe pour les matchs à venir : rythme normal quand l'onglet est affiché,
+  // ralenti sinon — permet à un match qui démarre ou une erreur passagère de se
+  // rétablir tout seul, sans recharger la page.
+  useEffect(() => {
+    const intervalMs = tab === "upcoming" ? WEEK_REFRESH_ACTIVE_MS : WEEK_REFRESH_BACKGROUND_MS;
+    const id = setInterval(() => loadWeekMatches(true), intervalMs);
+    return () => clearInterval(id);
+  }, [tab, loadWeekMatches]);
 
   const logout = async () => supabase.auth.signOut();
 
@@ -140,23 +173,39 @@ export default function Home() {
     return COMPETITIONS.filter((c) => normalize(c.name).includes(q) || normalize(c.area).includes(q));
   }, [competitionQuery]);
 
-  const selectCompetition = (code) => {
-    setSelectedCode(code);
-    setCompData(null);
-    setCompMatchSearch("");
-    setCompLoading(true);
-    fetch(`/api/competition-matches?code=${code}`)
+  const loadCompetitionMatches = useCallback((code, silent = false) => {
+    if (!silent) setCompLoading(true);
+    return fetch(`/api/competition-matches?code=${code}`)
       .then((r) => r.json())
       .then((d) => {
-        if (d?.error) console.error("Erreur /api/competition-matches:", d.error);
+        if (d?.error) {
+          console.error("Erreur /api/competition-matches:", d.error);
+          if (silent) return;
+        }
         setCompData(d);
       })
       .catch((e) => {
         console.error("Erreur /api/competition-matches:", e);
-        setCompData({ error: true, matches: [] });
+        if (!silent) setCompData({ error: true, matches: [] });
       })
       .finally(() => setCompLoading(false));
+  }, []);
+
+  const selectCompetition = (code) => {
+    setSelectedCode(code);
+    setCompData(null);
+    setCompMatchSearch("");
+    loadCompetitionMatches(code, false);
   };
+
+  // Rafraîchissement périodique tant qu'une compétition est ouverte : mêmes raisons
+  // que pour les autres onglets (match qui démarre, incident passager qui se résout
+  // tout seul).
+  useEffect(() => {
+    if (!selectedCode) return;
+    const id = setInterval(() => loadCompetitionMatches(selectedCode, true), COMP_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [selectedCode, loadCompetitionMatches]);
 
   const backToCompetitions = () => {
     setSelectedCode(null);

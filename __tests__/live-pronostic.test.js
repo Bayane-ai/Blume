@@ -52,6 +52,7 @@ describe("/api/analyze — relit toujours l'état du match depuis l'API pour un 
     const res = {};
     res.status = jest.fn(() => res);
     res.json = jest.fn((body) => { res.body = body; return res; });
+    res.setHeader = jest.fn();
     return res;
   }
 
@@ -89,6 +90,9 @@ describe("/api/analyze — relit toujours l'état du match depuis l'API pour un 
     expect(res.body.matchScore).toEqual({ home: 2, away: 0 });
     expect(res.body.matchMinute).toBe(63);
     expect(res.body.probabilities.home).toBeGreaterThan(50);
+    // Le réseau Vercel doit pouvoir mutualiser cette réponse entre toutes les
+    // instances (le cache en mémoire seul ne suffit pas sous charge concurrente).
+    expect(res.setHeader).toHaveBeenCalledWith("Cache-Control", expect.stringContaining("s-maxage"));
   });
 
   test("deux requêtes avec un score différent (avant/après un but) donnent des probabilités différentes", async () => {

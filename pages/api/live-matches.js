@@ -38,6 +38,14 @@ export default async function handler(req, res) {
 
     const matches = liveMatches.map((m) => attachPronostic(m, standingsByCode[m.competition?.code]));
 
+    // Vercel peut exécuter plusieurs instances de cette fonction en parallèle sous
+    // charge : le cache en mémoire (liveListCache.js) n'est alors PAS partagé entre
+    // elles (chacune a sa propre mémoire), et chacune referait son propre appel en
+    // amont. Cet en-tête fait que le réseau Vercel (CDN, devant toutes les instances)
+    // sert la même réponse à tout le monde pendant quelques secondes, quel que soit
+    // le nombre d'instances — c'est ce qui borne réellement le nombre d'appels à
+    // l'API football-data.org, plus fiable que le cache en mémoire seul.
+    res.setHeader("Cache-Control", "s-maxage=3, stale-while-revalidate=20");
     return res.status(200).json({ matches });
   } catch (e) {
     return res.status(500).json({ error: e.message });
