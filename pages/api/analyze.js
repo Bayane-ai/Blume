@@ -1,6 +1,7 @@
 import { getStandingsTable } from "../../lib/standingsCache";
 import { getTeamRecentForm } from "../../lib/teamForm";
 import { getLiveMatch } from "../../lib/liveMatchCache";
+import { getHeadToHead } from "../../lib/headToHead";
 import { computePronostic, computeLivePronostic } from "../../lib/pronostic";
 
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
@@ -37,9 +38,13 @@ export default async function handler(req, res) {
     // Une équipe absente du classement (phase à élimination directe, coupe sans tableau
     // de classement, etc.) ne doit pas bloquer le pronostic : on se rabat sur ses derniers
     // matchs joués, pour que l'analyse fonctionne quel que soit le moment de la recherche.
-    const [homeResolved, awayResolved] = await Promise.all([
+    // Les vraies confrontations directes entre CES deux équipes (lib/headToHead.js)
+    // affinent ensuite le résultat quand l'API en fournit assez (voir lib/pronostic.js) —
+    // absentes ou en erreur, le pronostic reste exploitable, basé sur classement/forme seuls.
+    const [homeResolved, awayResolved, h2h] = await Promise.all([
       resolveTeamStats(homeTeamId, table, token),
       resolveTeamStats(awayTeamId, table, token),
+      matchId ? getHeadToHead(matchId, token) : Promise.resolve(null),
     ]);
 
     const isLive = liveMatch && LIVE_STATUSES.includes(liveMatch.status);
@@ -54,6 +59,7 @@ export default async function handler(req, res) {
           currentHome: liveMatch.score?.fullTime?.home,
           currentAway: liveMatch.score?.fullTime?.away,
           minute: liveMatch.minute,
+          h2h,
         })
       : computePronostic({
           homeRow: homeResolved.stats,
@@ -62,6 +68,7 @@ export default async function handler(req, res) {
           awayTeamName,
           homeSource: homeResolved.source,
           awaySource: awayResolved.source,
+          h2h,
         });
 
     if (liveMatch) {

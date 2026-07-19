@@ -17,41 +17,49 @@ export default function PronosticResults({ pronostic, loading }) {
   return (
     <>
       <p style={st.sectionLabel}>% de victoire</p>
-      <div style={st.probRow}>
+      <div style={st.probRow} data-testid="win-probabilities">
         <div style={st.probCell}>
           <span style={st.probLabel}>Domicile</span>
-          <span style={st.probValue}>{pronostic.probabilities.home ?? "–"}%</span>
+          <span style={st.probValue} data-testid="prob-home">{pronostic.probabilities.home ?? "–"}%</span>
         </div>
         <div style={st.probCell}>
           <span style={st.probLabel}>Nul</span>
-          <span style={st.probValue}>{pronostic.probabilities.draw ?? "–"}%</span>
+          <span style={st.probValue} data-testid="prob-draw">{pronostic.probabilities.draw ?? "–"}%</span>
         </div>
         <div style={st.probCell}>
           <span style={st.probLabel}>Extérieur</span>
-          <span style={st.probValue}>{pronostic.probabilities.away ?? "–"}%</span>
+          <span style={st.probValue} data-testid="prob-away">{pronostic.probabilities.away ?? "–"}%</span>
         </div>
       </div>
 
       <p style={st.sectionLabel}>Statistiques probables{pronostic.live ? " (estimation fin de match)" : ""} — total du match</p>
-      <div style={st.scoresRow}>
+      <div style={st.scoresRow} data-testid="extra-stats">
         <div style={st.scoreCell}>
           <span style={st.probLabel}>Buts</span>
-          <span style={st.probValue}>{pronostic.goals.expectedTotal ?? "–"}</span>
+          <span style={st.probValue} data-testid="stat-goals">{pronostic.goals.expectedTotal ?? "–"}</span>
         </div>
         {pronostic.extraStats && (
           <>
             <div style={st.scoreCell}>
               <span style={st.probLabel}>Corners</span>
-              <span style={st.probValue}>{pronostic.extraStats.corners.total}</span>
+              <span style={st.probValue} data-testid="stat-corners">{pronostic.extraStats.corners.total}</span>
             </div>
             <div style={st.scoreCell}>
               <span style={st.probLabel}>Tirs/occasions</span>
-              <span style={st.probValue}>{pronostic.extraStats.shots.total}</span>
+              <span style={st.probValue} data-testid="stat-shots">{pronostic.extraStats.shots.total}</span>
             </div>
             <div style={st.scoreCell}>
               <span style={st.probLabel}>Cartons</span>
-              <span style={st.probValue}>{pronostic.extraStats.cards.total}</span>
+              <span style={st.probValue} data-testid="stat-cards">{pronostic.extraStats.cards.total}</span>
             </div>
+            {pronostic.extraStats.possession && (
+              <div style={st.scoreCell}>
+                <span style={st.probLabel}>Possession</span>
+                <span style={st.probValue} data-testid="stat-possession">
+                  {pronostic.extraStats.possession.home}% / {pronostic.extraStats.possession.away}%
+                </span>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -67,6 +75,20 @@ export default function PronosticResults({ pronostic, loading }) {
           <span style={st.probValue}>{pronostic.goals.bttsYes ?? "–"}%</span>
         </div>
       </div>
+
+      {pronostic.correctScores && pronostic.correctScores.length > 0 && (
+        <>
+          <p style={st.sectionLabel}>Scores exacts probables</p>
+          <div style={st.scoresRow} data-testid="correct-scores">
+            {pronostic.correctScores.map((s) => (
+              <div key={s.score} style={st.scoreCell}>
+                <span style={st.probLabel}>{s.score.replace("-", " - ")}</span>
+                <span style={st.probValue}>{s.probability}%</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       {pronostic.home && pronostic.away && (
         <p style={st.hint}>

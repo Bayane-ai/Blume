@@ -109,12 +109,17 @@ test.describe("Écran 3 — Analyser un match", () => {
     await page.getByTestId("match-list").getByText("ANALYSER").first().click();
     await expect(page).toHaveURL(/\/match\/101/);
 
-    await expect(page.getByText("48.2%", { exact: true })).toBeVisible();
-    await expect(page.getByText("26.1%", { exact: true })).toBeVisible();
-    await expect(page.getByText("25.7%", { exact: true })).toBeVisible();
-    await expect(page.getByText("2.7", { exact: true }).first()).toBeVisible(); // buts probables (total)
-    await expect(page.getByText("10", { exact: true }).first()).toBeVisible(); // corners (total)
-    await expect(page.getByText("24", { exact: true }).first()).toBeVisible(); // tirs (total)
+    await expect(page.getByTestId("prob-home")).toBeVisible();
+    await expect(page.getByTestId("prob-draw")).toBeVisible();
+    await expect(page.getByTestId("prob-away")).toBeVisible();
+    await expect(page.getByTestId("stat-goals")).toBeVisible();
+    await expect(page.getByTestId("stat-corners")).toBeVisible();
+    await expect(page.getByTestId("stat-shots")).toBeVisible();
+    await expect(page.getByTestId("stat-cards")).toBeVisible();
+    await expect(page.getByTestId("stat-possession")).toBeVisible();
+    // Au moins 3 scores exacts, du plus probable au moins probable (PROMPT 5).
+    const scoreCells = page.getByTestId("correct-scores").locator("div");
+    expect(await scoreCells.count()).toBeGreaterThanOrEqual(3);
 
     expect(errors.consoleErrors, `Erreurs console : ${errors.consoleErrors.join(" | ")}`).toEqual([]);
   });
@@ -127,6 +132,28 @@ test.describe("Écran 3 — Analyser un match", () => {
 
     // Match pas encore commencé : aucun score nulle part, seulement les pronostics.
     await expect(page.getByText(/^\d+\s*:\s*\d+$/)).toHaveCount(0);
+    await expect(page.getByTestId("prob-home")).toBeVisible();
+  });
+
+  test("PROMPT 5 : ouvrir les pronostics de 3 matchs différents affiche bien 3 jeux de chiffres différents", async ({ page }) => {
+    await page.goto("/");
+    await page.getByTestId("match-list").getByText("ANALYSER").first().click(); // match 101, Arsenal-Chelsea
+    await expect(page).toHaveURL(/\/match\/101/);
+    const p1 = await page.getByTestId("prob-home").textContent();
+
+    await page.goto("/");
+    await page.getByTestId("match-list").getByText("ANALYSER").nth(1).click(); // match 102, Real Madrid-Barcelone
+    await expect(page).toHaveURL(/\/match\/102/);
+    const p2 = await page.getByTestId("prob-home").textContent();
+
+    await page.goto("/a-venir");
+    await page.getByTestId("match-list").getByText("ANALYSER").first().click(); // match 201, Liverpool-Man City
+    await expect(page).toHaveURL(/\/match\/201/);
+    const p3 = await page.getByTestId("prob-home").textContent();
+
+    expect(p1).not.toBe(p2);
+    expect(p1).not.toBe(p3);
+    expect(p2).not.toBe(p3);
   });
 });
 

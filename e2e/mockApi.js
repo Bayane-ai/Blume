@@ -1,5 +1,6 @@
-const { liveMatches, upcomingByCompetition, finishedMatch, standingsByCompetition, pronostic } = require("./fixtures");
+const { liveMatches, upcomingByCompetition, finishedMatch, standingsByCompetition } = require("./fixtures");
 const { COMPETITIONS } = require("../lib/competitions");
+const { computePronostic, computeLivePronostic } = require("../lib/pronostic");
 
 // Intercepte /api/* au niveau réseau (avant même que le serveur Next.js ne les
 // reçoive) et rejoue des données réalistes — le vrai football-data.org est
@@ -37,22 +38,39 @@ async function installApiMocks(page) {
     }
 
     if (path === "/api/analyze") {
+      // Appelle le VRAI moteur de pronostic (lib/pronostic.js) avec les vraies
+      // statistiques du match (standingsByCompetition, ci-dessous) — comme le ferait
+      // pages/api/analyze.js en production — plutôt qu'un pronostic générique
+      // identique pour tous les matchs : nécessaire pour vérifier en conditions
+      // réelles (navigateur) que chaque match a bien SES PROPRES chiffres (PROMPT 5).
       const matchId = Number(params.get("matchId"));
       const live = liveMatches.find((m) => m.id === matchId);
+      const competitionCode = params.get("competitionCode");
+      const homeTeamId = params.get("homeTeamId");
+      const awayTeamId = params.get("awayTeamId");
       const homeTeamName = params.get("homeTeamName") || "Équipe A";
       const awayTeamName = params.get("awayTeamName") || "Équipe B";
-      const result = pronostic({
-        live: !!live,
-        home: { name: homeTeamName, position: 3, points: 55, form: "WWDLW", source: "classement" },
-        away: { name: awayTeamName, position: 7, points: 44, form: "LWDDL", source: "classement" },
-        venue: "Emirates Stadium",
-        referee: "Michael Oliver",
-      });
+
+      const table = standingsByCompetition[competitionCode] || [];
+      const homeRow = table.find((r) => String(r.team.id) === homeTeamId) || null;
+      const awayRow = table.find((r) => String(r.team.id) === awayTeamId) || null;
+
+      const result = live
+        ? computeLivePronostic({
+            homeRow, awayRow, homeTeamName, awayTeamName,
+            currentHome: live.score.fullTime.home, currentAway: live.score.fullTime.away, minute: live.minute,
+          })
+        : computePronostic({ homeRow, awayRow, homeTeamName, awayTeamName });
+
       if (live) {
         result.matchStatus = live.status;
         result.matchMinute = live.minute;
         result.matchScore = live.score.fullTime;
       }
+      // Non fournis par les fixtures de classement : valeurs réalistes fixes pour ces
+      // deux champs annexes (coup d'envoi/stade/arbitre), sans lien avec le calcul.
+      result.venue = "Emirates Stadium";
+      result.referee = "Michael Oliver";
       return route.fulfill({ json: result });
     }
 

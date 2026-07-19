@@ -63,6 +63,12 @@ describe("/api/analyze — relit toujours l'état du match depuis l'API pour un 
 
   function mockFetchFor(matchState) {
     return jest.fn((url) => {
+      // Endpoint distinct de l'état du match (voir lib/headToHead.js) : pas assez de
+      // confrontations directes connues ici, volontairement neutre pour ces tests qui
+      // portent sur le score/minute live, pas sur l'affinage par historique direct.
+      if (url.includes("head2head")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ aggregates: { numberOfMatches: 0 } }) });
+      }
       if (url.includes("/matches/777")) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve(matchState) });
       }
@@ -129,13 +135,13 @@ describe("/api/analyze — relit toujours l'état du match depuis l'API pour un 
       { query: { matchId: "777", competitionCode: "PL", homeTeamId: "10", awayTeamId: "11", homeTeamName: "A", awayTeamName: "B" } },
       mockRes()
     );
-    const callsAfterFirst = fetchMock.mock.calls.filter(([url]) => url.includes("/matches/777")).length;
+    const callsAfterFirst = fetchMock.mock.calls.filter(([url]) => url.includes("/matches/777") && !url.includes("head2head")).length;
 
     await handler(
       { query: { matchId: "777", competitionCode: "PL", homeTeamId: "10", awayTeamId: "11", homeTeamName: "A", awayTeamName: "B" } },
       mockRes()
     );
-    const callsAfterSecond = fetchMock.mock.calls.filter(([url]) => url.includes("/matches/777")).length;
+    const callsAfterSecond = fetchMock.mock.calls.filter(([url]) => url.includes("/matches/777") && !url.includes("head2head")).length;
 
     // Deux visiteurs (ou deux polls rapprochés) qui suivent le même match ne doivent
     // déclencher qu'un seul appel réel à l'API en amont, pas dépasser le quota.
@@ -153,7 +159,7 @@ describe("/api/analyze — relit toujours l'état du match depuis l'API pour un 
       Array.from({ length: 5 }, () => handler({ query }, mockRes()))
     );
 
-    const matchCalls = fetchMock.mock.calls.filter(([url]) => url.includes("/matches/777")).length;
+    const matchCalls = fetchMock.mock.calls.filter(([url]) => url.includes("/matches/777") && !url.includes("head2head")).length;
     expect(matchCalls).toBe(1);
   });
 
