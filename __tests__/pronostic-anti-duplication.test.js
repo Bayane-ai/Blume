@@ -136,6 +136,31 @@ describe("Anti-duplication : 3 matchs différents ont 3 pronostics différents",
     const stats = [r1, r2, r3].map((r) => JSON.stringify(r.extraStats));
     expect(new Set(stats).size).toBe(3);
   });
+
+  // Régression : le TOTAL de corners/tirs/cartons était calé sur une moyenne de
+  // championnat fixe, seule la répartition domicile/extérieur variait — deux matchs
+  // d'intensité très différente (une démonstration offensive vs un match fermé)
+  // affichaient donc presque le même total de tirs à l'écran. Vérifie que le total
+  // suit bien le nombre de buts attendu de CE match, pas une constante déguisée.
+  test("le TOTAL de tirs (affiché à l'écran) est bien plus élevé pour un match très offensif que pour un match fermé, pas une moyenne fixe", async () => {
+    const openGame = { position: 1, points: 60, form: null, playedGames: 20, goalsFor: 62, goalsAgainst: 18, team: { id: 70 } };
+    const openGame2 = { position: 2, points: 58, form: null, playedGames: 20, goalsFor: 58, goalsAgainst: 20, team: { id: 71 } };
+    const closedGame = { position: 10, points: 30, form: null, playedGames: 20, goalsFor: 18, goalsAgainst: 16, team: { id: 72 } };
+    const closedGame2 = { position: 11, points: 28, form: null, playedGames: 20, goalsFor: 16, goalsAgainst: 18, team: { id: 73 } };
+
+    const open = await analyze(
+      { matchId: "501", competitionCode: "PL", homeTeamId: "70", awayTeamId: "71", homeTeamName: "Offensif A", awayTeamName: "Offensif B" },
+      mockFetchFor({ table: [openGame, openGame2], matchState: scheduledState() })
+    );
+    const closed = await analyze(
+      { matchId: "502", competitionCode: "PL", homeTeamId: "72", awayTeamId: "73", homeTeamName: "Fermé A", awayTeamName: "Fermé B" },
+      mockFetchFor({ table: [closedGame, closedGame2], matchState: scheduledState() })
+    );
+
+    expect(open.extraStats.shots.total).toBeGreaterThan(closed.extraStats.shots.total + 5);
+    expect(open.extraStats.corners.total).toBeGreaterThan(closed.extraStats.corners.total);
+    expect(open.extraStats.shots.total).not.toBe(closed.extraStats.shots.total);
+  });
 });
 
 describe("Aucune valeur codée en dur : le résultat suit vraiment les données d'entrée de CE match", () => {

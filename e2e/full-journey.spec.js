@@ -166,6 +166,14 @@ test.describe("Écran 3 — Analyser un match", () => {
     const scoreCells = page.getByTestId("correct-scores").locator("div");
     expect(await scoreCells.count()).toBeGreaterThanOrEqual(3);
 
+    // Seules les 3 probabilités de victoire sont en "%" — buts/corners/tirs/cartons/
+    // possession/tendances/scores sont des intervalles ou estimations.
+    await expect(page.getByTestId("stat-goals")).toContainText(/^entre \d+ et \d+$/);
+    await expect(page.getByTestId("stat-corners")).toContainText(/^environ \d+-\d+$/);
+    await expect(page.getByTestId("stat-possession")).not.toContainText("%");
+    await expect(page.getByTestId("correct-scores")).not.toContainText("%");
+    await expect(page.getByTestId("stat-over25")).toContainText(/^\d+\/10$/);
+
     expect(errors.consoleErrors, `Erreurs console : ${errors.consoleErrors.join(" | ")}`).toEqual([]);
   });
 
@@ -181,24 +189,37 @@ test.describe("Écran 3 — Analyser un match", () => {
   });
 
   test("PROMPT 5 : ouvrir les pronostics de 3 matchs différents affiche bien 3 jeux de chiffres différents", async ({ page }) => {
+    async function readAnalysis() {
+      return {
+        home: await page.getByTestId("prob-home").textContent(),
+        goals: await page.getByTestId("stat-goals").textContent(),
+        shots: await page.getByTestId("stat-shots").textContent(),
+      };
+    }
+
     await page.goto("/");
     await page.getByTestId("match-list").getByText("ANALYSER").first().click(); // match 101, Arsenal-Chelsea
     await expect(page).toHaveURL(/\/match\/101/);
-    const p1 = await page.getByTestId("prob-home").textContent();
+    const a1 = await readAnalysis();
 
     await page.goto("/");
     await page.getByTestId("match-list").getByText("ANALYSER").nth(1).click(); // match 102, Real Madrid-Barcelone
     await expect(page).toHaveURL(/\/match\/102/);
-    const p2 = await page.getByTestId("prob-home").textContent();
+    const a2 = await readAnalysis();
 
     await page.goto("/a-venir");
     await page.getByTestId("match-list").getByText("ANALYSER").first().click(); // match 201, Liverpool-Man City
     await expect(page).toHaveURL(/\/match\/201/);
-    const p3 = await page.getByTestId("prob-home").textContent();
+    const a3 = await readAnalysis();
 
-    expect(p1).not.toBe(p2);
-    expect(p1).not.toBe(p3);
-    expect(p2).not.toBe(p3);
+    expect(a1.home).not.toBe(a2.home);
+    expect(a1.home).not.toBe(a3.home);
+    expect(a2.home).not.toBe(a3.home);
+
+    // Régression : le total de tirs (et de buts attendus) ne doit plus être une
+    // quasi-constante recopiée sur tous les matchs.
+    const fingerprints = [a1, a2, a3].map((a) => `${a.home}|${a.goals}|${a.shots}`);
+    expect(new Set(fingerprints).size).toBe(3);
   });
 });
 
