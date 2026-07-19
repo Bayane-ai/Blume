@@ -101,6 +101,51 @@ test.describe("Écran 2 — Matchs à venir", () => {
   });
 });
 
+test.describe("PROMPT 6 — Carrousels de compétitions et de journées", () => {
+  test('"Matchs en ligne" : chaque bouton de compétition filtre réellement la liste, chaque bouton de journée aussi', async ({ page }) => {
+    await page.goto("/");
+    const compCarousel = page.getByTestId("competition-filter");
+    const list = page.getByTestId("match-list");
+
+    await expect(compCarousel.getByRole("button", { name: "Premier League" })).toBeVisible();
+    await expect(compCarousel.getByRole("button", { name: "LaLiga" })).toBeVisible();
+    // Aucune compétition sans match réel derrière (Bundesliga n'a aucun match en direct ici).
+    await expect(compCarousel.getByRole("button", { name: "Bundesliga" })).toHaveCount(0);
+    // Pas de carrousel de journées tant qu'aucune compétition n'est choisie.
+    await expect(page.getByTestId("matchday-filter")).toHaveCount(0);
+
+    await compCarousel.getByRole("button", { name: "LaLiga" }).click();
+    await expect(list.getByText("Real Madrid")).toBeVisible();
+    await expect(list.getByText("Arsenal FC")).toHaveCount(0);
+
+    await compCarousel.getByRole("button", { name: "Premier League" }).click();
+    const mdCarousel = page.getByTestId("matchday-filter");
+    await expect(mdCarousel.getByRole("button", { name: "Journée 25" })).toBeVisible();
+    await mdCarousel.getByRole("button", { name: "Journée 25" }).click();
+    await expect(list.getByText("Arsenal FC")).toBeVisible();
+  });
+
+  test('"Matchs à venir" : filtre par compétition puis par journée, sur de vraies compétitions et journées', async ({ page }) => {
+    await page.goto("/a-venir");
+    const compCarousel = page.getByTestId("competition-filter");
+    const list = page.getByTestId("match-list");
+
+    await compCarousel.getByRole("button", { name: "Premier League" }).click();
+    const mdCarousel = page.getByTestId("matchday-filter");
+    await expect(mdCarousel.getByRole("button", { name: "Journée 27" })).toBeVisible();
+    await mdCarousel.getByRole("button", { name: "Journée 27" }).click();
+    // Les deux matchs réels de cette journée sont bien affichés.
+    await expect(list.getByText("Liverpool FC")).toBeVisible();
+    await expect(list.getByText("Newcastle United FC")).toBeVisible();
+
+    // Coupe du Monde (phase à élimination directe, pas de champ "journée" exploitable) :
+    // aucun carrousel de journées vide ne doit s'afficher — pas de bouton sans effet.
+    await compCarousel.getByRole("button", { name: "Coupe du Monde" }).click();
+    await expect(list.getByText("France")).toBeVisible();
+    await expect(page.getByTestId("matchday-filter")).toHaveCount(0);
+  });
+});
+
 test.describe("Écran 3 — Analyser un match", () => {
   test("clic ANALYSER depuis Matchs en ligne : une seule navigation vers les pronostics, tous les champs sont remplis", async ({ page }) => {
     const errors = trackErrors(page);

@@ -26,7 +26,7 @@ const pronostic = (overrides = {}) => ({
 
 const liveMatches = [
   {
-    id: 101, status: "IN_PLAY", minute: 32, utcDate: new Date().toISOString(),
+    id: 101, status: "IN_PLAY", minute: 32, utcDate: new Date().toISOString(), matchday: 25,
     competition: { code: "PL", name: "Premier League", emblem: "" },
     homeTeam: { id: 10, name: "Arsenal FC", crest: "" },
     awayTeam: { id: 11, name: "Chelsea FC", crest: "" },
@@ -34,7 +34,7 @@ const liveMatches = [
     pronostic: pronostic({ live: true, minute: 32, currentScore: { home: 1, away: 0 } }),
   },
   {
-    id: 102, status: "IN_PLAY", minute: 75, utcDate: new Date().toISOString(),
+    id: 102, status: "IN_PLAY", minute: 75, utcDate: new Date().toISOString(), matchday: 20,
     competition: { code: "PD", name: "LaLiga", emblem: "" },
     homeTeam: { id: 20, name: "Real Madrid", crest: "" },
     awayTeam: { id: 21, name: "FC Barcelona", crest: "" },
@@ -47,9 +47,9 @@ const liveMatches = [
   },
 ];
 
-function upcomingMatch(id, code, name, home, away, hoursFromNow) {
+function upcomingMatch(id, code, name, home, away, hoursFromNow, matchday) {
   return {
-    id, status: "SCHEDULED", minute: null,
+    id, status: "SCHEDULED", minute: null, matchday,
     utcDate: new Date(Date.now() + hoursFromNow * 3600000).toISOString(),
     competition: { code, name, emblem: "" },
     homeTeam: { id: home.id, name: home.name, crest: "" },
@@ -63,9 +63,14 @@ function upcomingMatch(id, code, name, home, away, hoursFromNow) {
 }
 
 const upcomingByCompetition = {
-  PL: [upcomingMatch(201, "PL", "Premier League", { id: 12, name: "Liverpool FC" }, { id: 13, name: "Manchester City FC" }, 5)],
-  CL: [upcomingMatch(202, "CL", "Ligue des Champions", { id: 30, name: "Bayern Munich" }, { id: 31, name: "Paris Saint-Germain" }, 26)],
-  WC: [upcomingMatch(203, "WC", "Coupe du Monde", { id: 40, name: "France" }, { id: 41, name: "Brazil" }, 50)],
+  PL: [
+    upcomingMatch(201, "PL", "Premier League", { id: 12, name: "Liverpool FC" }, { id: 13, name: "Manchester City FC" }, 5, 27),
+    upcomingMatch(204, "PL", "Premier League", { id: 14, name: "Newcastle United FC" }, { id: 15, name: "Aston Villa FC" }, 6, 27),
+  ],
+  CL: [upcomingMatch(202, "CL", "Ligue des Champions", { id: 30, name: "Bayern Munich" }, { id: 31, name: "Paris Saint-Germain" }, 26, 5)],
+  // Coupe du Monde : pas de champ `matchday` exploitable (phase à élimination directe) —
+  // sert à vérifier qu'aucun carrousel de journées vide ne s'affiche pour cette compétition.
+  WC: [upcomingMatch(203, "WC", "Coupe du Monde", { id: 40, name: "France" }, { id: 41, name: "Brazil" }, 50, undefined)],
 };
 
 const finishedMatch = {

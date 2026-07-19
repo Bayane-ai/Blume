@@ -2,9 +2,11 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/router";
 import { useRequireAuth } from "../lib/useRequireAuth";
 import { getRecentSearches, saveSearch } from "../lib/personalization";
+import { presentCompetitions, presentMatchdays } from "../lib/matchFilters";
 import MatchCard, { matchHref } from "../components/MatchCard";
 import MatchInfoBlock from "../components/MatchInfoBlock";
 import SiteHeader from "../components/SiteHeader";
+import FilterCarousel from "../components/FilterCarousel";
 
 // Grâce au cache partagé côté serveur (lib/liveListCache.js, actualisé toutes les
 // 2,5s), on peut interroger /api/live-matches très souvent depuis le client sans
@@ -40,6 +42,8 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [recentSearches, setRecentSearches] = useState([]);
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
+  const [compFilter, setCompFilter] = useState("all");
+  const [matchdayFilter, setMatchdayFilter] = useState("all");
 
   const [liveData, setLiveData] = useState(null);
   const [liveLoading, setLiveLoading] = useState(true);
@@ -114,22 +118,40 @@ export default function Home() {
     return () => clearTimeout(id);
   }, [authorized, userId, searchQuery]);
 
-  // Matchs en direct (statut LIVE/IN_PLAY/PAUSED), sans filtre par compétition ou pays :
-  // exactement ce que l'API renvoie, jamais de matchs inventés pour compléter la liste.
+  // Choisir une compétition réinitialise la journée sélectionnée (une journée n'a de
+  // sens que dans le contexte de la compétition qui vient d'être choisie).
+  const selectCompetitionFilter = (value) => {
+    setCompFilter(value);
+    setMatchdayFilter("all");
+  };
+
+  // Options des deux carrousels (PROMPT 6), déduites des vrais matchs actuellement
+  // chargés — jamais une compétition ou une journée sans aucun match derrière.
+  const competitionOptions = useMemo(() => presentCompetitions(liveData?.matches), [liveData]);
+  const matchdayOptions = useMemo(
+    () => (compFilter === "all" ? [] : presentMatchdays(liveData?.matches, compFilter)),
+    [liveData, compFilter]
+  );
+
+  // Matchs en direct (statut LIVE/IN_PLAY/PAUSED) : exactement ce que l'API renvoie,
+  // jamais de matchs inventés pour compléter la liste, filtré par compétition/journée
+  // (carrousels) puis par la recherche texte.
   const liveFeed = useMemo(() => {
     if (!liveData?.matches) return [];
-    const validMatches = liveData.matches.filter((m) => m?.homeTeam && m?.awayTeam && m?.utcDate);
+    let matches = liveData.matches.filter((m) => m?.homeTeam && m?.awayTeam && m?.utcDate);
+    if (compFilter !== "all") matches = matches.filter((m) => m.competition?.code === compFilter);
+    if (matchdayFilter !== "all") matches = matches.filter((m) => String(m.matchday) === matchdayFilter);
     const q = normalize(searchQuery);
-    const matches = q
-      ? validMatches.filter(
-          (m) =>
-            normalize(m.homeTeam.name).includes(q) ||
-            normalize(m.awayTeam.name).includes(q) ||
-            normalize(m.competition?.name).includes(q)
-        )
-      : validMatches;
+    if (q) {
+      matches = matches.filter(
+        (m) =>
+          normalize(m.homeTeam.name).includes(q) ||
+          normalize(m.awayTeam.name).includes(q) ||
+          normalize(m.competition?.name).includes(q)
+      );
+    }
     return matches.map((m) => ({ m, comp: m.competition }));
-  }, [liveData, searchQuery]);
+  }, [liveData, searchQuery, compFilter, matchdayFilter]);
 
   const liveCount = liveData?.matches?.length || 0;
 
@@ -186,6 +208,21 @@ export default function Home() {
           <span style={{ ...st.chip, ...st.chipLive }}>Live : {liveCount}</span>
         </div>
 
+        <FilterCarousel
+          testId="competition-filter"
+          allLabel="Toutes les compétitions"
+          items={competitionOptions}
+          selected={compFilter}
+          onSelect={selectCompetitionFilter}
+        />
+        <FilterCarousel
+          testId="matchday-filter"
+          allLabel="Toutes les journées"
+          items={matchdayOptions}
+          selected={matchdayFilter}
+          onSelect={setMatchdayFilter}
+        />
+
         <div style={st.searchRow}>
           <input
             value={search}
@@ -214,7 +251,11 @@ export default function Home() {
         )}
         {!liveLoading && liveData && !liveData.error && liveFeed.length === 0 && (
           <p style={st.hint}>
-            {searchQuery ? "Aucun match ne correspond à ta recherche." : "Aucun match en direct actuellement."}
+            {searchQuery
+              ? "Aucun match ne correspond à ta recherche."
+              : compFilter !== "all"
+              ? "Aucun match en direct actuellement pour ce filtre."
+              : "Aucun match en direct actuellement."}
           </p>
         )}
 

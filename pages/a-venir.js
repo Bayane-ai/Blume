@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRequireAuth } from "../lib/useRequireAuth";
+import { presentCompetitions, presentMatchdays } from "../lib/matchFilters";
 import MatchCard from "../components/MatchCard";
 import SiteHeader from "../components/SiteHeader";
+import FilterCarousel from "../components/FilterCarousel";
 
 const UPCOMING_STATUSES = ["SCHEDULED", "TIMED"];
 // Les matchs à venir changent moins vite que le direct, mais un rafraîchissement
@@ -26,6 +28,8 @@ export default function UpcomingMatches() {
   const [search, setSearch] = useState("");
   const [weekData, setWeekData] = useState(null);
   const [weekLoading, setWeekLoading] = useState(true);
+  const [compFilter, setCompFilter] = useState("all");
+  const [matchdayFilter, setMatchdayFilter] = useState("all");
 
   // silent=true (rafraîchissement automatique) : une erreur passagère ne doit jamais
   // effacer des matchs déjà affichés — on réessaie simplement au prochain cycle.
@@ -60,11 +64,32 @@ export default function UpcomingMatches() {
 
   const searchQuery = search.trim();
 
+  // Choisir une compétition réinitialise la journée sélectionnée (une journée n'a de
+  // sens que dans le contexte de la compétition qui vient d'être choisie).
+  const selectCompetitionFilter = (value) => {
+    setCompFilter(value);
+    setMatchdayFilter("all");
+  };
+
+  // Options des deux carrousels (PROMPT 6), déduites des vrais matchs actuellement
+  // chargés (toutes compétitions confondues) — jamais une compétition ou une
+  // journée sans aucun match derrière.
+  const allUpcomingMatches = useMemo(
+    () => (weekData?.competitions || []).flatMap((c) => c.matches || []),
+    [weekData]
+  );
+  const competitionOptions = useMemo(() => presentCompetitions(allUpcomingMatches), [allUpcomingMatches]);
+  const matchdayOptions = useMemo(
+    () => (compFilter === "all" ? [] : presentMatchdays(allUpcomingMatches, compFilter)),
+    [allUpcomingMatches, compFilter]
+  );
+
   const weekFeed = useMemo(() => {
     if (!weekData?.competitions) return [];
     const rows = [];
     const now = Date.now();
     weekData.competitions.forEach((comp) => {
+      if (compFilter !== "all" && comp.code !== compFilter) return;
       const validMatches = (comp.matches || []).filter((m) => m?.homeTeam && m?.awayTeam && m?.utcDate);
       let matches;
       if (searchQuery) {
@@ -80,11 +105,12 @@ export default function UpcomingMatches() {
           (m) => UPCOMING_STATUSES.includes(m.status) && new Date(m.utcDate).getTime() > now
         );
       }
+      if (matchdayFilter !== "all") matches = matches.filter((m) => String(m.matchday) === matchdayFilter);
       matches.forEach((m) => rows.push({ m, comp }));
     });
     rows.sort((a, b) => new Date(a.m.utcDate) - new Date(b.m.utcDate));
     return rows;
-  }, [weekData, searchQuery]);
+  }, [weekData, searchQuery, compFilter, matchdayFilter]);
 
   if (!sessionChecked) {
     return (
@@ -109,6 +135,21 @@ export default function UpcomingMatches() {
           </p>
         </section>
 
+        <FilterCarousel
+          testId="competition-filter"
+          allLabel="Toutes les compétitions"
+          items={competitionOptions}
+          selected={compFilter}
+          onSelect={selectCompetitionFilter}
+        />
+        <FilterCarousel
+          testId="matchday-filter"
+          allLabel="Toutes les journées"
+          items={matchdayOptions}
+          selected={matchdayFilter}
+          onSelect={setMatchdayFilter}
+        />
+
         <div style={st.searchRow}>
           <input
             value={search}
@@ -127,7 +168,11 @@ export default function UpcomingMatches() {
         )}
         {!weekLoading && weekData && !weekData.error && weekFeed.length === 0 && (
           <p style={st.hint}>
-            {searchQuery ? "Aucun match ne correspond à ta recherche." : "Aucun match à venir cette semaine."}
+            {searchQuery
+              ? "Aucun match ne correspond à ta recherche."
+              : compFilter !== "all"
+              ? "Aucun match à venir pour ce filtre."
+              : "Aucun match à venir cette semaine."}
           </p>
         )}
 
