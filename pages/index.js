@@ -458,7 +458,7 @@ const st = {
     flex: 1, background: "#12291E", border: "1px solid #1E3D2C", color: "#7EA694",
     borderRadius: 999, padding: "10px 8px", fontSize: 12.5, fontWeight: 700, cursor: "pointer",
   },
-  tabBtnActive: { background: "#39B577", borderColor: "#39B577", color: "#06121F" },
+  tabBtnActive: { background: "#39B577", border: "1px solid #39B577", color: "#06121F" },
   backBtn: {
     alignSelf: "flex-start", background: "transparent", border: "1px solid #1E3D2C", color: "#E9F1EC",
     borderRadius: 999, padding: "6px 12px", fontSize: 12, cursor: "pointer",

@@ -26,6 +26,9 @@ function friendlyAuthError(error) {
   if (code === "over_email_send_rate_limit" || msg.includes("rate limit")) {
     return "Trop de tentatives en peu de temps. Réessaie dans quelques minutes.";
   }
+  if (msg.includes("invalid path specified")) {
+    return "Erreur de configuration du service de connexion. Réessaie dans quelques instants ; si ça persiste, préviens l'administrateur du site.";
+  }
   return error?.message || "Une erreur est survenue.";
 }
 
@@ -34,6 +37,7 @@ export default function Login() {
   const [mode, setMode] = useState("signin"); // "signin" | "signup"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState(null);
   const [info, setInfo] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -46,19 +50,35 @@ export default function Login() {
     });
   }, [router]);
 
+  const switchMode = (nextMode) => {
+    setMode(nextMode);
+    setError(null);
+    setInfo(null);
+    setShowResend(false);
+    setConfirmPassword("");
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     setError(null);
     setInfo(null);
     setShowResend(false);
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (mode === "signup" && password !== confirmPassword) {
+      setError("Les deux mots de passe ne correspondent pas.");
+      return;
+    }
+
     setLoading(true);
     try {
       if (mode === "signin") {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
         if (error) throw error;
         router.push("/");
       } else {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { error } = await supabase.auth.signUp({ email: cleanEmail, password });
         if (error) throw error;
         setInfo("Compte créé. Vérifie ta boîte mail pour confirmer, puis reviens te connecter.");
       }
@@ -75,50 +95,76 @@ export default function Login() {
   const resendConfirmation = async () => {
     setError(null);
     setInfo(null);
-    const { error } = await supabase.auth.resend({ type: "signup", email });
+    const { error } = await supabase.auth.resend({ type: "signup", email: email.trim().toLowerCase() });
     if (error) setError(friendlyAuthError(error));
     else setInfo("Email de confirmation renvoyé. Vérifie ta boîte mail (et les spams).");
   };
 
   return (
     <div style={styles.page}>
-      <form onSubmit={submit} style={styles.card}>
-        <h1 style={styles.h1}>{mode === "signin" ? "Connexion" : "Créer un compte"}</h1>
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          style={styles.input}
-        />
-        <input
-          type="password"
-          placeholder="Mot de passe"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          minLength={6}
-          style={styles.input}
-        />
-        {error && <p style={styles.error}>{error}</p>}
-        {showResend && (
-          <button type="button" onClick={resendConfirmation} style={styles.switchBtn}>
-            Renvoyer l'email de confirmation
+      <div style={styles.card}>
+        <div style={styles.tabs}>
+          <button
+            type="button"
+            style={{ ...styles.tabBtn, ...(mode === "signin" ? styles.tabBtnActive : {}) }}
+            onClick={() => switchMode("signin")}
+          >
+            Se connecter
           </button>
-        )}
-        {info && <p style={styles.info}>{info}</p>}
-        <button type="submit" disabled={loading} style={styles.btn}>
-          {loading ? "..." : mode === "signin" ? "Se connecter" : "Créer le compte"}
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-          style={styles.switchBtn}
-        >
-          {mode === "signin" ? "Pas encore de compte ? Créer un compte" : "Déjà un compte ? Se connecter"}
-        </button>
-      </form>
+          <button
+            type="button"
+            style={{ ...styles.tabBtn, ...(mode === "signup" ? styles.tabBtnActive : {}) }}
+            onClick={() => switchMode("signup")}
+          >
+            Créer un compte
+          </button>
+        </div>
+
+        <form onSubmit={submit} style={styles.form}>
+          <h1 style={styles.h1}>{mode === "signin" ? "Connexion" : "Créer un compte"}</h1>
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+            required
+            style={styles.input}
+          />
+          <input
+            type="password"
+            placeholder="Mot de passe"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete={mode === "signin" ? "current-password" : "new-password"}
+            required
+            minLength={6}
+            style={styles.input}
+          />
+          {mode === "signup" && (
+            <input
+              type="password"
+              placeholder="Confirmer le mot de passe"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              autoComplete="new-password"
+              required
+              minLength={6}
+              style={styles.input}
+            />
+          )}
+          {error && <p style={styles.error}>{error}</p>}
+          {showResend && (
+            <button type="button" onClick={resendConfirmation} style={styles.switchBtn}>
+              Renvoyer l'email de confirmation
+            </button>
+          )}
+          {info && <p style={styles.info}>{info}</p>}
+          <button type="submit" disabled={loading} style={styles.btn}>
+            {loading ? "..." : mode === "signin" ? "Se connecter" : "Créer le compte"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
@@ -127,8 +173,15 @@ const styles = {
   page: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 },
   card: {
     width: "100%", maxWidth: 360, background: "#12291E", border: "1px solid #1E3D2C",
-    borderRadius: 16, padding: 24, display: "flex", flexDirection: "column", gap: 12,
+    borderRadius: 16, padding: 16, display: "flex", flexDirection: "column", gap: 16,
   },
+  tabs: { display: "flex", gap: 8 },
+  tabBtn: {
+    flex: 1, background: "#0B1F16", border: "1px solid #1E3D2C", color: "#7EA694",
+    borderRadius: 999, padding: "10px 8px", fontSize: 12.5, fontWeight: 700, cursor: "pointer",
+  },
+  tabBtnActive: { background: "#39B577", border: "1px solid #39B577", color: "#06121F" },
+  form: { display: "flex", flexDirection: "column", gap: 12, padding: "8px 8px 0" },
   h1: { fontSize: 20, margin: "0 0 8px", textAlign: "center" },
   input: {
     background: "#0B1F16", border: "1px solid #1E3D2C", color: "#E9F1EC",
