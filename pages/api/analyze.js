@@ -6,12 +6,32 @@ import { computePronostic, computeLivePronostic } from "../../lib/pronostic";
 
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
 
-async function resolveTeamStats(teamId, table, token) {
-  const row = table?.find((r) => String(r.team.id) === String(teamId));
-  if (row && row.playedGames) return { stats: row, source: "classement" };
-
+// Base de calcul du pronostic : la performance RÉCENTE et RÉELLE de chaque club
+// (ses derniers matchs joués — forme, buts marqués/encaissés, résultats), pas une
+// moyenne de saison qui gomme les différences entre deux équipes proches au
+// classement. C'est ce qui rend chaque match réellement distinct : deux équipes de
+// milieu de tableau avec des moyennes de saison presque identiques peuvent très
+// bien traverser une période très différente (l'une en pleine forme, l'autre en
+// crise) — seuls les derniers matchs le montrent. Le classement (position/points),
+// quand disponible, ne sert plus qu'à enrichir l'affichage (contexte), et ne
+// redevient la base du calcul que si les derniers matchs sont indisponibles.
+async function resolveTeamStats(teamId, standingsRow, token) {
   const recentForm = await getTeamRecentForm(teamId, token);
-  if (recentForm) return { stats: recentForm, source: "forme récente" };
+  if (recentForm) {
+    return {
+      stats: {
+        ...recentForm,
+        position: standingsRow?.position ?? null,
+        points: standingsRow?.points ?? null,
+        form: recentForm.form || standingsRow?.form || null,
+      },
+      source: "forme récente",
+    };
+  }
+
+  if (standingsRow && standingsRow.playedGames) {
+    return { stats: standingsRow, source: "classement" };
+  }
 
   return { stats: null, source: "estimation moyenne" };
 }
@@ -35,15 +55,18 @@ export default async function handler(req, res) {
 
     const table = await getStandingsTable(competitionCode, token);
 
-    // Une équipe absente du classement (phase à élimination directe, coupe sans tableau
-    // de classement, etc.) ne doit pas bloquer le pronostic : on se rabat sur ses derniers
-    // matchs joués, pour que l'analyse fonctionne quel que soit le moment de la recherche.
+    // Le classement (`table`) sert de repli et de contexte d'affichage (position,
+    // points) — resolveTeamStats calcule d'abord chaque équipe à partir de SES
+    // propres derniers matchs joués (voir lib/teamForm.js), jamais mélangés entre
+    // les deux équipes. Une équipe absente du classement (phase à élimination
+    // directe, coupe sans tableau, etc.) reste donc analysable normalement.
     // Les vraies confrontations directes entre CES deux équipes (lib/headToHead.js)
-    // affinent ensuite le résultat quand l'API en fournit assez (voir lib/pronostic.js) —
-    // absentes ou en erreur, le pronostic reste exploitable, basé sur classement/forme seuls.
+    // affinent ensuite le résultat quand l'API en fournit assez (voir lib/pronostic.js).
+    const homeStandingsRow = table?.find((r) => String(r.team.id) === String(homeTeamId));
+    const awayStandingsRow = table?.find((r) => String(r.team.id) === String(awayTeamId));
     const [homeResolved, awayResolved, h2h] = await Promise.all([
-      resolveTeamStats(homeTeamId, table, token),
-      resolveTeamStats(awayTeamId, table, token),
+      resolveTeamStats(homeTeamId, homeStandingsRow, token),
+      resolveTeamStats(awayTeamId, awayStandingsRow, token),
       matchId ? getHeadToHead(matchId, token) : Promise.resolve(null),
     ]);
 

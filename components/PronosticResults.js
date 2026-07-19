@@ -67,6 +67,59 @@ export default function PronosticResults({ pronostic, loading }) {
         </div>
       </div>
 
+      {/* Chaque équipe a ses propres statistiques, calculées séparément à partir de
+          SES propres matchs récents (voir lib/teamForm.js) — jamais mélangées ni
+          copiées d'une équipe à l'autre. */}
+      <p style={st.sectionLabel}>Par équipe</p>
+      <div style={st.teamStatsGrid} data-testid="team-stats">
+        <div style={st.teamStatsCol}>
+          <span style={st.teamStatsHeader}>{pronostic.home?.name || "Domicile"}</span>
+          <div style={st.teamStatRow}>
+            <span style={st.teamStatLabel}>Buts attendus</span>
+            <span style={st.teamStatValue} data-testid="team-goals-home">{pronostic.goals.expectedHome ?? "–"}</span>
+          </div>
+          {extraStats && (
+            <>
+              <div style={st.teamStatRow}>
+                <span style={st.teamStatLabel}>Corners</span>
+                <span style={st.teamStatValue} data-testid="team-corners-home">{extraStats.corners.home}</span>
+              </div>
+              <div style={st.teamStatRow}>
+                <span style={st.teamStatLabel}>Tirs</span>
+                <span style={st.teamStatValue} data-testid="team-shots-home">{extraStats.shots.home}</span>
+              </div>
+              <div style={st.teamStatRow}>
+                <span style={st.teamStatLabel}>Cartons</span>
+                <span style={st.teamStatValue} data-testid="team-cards-home">{extraStats.cards.home}</span>
+              </div>
+            </>
+          )}
+        </div>
+        <div style={st.teamStatsCol}>
+          <span style={st.teamStatsHeader}>{pronostic.away?.name || "Extérieur"}</span>
+          <div style={st.teamStatRow}>
+            <span style={st.teamStatLabel}>Buts attendus</span>
+            <span style={st.teamStatValue} data-testid="team-goals-away">{pronostic.goals.expectedAway ?? "–"}</span>
+          </div>
+          {extraStats && (
+            <>
+              <div style={st.teamStatRow}>
+                <span style={st.teamStatLabel}>Corners</span>
+                <span style={st.teamStatValue} data-testid="team-corners-away">{extraStats.corners.away}</span>
+              </div>
+              <div style={st.teamStatRow}>
+                <span style={st.teamStatLabel}>Tirs</span>
+                <span style={st.teamStatValue} data-testid="team-shots-away">{extraStats.shots.away}</span>
+              </div>
+              <div style={st.teamStatRow}>
+                <span style={st.teamStatLabel}>Cartons</span>
+                <span style={st.teamStatValue} data-testid="team-cards-away">{extraStats.cards.away}</span>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
       <p style={st.sectionLabel}>Statistiques probables{pronostic.live ? " (estimation fin de match)" : ""} — total du match</p>
       <div style={st.scoresRow} data-testid="extra-stats">
         <div style={st.scoreCell}>
@@ -154,4 +207,13 @@ const st = {
   probLabel: { display: "block", fontSize: 9.5, color: "#7EA694", textTransform: "uppercase" },
   probValue: { fontSize: 15, fontWeight: 700 },
   noteText: { fontSize: 10.5, color: "#5C8A73", fontStyle: "italic", margin: "8px 0 0" },
+  teamStatsGrid: { display: "flex", gap: 8, marginBottom: 4 },
+  teamStatsCol: { flex: 1, background: "#0B1F16", borderRadius: 8, padding: "10px 12px" },
+  teamStatsHeader: {
+    display: "block", fontSize: 11, fontWeight: 800, color: "#E9F1EC", marginBottom: 6,
+    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+  },
+  teamStatRow: { display: "flex", justifyContent: "space-between", gap: 6, padding: "3px 0" },
+  teamStatLabel: { fontSize: 10.5, color: "#7EA694" },
+  teamStatValue: { fontSize: 12.5, fontWeight: 700 },
 };

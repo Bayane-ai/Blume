@@ -45,6 +45,39 @@ test('seules les probabilités de victoire affichent un "%" — buts/corners/tir
   expect(percentCount).toBe(4);
 });
 
+test("chaque équipe a ses propres statistiques affichées séparément — jamais mélangées ni copiées d'une équipe à l'autre", () => {
+  // Deux profils délibérément opposés : l'équipe à domicile très offensive, celle à
+  // l'extérieur très défensive — si les stats étaient mélangées/copiées, les deux
+  // colonnes se ressembleraient malgré ces profils opposés.
+  const pronostic = computePronostic({
+    homeRow: rowFor({ goalsFor: 65, goalsAgainst: 15, id: 1 }),
+    awayRow: rowFor({ goalsFor: 15, goalsAgainst: 55, id: 2 }),
+    homeTeamName: "Attaque FC", awayTeamName: "Defense FC",
+  });
+
+  render(<PronosticResults pronostic={pronostic} loading={false} />);
+
+  const teamStats = screen.getByTestId("team-stats");
+  expect(within(teamStats).getByText("Attaque FC")).toBeInTheDocument();
+  expect(within(teamStats).getByText("Defense FC")).toBeInTheDocument();
+
+  const homeGoals = Number(screen.getByTestId("team-goals-home").textContent);
+  const awayGoals = Number(screen.getByTestId("team-goals-away").textContent);
+  expect(homeGoals).toBeGreaterThan(awayGoals);
+  expect(homeGoals).toBe(pronostic.goals.expectedHome);
+  expect(awayGoals).toBe(pronostic.goals.expectedAway);
+
+  const homeCorners = Number(screen.getByTestId("team-corners-home").textContent);
+  const awayCorners = Number(screen.getByTestId("team-corners-away").textContent);
+  expect(homeCorners).toBe(pronostic.extraStats.corners.home);
+  expect(awayCorners).toBe(pronostic.extraStats.corners.away);
+  expect(homeCorners).not.toBe(awayCorners);
+
+  const homeShots = Number(screen.getByTestId("team-shots-home").textContent);
+  const awayShots = Number(screen.getByTestId("team-shots-away").textContent);
+  expect(homeShots).toBeGreaterThan(awayShots);
+});
+
 test("l'ordre des scores exacts va bien du plus probable au moins probable, sans pourcentage affiché", () => {
   const pronostic = computePronostic({
     homeRow: rowFor({ goalsFor: 60, goalsAgainst: 15, id: 1 }),

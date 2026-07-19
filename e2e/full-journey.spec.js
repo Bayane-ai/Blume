@@ -181,6 +181,15 @@ test.describe("Écran 3 — Analyser un match", () => {
     const scoreCells = page.getByTestId("correct-scores").locator("div");
     expect(await scoreCells.count()).toBeGreaterThanOrEqual(3);
 
+    // Chaque équipe a ses propres statistiques affichées séparément (pas seulement
+    // un total combiné) : Arsenal (domicile) et Chelsea (extérieur) ont chacun leur
+    // propre bloc, avec leurs propres valeurs.
+    const teamStats = page.getByTestId("team-stats");
+    await expect(teamStats.getByText("Arsenal FC")).toBeVisible();
+    await expect(teamStats.getByText("Chelsea FC")).toBeVisible();
+    await expect(page.getByTestId("team-goals-home")).toBeVisible();
+    await expect(page.getByTestId("team-goals-away")).toBeVisible();
+
     // Seules les 3 probabilités de victoire sont en "%" — buts/corners/tirs/cartons/
     // possession/tendances/scores sont des intervalles ou estimations.
     await expect(page.getByTestId("stat-goals")).toContainText(/^entre \d+ et \d+$/);
