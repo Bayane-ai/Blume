@@ -176,3 +176,157 @@ describe("/api/analyze — relit toujours l'état du match depuis l'API pour un 
     expect(res.body.live).toBe(false);
   });
 });
+
+describe("/api/analyze — événements live réels (API-Football), en complément de football-data.org", () => {
+  const TOKEN = "test-token";
+  const AF_KEY = "test-api-football-key";
+
+  function mockRes() {
+    const res = {};
+    res.status = jest.fn(() => res);
+    res.json = jest.fn((body) => { res.body = body; return res; });
+    res.setHeader = jest.fn();
+    return res;
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    process.env.FOOTBALL_DATA_TOKEN = TOKEN;
+    process.env.API_FOOTBALL_KEY = AF_KEY;
+  });
+
+  afterEach(() => {
+    delete process.env.API_FOOTBALL_KEY;
+  });
+
+  const baseQuery = { matchId: "777", competitionCode: "PL", homeTeamId: "10", awayTeamId: "11", homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC" };
+
+  function mockFetchWithApiFootball({ apiFootballFixtures, apiFootballEvents }) {
+    return jest.fn((url) => {
+      if (url.includes("head2head")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ aggregates: { numberOfMatches: 0 } }) });
+      }
+      if (url.includes("/matches/777")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: "IN_PLAY", minute: 23, score: { fullTime: { home: 1, away: 0 } } }) });
+      }
+      if (url.includes("/standings")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [{ table: [homeRow, awayRow] }] }) });
+      }
+      if (url.includes("fixtures?live=all")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: apiFootballFixtures }) });
+      }
+      if (url.includes("fixtures/events")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: apiFootballEvents }) });
+      }
+      return Promise.reject(new Error(`URL inattendue : ${url}`));
+    });
+  }
+
+  test("un but réel remonté par API-Football apparaît dans les événements du match, avec l'id football-data.org de l'équipe", async () => {
+    global.fetch = mockFetchWithApiFootball({
+      apiFootballFixtures: [
+        { fixture: { id: 555 }, teams: { home: { id: 100, name: "Arsenal" }, away: { id: 101, name: "Chelsea" } } },
+      ],
+      apiFootballEvents: [
+        { time: { elapsed: 23 }, team: { id: 100 }, player: { id: 1, name: "Bukayo Saka" }, type: "Goal", detail: "Normal Goal" },
+      ],
+    });
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    const res = mockRes();
+    await handler({ query: baseQuery }, res);
+
+    expect(res.body.events).toHaveLength(1);
+    expect(res.body.events[0]).toMatchObject({ type: "GOAL", teamId: "10", minute: 23 });
+  });
+
+  test("match trouvé côté API-Football mais aucun événement pour l'instant : tableau vide, pas null", async () => {
+    global.fetch = mockFetchWithApiFootball({
+      apiFootballFixtures: [
+        { fixture: { id: 555 }, teams: { home: { id: 100, name: "Arsenal" }, away: { id: 101, name: "Chelsea" } } },
+      ],
+      apiFootballEvents: [],
+    });
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    const res = mockRes();
+    await handler({ query: baseQuery }, res);
+
+    expect(res.body.events).toEqual([]);
+  });
+
+  test("match introuvable côté API-Football (pas de correspondance de noms) : events reste null, jamais un match inventé", async () => {
+    global.fetch = mockFetchWithApiFootball({
+      apiFootballFixtures: [
+        { fixture: { id: 555 }, teams: { home: { id: 100, name: "Real Madrid" }, away: { id: 101, name: "FC Barcelona" } } },
+      ],
+      apiFootballEvents: [],
+    });
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    const res = mockRes();
+    await handler({ query: baseQuery }, res);
+
+    expect(res.body.events).toBeNull();
+  });
+
+  test("sans clé API_FOOTBALL_KEY configurée, events reste null (comportement inchangé, jamais d'erreur)", async () => {
+    delete process.env.API_FOOTBALL_KEY;
+    global.fetch = mockFetchWithApiFootball({ apiFootballFixtures: [], apiFootballEvents: [] });
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    const res = mockRes();
+    await handler({ query: baseQuery }, res);
+
+    expect(res.body.events).toBeNull();
+    expect(res.body.live).toBe(true);
+  });
+
+  test("une erreur de l'API-Football (ex: quota dépassé) laisse events à null sans faire échouer toute la requête", async () => {
+    global.fetch = jest.fn((url) => {
+      if (url.includes("head2head")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ aggregates: { numberOfMatches: 0 } }) });
+      }
+      if (url.includes("/matches/777")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: "IN_PLAY", minute: 23, score: { fullTime: { home: 1, away: 0 } } }) });
+      }
+      if (url.includes("/standings")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [{ table: [homeRow, awayRow] }] }) });
+      }
+      if (url.includes("fixtures?live=all")) {
+        return Promise.resolve({ ok: false, status: 429 });
+      }
+      return Promise.reject(new Error(`URL inattendue : ${url}`));
+    });
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    const res = mockRes();
+    await handler({ query: baseQuery }, res);
+
+    expect(res.body.events).toBeNull();
+    expect(res.body.probabilities).toBeDefined();
+  });
+
+  test("un match pas encore commencé n'appelle jamais API-Football (events null, aucun appel superflu)", async () => {
+    const fetchMock = jest.fn((url) => {
+      if (url.includes("/matches/777")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: "SCHEDULED", minute: null, score: { fullTime: { home: null, away: null } } }) });
+      }
+      if (url.includes("/standings")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [{ table: [homeRow, awayRow] }] }) });
+      }
+      if (url.includes("head2head")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ aggregates: { numberOfMatches: 0 } }) });
+      }
+      return Promise.reject(new Error(`URL inattendue : ${url}`));
+    });
+    global.fetch = fetchMock;
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    const res = mockRes();
+    await handler({ query: baseQuery }, res);
+
+    expect(res.body.events).toBeNull();
+    expect(fetchMock.mock.calls.some(([url]) => url.includes("api-sports") || url.includes("fixtures"))).toBe(false);
+  });
+});

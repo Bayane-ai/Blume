@@ -1,10 +1,12 @@
-// Timeline des moments forts d'un match (buts, cartons, remplacements). L'API
-// football-data.org (plan utilisé par Blume) fournit le score et l'état du match,
-// mais PAS un fil d'événements minute par minute — voir pages/api/analyze.js, qui
-// transmet toujours `events: null` pour cette raison. `events` reste donc un prop
-// explicite (plutôt qu'un import direct de l'API) pour que ce composant affiche de
-// vrais événements sans rien inventer le jour où une source de données les fournira,
-// et affiche en attendant un message honnête plutôt qu'une section vide ou une erreur.
+// Timeline des moments forts d'un match (buts, cartons, remplacements), alimentée par
+// API-Football pour les matchs en direct (voir lib/apiFootball.js et pages/api/analyze.js
+// — football-data.org, utilisé pour le reste du site, ne fournit pas ce fil). `events`
+// reste un prop explicite (plutôt qu'un import direct de l'API) pour que ce composant
+// affiche de vrais événements sans jamais rien inventer. Deux cas bien distincts :
+// `null`/`undefined` = aucune source connectée pour ce match (pas de clé API, match non
+// trouvé côté API-Football, erreur) ; tableau vide = source bien connectée mais aucun
+// événement pour l'instant (ex : match encore 0-0) — les deux messages sont différents
+// pour ne jamais faire passer un vrai "rien ne s'est encore passé" pour une panne.
 const EVENT_META = {
   GOAL: { icon: "⚽", label: "But" },
   YELLOW_CARD: { icon: "🟨", label: "Carton jaune" },
@@ -29,10 +31,17 @@ function buildTimelineRows(events) {
 }
 
 export default function MatchTimeline({ events, homeTeamId }) {
-  if (!events || events.length === 0) {
+  if (events == null) {
     return (
       <p style={st.hint} data-testid="timeline-empty">
         Événements non disponibles pour ce match.
+      </p>
+    );
+  }
+  if (events.length === 0) {
+    return (
+      <p style={st.hint} data-testid="timeline-empty">
+        Aucun événement pour l'instant.
       </p>
     );
   }

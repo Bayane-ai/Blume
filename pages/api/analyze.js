@@ -3,6 +3,7 @@ import { getTeamRecentForm } from "../../lib/teamForm";
 import { getLiveMatch } from "../../lib/liveMatchCache";
 import { getHeadToHead } from "../../lib/headToHead";
 import { computePronostic, computeLivePronostic } from "../../lib/pronostic";
+import { getAllLiveFixtures, findLiveFixtureByTeams, getFixtureEvents, mapApiFootballEvents } from "../../lib/apiFootball";
 
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
 
@@ -106,10 +107,33 @@ export default async function handler(req, res) {
 
     // La ressource "match" de football-data.org (plan utilisé ici) ne fournit pas de
     // fil d'événements minute par minute (buts/cartons/remplacements) — seulement le
-    // score et l'état du match. `events` reste donc toujours null : jamais de donnée
-    // inventée pour remplir la timeline (components/MatchTimeline.js), qui affiche un
-    // message clair à la place plutôt qu'une section vide ou une erreur.
+    // score et l'état du match. Pour un match en direct, on va chercher ce fil réel chez
+    // API-Football (voir lib/apiFootball.js) ; `events` ne reste `null` que si aucune
+    // source ne peut fournir la donnée (pas de clé API, match introuvable côté
+    // API-Football, ou erreur de la source) — jamais de donnée inventée pour remplir la
+    // timeline (components/MatchTimeline.js), qui distingue "indisponible" (null)
+    // d'"aucun événement pour l'instant" (tableau vide, mais source bien connectée).
     result.events = null;
+    const apiFootballKey = process.env.API_FOOTBALL_KEY;
+    if (isLive && apiFootballKey) {
+      try {
+        const liveFixtures = await getAllLiveFixtures(apiFootballKey);
+        const fixture = findLiveFixtureByTeams(liveFixtures, homeTeamName, awayTeamName);
+        if (fixture?.fixture?.id) {
+          const rawEvents = await getFixtureEvents(fixture.fixture.id, apiFootballKey);
+          if (rawEvents !== null) {
+            result.events = mapApiFootballEvents(rawEvents, {
+              fixtureHomeId: fixture.teams?.home?.id,
+              homeTeamId,
+              awayTeamId,
+            });
+          }
+        }
+      } catch (e) {
+        console.error("Erreur événements live (API-Football):", e.message);
+        // events reste null : jamais de donnée inventée si la source échoue.
+      }
+    }
 
     // Même raison que dans live-matches.js : sous charge, Vercel peut répartir les
     // requêtes sur plusieurs instances qui ne partagent pas leur cache mémoire

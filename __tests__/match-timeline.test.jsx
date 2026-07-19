@@ -30,9 +30,13 @@ test("si l'API ne fournit aucun événement, un message clair s'affiche — jama
   expect(screen.queryByTestId("match-timeline")).not.toBeInTheDocument();
 });
 
-test("un tableau vide affiche aussi le message clair, pas une liste vide silencieuse", () => {
+test("un tableau vide affiche un message distinct : source connectée, mais rien ne s'est encore passé", () => {
+  // Différent du cas `null` : ici la source (API-Football) répond bien, le match est
+  // juste encore sans événement (ex : 0-0 en début de rencontre) — ne pas dire
+  // "indisponible" pour ça, ce serait trompeur.
   render(<MatchTimeline events={[]} homeTeamId={HOME_ID} />);
-  expect(screen.getByText("Événements non disponibles pour ce match.")).toBeInTheDocument();
+  expect(screen.getByText("Aucun événement pour l'instant.")).toBeInTheDocument();
+  expect(screen.queryByText("Événements non disponibles pour ce match.")).not.toBeInTheDocument();
 });
 
 test("affiche chaque événement (minute, icône, joueur), du plus récent au plus ancien, avec les séparateurs Coup d'envoi/Mi-temps", () => {
