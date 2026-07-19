@@ -119,11 +119,14 @@ test.describe("Écran 3 — Analyser un match", () => {
     expect(errors.consoleErrors, `Erreurs console : ${errors.consoleErrors.join(" | ")}`).toEqual([]);
   });
 
-  test("clic ANALYSER depuis Matchs à venir : navigue aussi vers les pronostics du bon match", async ({ page }) => {
+  test("clic ANALYSER depuis Matchs à venir : navigue vers les pronostics du bon match, sans aucun score affiché (pas encore joué)", async ({ page }) => {
     await page.goto("/a-venir");
     await page.getByTestId("match-list").getByText("ANALYSER").first().click();
     await expect(page).toHaveURL(/\/match\/201/);
     await expect(page.getByText("Liverpool FC").first()).toBeVisible();
+
+    // Match pas encore commencé : aucun score nulle part, seulement les pronostics.
+    await expect(page.getByText(/^\d+\s*:\s*\d+$/)).toHaveCount(0);
   });
 });
 
