@@ -94,6 +94,58 @@ describe("mapApiFootballEvents", () => {
   });
 });
 
+describe("mapFixtureToLiveMatch / mapFixtureToLiveState — bloc 2 (liste live mondiale + repli score/minute)", () => {
+  function rawFixture(overrides = {}) {
+    return {
+      fixture: { id: 12345, date: "2026-07-19T20:00:00Z", status: { short: "2H", elapsed: 63 }, venue: { name: "Old Trafford" }, referee: "M. Oliver" },
+      league: { id: 71, name: "Brasileirão", logo: "https://logo/71.png" },
+      teams: {
+        home: { id: 111, name: "Flamengo", logo: "https://logo/home.png" },
+        away: { id: 222, name: "Palmeiras", logo: "https://logo/away.png" },
+      },
+      goals: { home: 2, away: 1 },
+      ...overrides,
+    };
+  }
+
+  test("l'id du match et des équipes est préfixé 'af-' pour ne jamais coïncider avec un id football-data.org", async () => {
+    const { mapFixtureToLiveMatch } = await import("../lib/apiFootball.js");
+    const m = mapFixtureToLiveMatch(rawFixture());
+    expect(m.id).toBe("af-12345");
+    expect(m.homeTeam.id).toBe("af-111");
+    expect(m.awayTeam.id).toBe("af-222");
+    expect(m.competition.code).toBe("af-71");
+  });
+
+  test("traduit correctement équipes, score, minute et compétition, avec le vrai statut IN_PLAY", async () => {
+    const { mapFixtureToLiveMatch } = await import("../lib/apiFootball.js");
+    const m = mapFixtureToLiveMatch(rawFixture());
+    expect(m.status).toBe("IN_PLAY");
+    expect(m.minute).toBe(63);
+    expect(m.homeTeam.name).toBe("Flamengo");
+    expect(m.awayTeam.name).toBe("Palmeiras");
+    expect(m.score.fullTime).toEqual({ home: 2, away: 1 });
+    expect(m.competition.name).toBe("Brasileirão");
+  });
+
+  test("la mi-temps (HT) devient PAUSED, comme pour football-data.org", async () => {
+    const { mapFixtureToLiveMatch } = await import("../lib/apiFootball.js");
+    const m = mapFixtureToLiveMatch(rawFixture({ fixture: { ...rawFixture().fixture, status: { short: "HT", elapsed: 45 } } }));
+    expect(m.status).toBe("PAUSED");
+  });
+
+  test("mapFixtureToLiveState renvoie le même format que lib/liveMatchCache.js (score/minute/statut/lieu/arbitre)", async () => {
+    const { mapFixtureToLiveState } = await import("../lib/apiFootball.js");
+    const state = mapFixtureToLiveState(rawFixture());
+    expect(state).toEqual({
+      status: "IN_PLAY", minute: 63,
+      score: { fullTime: { home: 2, away: 1 } },
+      venue: "Old Trafford",
+      referees: [{ name: "M. Oliver" }],
+    });
+  });
+});
+
 describe("getAllLiveFixtures / getFixtureEvents — cache partagé et déduplication (quota quotidien limité)", () => {
   test("sans clé API, renvoie une liste vide sans jamais appeler l'API", async () => {
     const { getAllLiveFixtures } = await import("../lib/apiFootball.js");

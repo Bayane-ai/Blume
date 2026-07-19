@@ -3,7 +3,7 @@ import { getTeamRecentForm } from "../../lib/teamForm";
 import { getLiveMatch } from "../../lib/liveMatchCache";
 import { getHeadToHead } from "../../lib/headToHead";
 import { computePronostic, computeLivePronostic } from "../../lib/pronostic";
-import { getAllLiveFixtures, findLiveFixtureByTeams, getFixtureEvents, mapApiFootballEvents } from "../../lib/apiFootball";
+import { getAllLiveFixtures, findLiveFixtureByTeams, getFixtureEvents, mapApiFootballEvents, mapFixtureToLiveState } from "../../lib/apiFootball";
 
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
 
@@ -46,15 +46,32 @@ export default async function handler(req, res) {
   }
 
   try {
+    const apiFootballKey = process.env.API_FOOTBALL_KEY;
+    // Un match connu UNIQUEMENT par API-Football (hors des compétitions couvertes par
+    // le plan gratuit football-data.org — voir pages/api/live-matches.js) porte un id
+    // préfixé "af-" : jamais interrogé auprès de football-data.org, dont les ids sont
+    // numérotés indépendamment et pourraient par coïncidence désigner un tout autre match.
+    const isApiFootballOnlyId = typeof matchId === "string" && matchId.startsWith("af-");
+
     // Le score/la minute viennent toujours de l'API, jamais d'une valeur transmise par
     // le client. Le cache de quelques secondes ici n'est pas "figé" : il sert seulement
     // à mutualiser les appels entre plusieurs visiteurs qui suivent le même match en
     // même temps, pour pouvoir actualiser souvent sans dépasser le quota de l'API
     // (sinon les requêtes échouent et le pronostic retombe silencieusement sur
     // l'estimation pré-match au lieu de suivre le score réel).
-    const liveMatch = matchId ? await getLiveMatch(matchId, token) : null;
+    let liveMatch = matchId && !isApiFootballOnlyId ? await getLiveMatch(matchId, token) : null;
 
-    const table = await getStandingsTable(competitionCode, token);
+    // football-data.org ne connaît pas ce match (hors de ses compétitions couvertes, ou
+    // id "af-") : on retombe sur API-Football pour le score/minute en direct — jamais un
+    // match affiché comme "en direct" sans une vraie source qui le confirme réellement.
+    let apiFootballFixture = null;
+    if (!liveMatch && apiFootballKey && homeTeamName && awayTeamName) {
+      const liveFixtures = await getAllLiveFixtures(apiFootballKey);
+      apiFootballFixture = findLiveFixtureByTeams(liveFixtures, homeTeamName, awayTeamName);
+      if (apiFootballFixture) liveMatch = mapFixtureToLiveState(apiFootballFixture);
+    }
+
+    const table = isApiFootballOnlyId ? null : await getStandingsTable(competitionCode, token);
 
     // Le classement (`table`) sert de repli et de contexte d'affichage (position,
     // points) — resolveTeamStats calcule d'abord chaque équipe à partir de SES
@@ -68,7 +85,7 @@ export default async function handler(req, res) {
     const [homeResolved, awayResolved, h2h] = await Promise.all([
       resolveTeamStats(homeTeamId, homeStandingsRow, token),
       resolveTeamStats(awayTeamId, awayStandingsRow, token),
-      matchId ? getHeadToHead(matchId, token) : Promise.resolve(null),
+      matchId && !isApiFootballOnlyId ? getHeadToHead(matchId, token) : Promise.resolve(null),
     ]);
 
     const isLive = liveMatch && LIVE_STATUSES.includes(liveMatch.status);
@@ -114,16 +131,19 @@ export default async function handler(req, res) {
     // timeline (components/MatchTimeline.js), qui distingue "indisponible" (null)
     // d'"aucun événement pour l'instant" (tableau vide, mais source bien connectée).
     result.events = null;
-    const apiFootballKey = process.env.API_FOOTBALL_KEY;
     if (isLive && apiFootballKey) {
       try {
-        const liveFixtures = await getAllLiveFixtures(apiFootballKey);
-        const fixture = findLiveFixtureByTeams(liveFixtures, homeTeamName, awayTeamName);
-        if (fixture?.fixture?.id) {
-          const rawEvents = await getFixtureEvents(fixture.fixture.id, apiFootballKey);
+        // Réutilise le match déjà trouvé ci-dessus (repli score/minute) s'il existe,
+        // pour ne pas refaire une deuxième recherche identique côté API-Football.
+        if (!apiFootballFixture) {
+          const liveFixtures = await getAllLiveFixtures(apiFootballKey);
+          apiFootballFixture = findLiveFixtureByTeams(liveFixtures, homeTeamName, awayTeamName);
+        }
+        if (apiFootballFixture?.fixture?.id) {
+          const rawEvents = await getFixtureEvents(apiFootballFixture.fixture.id, apiFootballKey);
           if (rawEvents !== null) {
             result.events = mapApiFootballEvents(rawEvents, {
-              fixtureHomeId: fixture.teams?.home?.id,
+              fixtureHomeId: apiFootballFixture.teams?.home?.id,
               homeTeamId,
               awayTeamId,
             });

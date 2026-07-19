@@ -198,3 +198,104 @@ test("plusieurs visiteurs qui actualisent en même temps ne déclenchent qu'un s
   const matchesCalls = fetchMock.mock.calls.filter(([url]) => url.includes("/v4/matches?")).length;
   expect(matchesCalls).toBe(1);
 });
+
+describe("Bloc 2 — la liste live mondiale complète les matchs football-data.org avec ceux d'API-Football", () => {
+  const AF_KEY = "test-api-football-key";
+
+  beforeEach(() => {
+    process.env.API_FOOTBALL_KEY = AF_KEY;
+  });
+
+  afterEach(() => {
+    delete process.env.API_FOOTBALL_KEY;
+  });
+
+  function afFixture(id, homeName, awayName, extra = {}) {
+    return {
+      fixture: { id, date: new Date().toISOString(), status: { short: "2H", elapsed: 40 } },
+      league: { id: 71, name: "Brasileirão", logo: "" },
+      teams: { home: { id: id * 10, name: homeName, logo: "" }, away: { id: id * 10 + 1, name: awayName, logo: "" } },
+      goals: { home: 1, away: 0 },
+      ...extra,
+    };
+  }
+
+  function fetchWith({ fdMatches, afFixtures }) {
+    return jest.fn((url) => {
+      if (url.includes("/v4/matches?")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ matches: fdMatches }) });
+      }
+      if (url.includes("/standings")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [] }) });
+      }
+      if (url.includes("fixtures?live=all")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: afFixtures }) });
+      }
+      return Promise.reject(new Error(`URL inattendue : ${url}`));
+    });
+  }
+
+  test("un match hors des compétitions couvertes par football-data.org (trouvé seulement côté API-Football) est ajouté à la liste", async () => {
+    global.fetch = fetchWith({
+      fdMatches: [fixtureMatch(1, "PL")],
+      afFixtures: [afFixture(500, "Flamengo", "Palmeiras")],
+    });
+
+    const { default: handler } = await import("../pages/api/live-matches.js");
+    const res = mockRes();
+    await handler({}, res);
+
+    expect(res.body.matches).toHaveLength(2);
+    const added = res.body.matches.find((m) => m.id === "af-500");
+    expect(added.homeTeam.name).toBe("Flamengo");
+    expect(added.awayTeam.name).toBe("Palmeiras");
+    expect(added.pronostic).toEqual({ available: false });
+  });
+
+  test("un même match remonté par les deux API (mêmes équipes) n'apparaît qu'une seule fois", async () => {
+    global.fetch = fetchWith({
+      fdMatches: [fixtureMatch(1, "PL")], // Home 1 vs Away 1
+      afFixtures: [afFixture(500, "Home 1", "Away 1")],
+    });
+
+    const { default: handler } = await import("../pages/api/live-matches.js");
+    const res = mockRes();
+    await handler({}, res);
+
+    expect(res.body.matches).toHaveLength(1);
+    expect(res.body.matches[0].id).toBe(1); // celui de football-data.org, pas le doublon "af-"
+  });
+
+  test("une panne d'API-Football n'empêche jamais d'afficher les matchs football-data.org déjà connus", async () => {
+    global.fetch = jest.fn((url) => {
+      if (url.includes("/v4/matches?")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ matches: [fixtureMatch(1, "PL")] }) });
+      }
+      if (url.includes("/standings")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [] }) });
+      }
+      if (url.includes("fixtures?live=all")) {
+        return Promise.resolve({ ok: false, status: 429 });
+      }
+      return Promise.reject(new Error(`URL inattendue : ${url}`));
+    });
+
+    const { default: handler } = await import("../pages/api/live-matches.js");
+    const res = mockRes();
+    await handler({}, res);
+
+    expect(res.body.matches).toHaveLength(1);
+    expect(res.body.matches[0].id).toBe(1);
+  });
+
+  test("sans clé API_FOOTBALL_KEY, la liste reste celle de football-data.org seule (comportement inchangé)", async () => {
+    delete process.env.API_FOOTBALL_KEY;
+    global.fetch = fetchWith({ fdMatches: [fixtureMatch(1, "PL")], afFixtures: [afFixture(500, "Flamengo", "Palmeiras")] });
+
+    const { default: handler } = await import("../pages/api/live-matches.js");
+    const res = mockRes();
+    await handler({}, res);
+
+    expect(res.body.matches).toHaveLength(1);
+  });
+});

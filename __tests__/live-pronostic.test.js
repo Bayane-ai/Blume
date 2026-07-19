@@ -329,4 +329,83 @@ describe("/api/analyze — événements live réels (API-Football), en compléme
     expect(res.body.events).toBeNull();
     expect(fetchMock.mock.calls.some(([url]) => url.includes("api-sports") || url.includes("fixtures"))).toBe(false);
   });
+
+  test("bloc 2 — un match identifié par un id 'af-' (connu seulement d'API-Football) n'interroge jamais football-data.org pour son score, et suit son propre score/minute en direct", async () => {
+    const fetchMock = jest.fn((url) => {
+      if (url.includes("/standings")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [{ table: [homeRow, awayRow] }] }) });
+      }
+      if (url.includes("fixtures?live=all")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            response: [{
+              fixture: { id: 900, status: { short: "2H", elapsed: 71 }, venue: { name: "Maracanã" }, referee: "A. Ref" },
+              league: { id: 71, name: "Brasileirão" },
+              teams: { home: { id: 100, name: "Arsenal" }, away: { id: 101, name: "Chelsea" } },
+              goals: { home: 3, away: 2 },
+            }],
+          }),
+        });
+      }
+      if (url.includes("fixtures/events")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) });
+      }
+      // Aucun appel à /matches/ ou /head2head de football-data.org ne devrait être fait
+      // pour un id "af-" : si l'un d'eux est appelé, le test échoue ici.
+      return Promise.reject(new Error(`Appel football-data.org inattendu pour un match af- : ${url}`));
+    });
+    global.fetch = fetchMock;
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    const res = mockRes();
+    await handler({ query: { ...baseQuery, matchId: "af-900" } }, res);
+
+    expect(res.body.live).toBe(true);
+    expect(res.body.matchScore).toEqual({ home: 3, away: 2 });
+    expect(res.body.matchMinute).toBe(71);
+    expect(res.body.venue).toBe("Maracanã");
+    expect(fetchMock.mock.calls.some(([url]) => url.includes("/matches/af-900") || url.includes("head2head"))).toBe(false);
+  });
+
+  test("bloc 2 — un match hors des compétitions football-data.org (id numérique connu, mais absent de son flux live) retombe sur API-Football pour le score en direct", async () => {
+    const fetchMock = jest.fn((url) => {
+      if (url.includes("/matches/777")) {
+        // football-data.org ne connaît pas (ou plus) ce match en direct.
+        return Promise.resolve({ ok: false, status: 404 });
+      }
+      if (url.includes("/standings")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [{ table: [homeRow, awayRow] }] }) });
+      }
+      if (url.includes("head2head")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ aggregates: { numberOfMatches: 0 } }) });
+      }
+      if (url.includes("fixtures?live=all")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            response: [{
+              fixture: { id: 901, status: { short: "1H", elapsed: 20 } },
+              league: { id: 5, name: "Some League" },
+              teams: { home: { id: 100, name: "Arsenal" }, away: { id: 101, name: "Chelsea" } },
+              goals: { home: 1, away: 0 },
+            }],
+          }),
+        });
+      }
+      if (url.includes("fixtures/events")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) });
+      }
+      return Promise.reject(new Error(`URL inattendue : ${url}`));
+    });
+    global.fetch = fetchMock;
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    const res = mockRes();
+    await handler({ query: baseQuery }, res);
+
+    expect(res.body.live).toBe(true);
+    expect(res.body.matchScore).toEqual({ home: 1, away: 0 });
+    expect(res.body.matchMinute).toBe(20);
+  });
 });
