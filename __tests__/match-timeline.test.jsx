@@ -39,6 +39,26 @@ test("un tableau vide affiche un message distinct : source connectée, mais rien
   expect(screen.queryByText("Événements non disponibles pour ce match.")).not.toBeInTheDocument();
 });
 
+describe("bloc 3 — pour un match EN DIRECT (isLive), jamais le message 'indisponible'", () => {
+  test("events null (source non connectée) sur un match live : 'Coup d'envoi — en attente des premiers événements.'", () => {
+    render(<MatchTimeline events={null} homeTeamId={HOME_ID} isLive />);
+    expect(screen.getByText("Coup d'envoi — en attente des premiers événements.")).toBeInTheDocument();
+    expect(screen.queryByText("Événements non disponibles pour ce match.")).not.toBeInTheDocument();
+  });
+
+  test("events vide (aucun événement pour l'instant) sur un match live : même message optimiste", () => {
+    render(<MatchTimeline events={[]} homeTeamId={HOME_ID} isLive />);
+    expect(screen.getByText("Coup d'envoi — en attente des premiers événements.")).toBeInTheDocument();
+    expect(screen.queryByText("Aucun événement pour l'instant.")).not.toBeInTheDocument();
+  });
+
+  test("des événements réels s'affichent normalement même avec isLive (aucune donnée inventée, le message ne s'applique qu'à l'absence d'événement)", () => {
+    render(<MatchTimeline events={events()} homeTeamId={HOME_ID} isLive />);
+    expect(screen.getByTestId("match-timeline")).toBeInTheDocument();
+    expect(screen.queryByTestId("timeline-empty")).not.toBeInTheDocument();
+  });
+});
+
 test("affiche chaque événement (minute, icône, joueur), du plus récent au plus ancien, avec les séparateurs Coup d'envoi/Mi-temps", () => {
   render(<MatchTimeline events={events()} homeTeamId={HOME_ID} />);
 

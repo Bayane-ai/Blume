@@ -2,11 +2,17 @@
 // API-Football pour les matchs en direct (voir lib/apiFootball.js et pages/api/analyze.js
 // — football-data.org, utilisé pour le reste du site, ne fournit pas ce fil). `events`
 // reste un prop explicite (plutôt qu'un import direct de l'API) pour que ce composant
-// affiche de vrais événements sans jamais rien inventer. Deux cas bien distincts :
-// `null`/`undefined` = aucune source connectée pour ce match (pas de clé API, match non
-// trouvé côté API-Football, erreur) ; tableau vide = source bien connectée mais aucun
-// événement pour l'instant (ex : match encore 0-0) — les deux messages sont différents
-// pour ne jamais faire passer un vrai "rien ne s'est encore passé" pour une panne.
+// affiche de vrais événements sans jamais rien inventer.
+//
+// Le message d'absence d'événement dépend du contexte (`isLive`) :
+// - Match EN DIRECT (isLive=true) : jamais "indisponible", même si la source a échoué —
+//   toujours "Coup d'envoi — en attente des premiers événements." (demande explicite :
+//   un visiteur qui regarde un match en cours ne doit jamais lire un message qui sonne
+//   comme une panne du site).
+// - Match pas en direct (terminé, à venir, ou isLive omis) : distinction conservée entre
+//   `null`/`undefined` (aucune source connectée pour ce match) et un tableau vide (source
+//   connectée mais aucun événement) — deux messages différents, pour ne jamais faire
+//   passer une vraie panne pour un simple "rien ne s'est encore passé".
 const EVENT_META = {
   GOAL: { icon: "⚽", label: "But" },
   YELLOW_CARD: { icon: "🟨", label: "Carton jaune" },
@@ -30,18 +36,16 @@ function buildTimelineRows(events) {
   return rows.slice().reverse();
 }
 
-export default function MatchTimeline({ events, homeTeamId }) {
-  if (events == null) {
+export default function MatchTimeline({ events, homeTeamId, isLive }) {
+  if (events == null || events.length === 0) {
+    const message = isLive
+      ? "Coup d'envoi — en attente des premiers événements."
+      : events == null
+      ? "Événements non disponibles pour ce match."
+      : "Aucun événement pour l'instant.";
     return (
       <p style={st.hint} data-testid="timeline-empty">
-        Événements non disponibles pour ce match.
-      </p>
-    );
-  }
-  if (events.length === 0) {
-    return (
-      <p style={st.hint} data-testid="timeline-empty">
-        Aucun événement pour l'instant.
+        {message}
       </p>
     );
   }

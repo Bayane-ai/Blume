@@ -133,6 +133,19 @@ export default function MatchPage() {
     <div style={st.page}>
       <MatchHeaderHero m={matchForBlock} isLive={isLiveNow} />
 
+      {isLiveNow && (
+        // Épinglée juste sous le score (position: sticky) : en faisant défiler la page,
+        // les moments forts restent visibles en premier, avant le reste du contenu —
+        // seule la liste des événements défile en interne (hauteur bornée) une fois
+        // qu'elle dépasse ce qui tient à l'écran.
+        <section style={st.pinnedPanel} data-testid="pinned-highlights">
+          <h2 style={st.h2}>Moments forts</h2>
+          <div style={st.timelineScroll}>
+            <MatchTimeline events={liveState?.events} homeTeamId={homeTeamId} isLive />
+          </div>
+        </section>
+      )}
+
       <main style={st.main}>
         <section style={st.panel}>
           {pronostic?.home && pronostic?.away && (
@@ -183,10 +196,12 @@ export default function MatchPage() {
           {!loading && hasRequested && <PronosticResults pronostic={pronostic} loading={loading} />}
         </section>
 
-        <section style={st.panel}>
-          <h2 style={st.h2}>Moments forts</h2>
-          <MatchTimeline events={liveState?.events} homeTeamId={homeTeamId} />
-        </section>
+        {!isLiveNow && (
+          <section style={st.panel}>
+            <h2 style={st.h2}>Moments forts</h2>
+            <MatchTimeline events={liveState?.events} homeTeamId={homeTeamId} />
+          </section>
+        )}
       </main>
     </div>
   );
@@ -196,6 +211,12 @@ const st = {
   page: { minHeight: "100vh", padding: "20px 16px 60px" },
   main: { maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 },
   panel: { background: "#12291E", border: "1px solid #1E3D2C", borderRadius: 14, padding: 18 },
+  pinnedPanel: {
+    position: "sticky", top: 0, zIndex: 5, maxWidth: 640, margin: "0 auto 16px",
+    background: "#12291E", border: "1px solid #39B577", borderRadius: 14, padding: 18,
+    boxShadow: "0 6px 18px rgba(0,0,0,0.35)",
+  },
+  timelineScroll: { maxHeight: "34vh", overflowY: "auto" },
   formRow: { display: "flex", justifyContent: "space-between", marginTop: 12 },
   formCell: { display: "flex" },
   descText: { fontSize: 12, color: "#7EA694", margin: "14px 0 0", lineHeight: 1.5 },

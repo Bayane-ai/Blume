@@ -290,17 +290,34 @@ test.describe("BLOC — En-tête et timeline d'un match en direct", () => {
     expect(errors.consoleErrors, `Erreurs console : ${errors.consoleErrors.join(" | ")}`).toEqual([]);
   });
 
-  test('BLOC 3 : sans événements fournis par l\'API (le cas réel aujourd\'hui), la timeline affiche un message clair — jamais une section vide ni une erreur', async ({ page }) => {
+  test("bloc 3 : sur un match en direct, \"Moments forts\" est épinglé en haut, juste sous le score, jamais le message \"indisponible\"", async ({ page }) => {
     const errors = trackErrors(page);
     await page.goto("/");
-    await page.getByTestId("match-list").getByText("ANALYSER").nth(2).click(); // match 103, Flamengo-Palmeiras
+    await page.getByTestId("match-list").getByText("ANALYSER").nth(2).click(); // match 103, Flamengo-Palmeiras, IN_PLAY
     await expect(page).toHaveURL(/\/match\/103/);
 
-    await expect(page.getByRole("heading", { name: "Moments forts" })).toBeVisible();
-    await expect(page.getByTestId("timeline-empty")).toHaveText("Événements non disponibles pour ce match.");
-    await expect(page.getByTestId("match-timeline")).toHaveCount(0);
+    const pinned = page.getByTestId("pinned-highlights");
+    await expect(pinned.getByRole("heading", { name: "Moments forts" })).toBeVisible();
+    // Le mock (voir e2e/mockApi.js) ne fournit pas d'événements réels pour ce match :
+    // même dans ce cas, un match en direct n'affiche jamais "indisponible".
+    await expect(pinned.getByTestId("timeline-empty")).toHaveText("Coup d'envoi — en attente des premiers événements.");
+
+    // Épinglée (sticky) : reste visible après avoir fait défiler la page vers le bas.
+    await expect(pinned).toHaveCSS("position", "sticky");
+    await page.mouse.wheel(0, 600);
+    await expect(pinned).toBeInViewport();
 
     expect(errors.consoleErrors, `Erreurs console : ${errors.consoleErrors.join(" | ")}`).toEqual([]);
+  });
+
+  test("bloc 3 : sur un match TERMINÉ, \"Moments forts\" reste en bas de page (pas épinglé) avec le message d'origine", async ({ page }) => {
+    await page.goto("/competition/PL");
+    await page.getByRole("button", { name: "Résultats", exact: true }).click();
+    await page.getByText("ANALYSER").first().click();
+
+    await expect(page.getByTestId("pinned-highlights")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Moments forts" })).toBeVisible();
+    await expect(page.getByTestId("timeline-empty")).toHaveText("Événements non disponibles pour ce match.");
   });
 });
 
