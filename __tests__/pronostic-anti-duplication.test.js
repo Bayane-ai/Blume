@@ -161,6 +161,40 @@ describe("Anti-duplication : 3 matchs différents ont 3 pronostics différents",
     expect(open.extraStats.corners.total).toBeGreaterThan(closed.extraStats.corners.total);
     expect(open.extraStats.shots.total).not.toBe(closed.extraStats.shots.total);
   });
+
+  // Régression : le texte d'analyse ("note") était une phrase générique identique
+  // pour la quasi-totalité des matchs (seule la source des stats — classement/forme
+  // récente/estimation — la faisait varier, un cas rare) — sur un lot de 132 vraies
+  // confrontations testées manuellement, LE MÊME texte apparaissait sur les 132.
+  // Vérifie qu'il décrit maintenant vraiment CE match (favori, écart, profil de jeu).
+  test("le texte d'analyse (\"note\") décrit vraiment CE match, pas une phrase générique recopiée partout", async () => {
+    const r1 = await analyzeMatch(MATCH_1); // Arsenal (fort) vs Fulham (faible) : favori net
+    const r2 = await analyzeMatch(MATCH_2); // Real Madrid vs Barcelone : match serré, ouvert
+    const r3 = await analyzeMatch(MATCH_3); // Juventus vs Salernitana : défensif
+
+    const notes = [r1.note, r2.note, r3.note];
+    expect(new Set(notes).size).toBe(3);
+
+    // Le texte nomme bien l'équipe favorite quand il y en a une nette.
+    expect(r1.note).toMatch(/Arsenal FC/);
+  });
+
+  // Régression : à l'affichage, "+2.5 buts" et "Les 2 marquent" étaient arrondis à
+  // l'entier le plus proche sur 10 (ex : 61 % et 68 % donnaient tous les deux
+  // "6/10" — components/PronosticResults.js), ce qui faisait paraître beaucoup de
+  // matchs différents identiques sur ce point précis. Reproduit ici la même
+  // conversion que le composant (1 décimale, pas un entier) pour vérifier que la
+  // précision affichée distingue bien des matchs différents.
+  test('les tendances affichées ("+2.5 buts", "Les 2 marquent") ont assez de précision pour ne pas retomber sur la même valeur entre deux matchs différents', async () => {
+    const r1 = await analyzeMatch(MATCH_1);
+    const r2 = await analyzeMatch(MATCH_2);
+    const r3 = await analyzeMatch(MATCH_3);
+
+    const likelihoodTenths = (pct) => Math.max(0, Math.min(10, Math.round(pct) / 10));
+    const displayedTendance = (r) => `${likelihoodTenths(r.goals.over25)}|${likelihoodTenths(r.goals.bttsYes)}`;
+    const tendances = [r1, r2, r3].map(displayedTendance);
+    expect(new Set(tendances).size).toBe(3);
+  });
 });
 
 describe("Aucune valeur codée en dur : le résultat suit vraiment les données d'entrée de CE match", () => {

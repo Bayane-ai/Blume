@@ -187,7 +187,7 @@ test.describe("Écran 3 — Analyser un match", () => {
     await expect(page.getByTestId("stat-corners")).toContainText(/^environ \d+-\d+$/);
     await expect(page.getByTestId("stat-possession")).not.toContainText("%");
     await expect(page.getByTestId("correct-scores")).not.toContainText("%");
-    await expect(page.getByTestId("stat-over25")).toContainText(/^\d+\/10$/);
+    await expect(page.getByTestId("stat-over25")).toContainText(/^\d+\.\d\/10$/);
 
     expect(errors.consoleErrors, `Erreurs console : ${errors.consoleErrors.join(" | ")}`).toEqual([]);
   });

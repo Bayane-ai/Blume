@@ -18,12 +18,14 @@ function rangeOrFallback(range, point) {
   return { low, high: high <= low ? low + 1 : high };
 }
 
-// Convertit une probabilité (0-100) en repère "X/10" plutôt qu'en pourcentage — même
-// idée que les intervalles ci-dessus, appliquée à une probabilité d'évènement plutôt
-// qu'à une quantité.
+// Convertit une probabilité (0-100) en repère "X,X/10" plutôt qu'en pourcentage —
+// même idée que les intervalles ci-dessus, appliquée à une probabilité d'évènement
+// plutôt qu'à une quantité. Une décimale (pas un entier arrondi) : sinon deux matchs
+// aux probabilités réelles différentes (ex : 61 % et 68 %) retombaient tous les deux
+// sur "6/10", ce qui les faisait paraître identiques à tort.
 function likelihoodTenths(pct) {
   if (pct == null) return null;
-  return Math.max(0, Math.min(10, Math.round(pct / 10)));
+  return Math.max(0, Math.min(10, Math.round(pct) / 10));
 }
 
 export default function PronosticResults({ pronostic, loading }) {
@@ -101,11 +103,11 @@ export default function PronosticResults({ pronostic, loading }) {
       <div style={st.probRow}>
         <div style={st.probCell}>
           <span style={st.probLabel}>+2.5 buts</span>
-          <span style={st.probValue} data-testid="stat-over25">{over25Tenths != null ? `${over25Tenths}/10` : "–"}</span>
+          <span style={st.probValue} data-testid="stat-over25">{over25Tenths != null ? `${over25Tenths.toFixed(1)}/10` : "–"}</span>
         </div>
         <div style={st.probCell}>
           <span style={st.probLabel}>Les 2 marquent</span>
-          <span style={st.probValue} data-testid="stat-btts">{bttsTenths != null ? `${bttsTenths}/10` : "–"}</span>
+          <span style={st.probValue} data-testid="stat-btts">{bttsTenths != null ? `${bttsTenths.toFixed(1)}/10` : "–"}</span>
         </div>
       </div>
 

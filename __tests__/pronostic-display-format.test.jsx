@@ -32,8 +32,8 @@ test('seules les probabilités de victoire affichent un "%" — buts/corners/tir
   expect(screen.getByTestId("stat-shots").textContent).toMatch(/^environ \d+-\d+$/);
   expect(screen.getByTestId("stat-cards").textContent).toMatch(/^environ \d+-\d+$/);
   expect(screen.getByTestId("stat-possession").textContent).toMatch(/^\d+ - \d+$/);
-  expect(screen.getByTestId("stat-over25").textContent).toMatch(/^\d+\/10$/);
-  expect(screen.getByTestId("stat-btts").textContent).toMatch(/^\d+\/10$/);
+  expect(screen.getByTestId("stat-over25").textContent).toMatch(/^\d+\.\d\/10$/);
+  expect(screen.getByTestId("stat-btts").textContent).toMatch(/^\d+\.\d\/10$/);
 
   const scoresBlock = screen.getByTestId("correct-scores");
   expect(within(scoresBlock).getAllByText(/^Le plus probable$|^Possible$/).length).toBeGreaterThanOrEqual(3);
