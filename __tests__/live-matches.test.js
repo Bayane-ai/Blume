@@ -35,9 +35,20 @@ function fixtureMatch(id, code) {
   };
 }
 
-test("interroge la vraie API avec status=LIVE, sans filtre de compétition dans l'URL", async () => {
+test("interroge la vraie API avec tous les statuts \"en cours\" et une fenêtre de dates explicite, sans filtre de compétition dans l'URL", async () => {
   global.fetch = jest.fn((url) => {
-    expect(url).toBe("https://api.football-data.org/v4/matches?status=LIVE&limit=100");
+    const parsed = new URL(url);
+    expect(parsed.origin + parsed.pathname).toBe("https://api.football-data.org/v4/matches");
+    // Les vrais statuts "en cours" (pas seulement le raccourci "LIVE", potentiellement
+    // non fiable) — voir le bug corrigé où /api/live-matches ne remontait jamais rien.
+    expect(parsed.searchParams.get("status")).toBe("LIVE,IN_PLAY,PAUSED");
+    // Fenêtre de dates explicite (hier → demain) : sans elle, l'API applique une
+    // fenêtre par défaut qui peut exclure un match pourtant en cours.
+    expect(parsed.searchParams.get("dateFrom")).toBeTruthy();
+    expect(parsed.searchParams.get("dateTo")).toBeTruthy();
+    // Aucun filtre de compétition ou de pays : toutes compétitions confondues.
+    expect(parsed.searchParams.has("competitions")).toBe(false);
+    expect(parsed.searchParams.has("areas")).toBe(false);
     return Promise.resolve({ ok: true, json: () => Promise.resolve({ matches: [] }) });
   });
 
@@ -47,6 +58,26 @@ test("interroge la vraie API avec status=LIVE, sans filtre de compétition dans 
 
   expect(global.fetch).toHaveBeenCalledTimes(1);
   expect(res.body.matches).toEqual([]);
+});
+
+test("ne garde que les matchs réellement en cours (IN_PLAY/PAUSED/LIVE), même si la fenêtre de dates ramène d'autres statuts", async () => {
+  const liveMatch = fixtureMatch(1, "PL");
+  const scheduledMatch = { ...fixtureMatch(2, "PL"), status: "SCHEDULED" };
+  const finishedMatch = { ...fixtureMatch(3, "PL"), status: "FINISHED" };
+
+  global.fetch = jest.fn((url) => {
+    if (url.includes("/v4/matches?")) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ matches: [liveMatch, scheduledMatch, finishedMatch] }) });
+    }
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [] }) });
+  });
+
+  const { default: handler } = await import("../pages/api/live-matches.js");
+  const res = mockRes();
+  await handler({}, res);
+
+  expect(res.body.matches).toHaveLength(1);
+  expect(res.body.matches[0].id).toBe(1);
 });
 
 test("renvoie un en-tête Cache-Control pour que le réseau Vercel mutualise les réponses entre toutes les instances", async () => {
