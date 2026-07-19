@@ -9,13 +9,13 @@ import Home from "../pages/index";
 
 const pushMock = jest.fn();
 jest.mock("next/router", () => ({
-  useRouter: () => ({ push: pushMock }),
+  useRouter: () => ({ push: pushMock, replace: jest.fn() }),
 }));
 
 jest.mock("../lib/supabaseClient", () => ({
   supabase: {
     auth: {
-      getSession: () => Promise.resolve({ data: { session: null } }),
+      getSession: () => Promise.resolve({ data: { session: { user: { email: "test@example.com" } } } }),
       onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
       signOut: () => Promise.resolve({}),
     },

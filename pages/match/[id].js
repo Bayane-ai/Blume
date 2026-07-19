@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import MatchInfoBlock from "../../components/MatchInfoBlock";
+import { useRequireAuth } from "../../lib/useRequireAuth";
 
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
 // 2s : rendu possible sans dépasser le quota de l'API grâce au cache partagé côté
@@ -10,6 +11,7 @@ const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
 const LIVE_REFRESH_MS = 2000;
 
 export default function MatchPage() {
+  const { sessionChecked, authorized } = useRequireAuth();
   const router = useRouter();
   const {
     id: matchId,
@@ -63,22 +65,22 @@ export default function MatchPage() {
   // navigue vers un AUTRE match (Next.js réutilise ce même composant, seul l'id d'URL
   // change : sans matchId en dépendance, l'ancienne analyse restait affichée).
   useEffect(() => {
-    if (!router.isReady) return;
+    if (!router.isReady || !authorized) return;
     setPronostic(null);
     setHasRequested(false);
     setLiveState(null);
     runAnalysis();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router.isReady, matchId]);
+  }, [router.isReady, authorized, matchId]);
 
   const currentStatus = liveState?.status || initialStatus;
 
   // Rafraîchissement automatique (score + probabilités) tant que le match est en direct.
   useEffect(() => {
-    if (!LIVE_STATUSES.includes(currentStatus)) return;
+    if (!authorized || !LIVE_STATUSES.includes(currentStatus)) return;
     const intervalId = setInterval(() => runAnalysis(true), LIVE_REFRESH_MS);
     return () => clearInterval(intervalId);
-  }, [currentStatus, runAnalysis]);
+  }, [authorized, currentStatus, runAnalysis]);
 
   const isLiveNow = LIVE_STATUSES.includes(currentStatus);
 
@@ -97,6 +99,15 @@ export default function MatchPage() {
       },
     },
   };
+
+  if (!sessionChecked) {
+    return (
+      <div style={st.page}>
+        <p style={st.hint}>Chargement…</p>
+      </div>
+    );
+  }
+  if (!authorized) return null;
 
   return (
     <div style={st.page}>

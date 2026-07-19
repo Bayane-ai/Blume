@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { useRequireAuth } from "../lib/useRequireAuth";
 import { COMPETITIONS } from "../lib/competitions";
 import MatchCard from "../components/MatchCard";
 
@@ -27,8 +28,7 @@ function normalize(str) {
 }
 
 export default function Home() {
-  const [session, setSession] = useState(null);
-  const [sessionChecked, setSessionChecked] = useState(false);
+  const { session, sessionChecked, authorized } = useRequireAuth();
 
   const [tab, setTab] = useState("live"); // "live" | "upcoming" | "competitions"
   const [search, setSearch] = useState("");
@@ -44,15 +44,6 @@ export default function Home() {
   const [compData, setCompData] = useState(null);
   const [compLoading, setCompLoading] = useState(false);
   const [compMatchSearch, setCompMatchSearch] = useState("");
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setSessionChecked(true);
-    });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
-    return () => listener.subscription.unsubscribe();
-  }, []);
 
   // silent=true (rafraîchissement automatique en arrière-plan) : une erreur passagère
   // (quota API, réseau) ne doit jamais effacer des matchs déjà affichés à l'écran — on
@@ -95,27 +86,32 @@ export default function Home() {
       .finally(() => setWeekLoading(false));
   }, []);
 
+  // Tant que la personne n'est pas connectée, on n'interroge même pas l'API (pas de
+  // données servies avant authentification).
   useEffect(() => {
+    if (!authorized) return;
     loadLiveMatches();
     loadWeekMatches();
-  }, [loadLiveMatches, loadWeekMatches]);
+  }, [authorized, loadLiveMatches, loadWeekMatches]);
 
   // Rafraîchissement automatique des matchs en direct (scores, minute de jeu) : rapide
   // pendant que l'onglet est affiché, ralenti en arrière-plan pour rester sous le quota.
   useEffect(() => {
+    if (!authorized) return;
     const intervalMs = tab === "live" ? LIVE_REFRESH_ACTIVE_MS : LIVE_REFRESH_BACKGROUND_MS;
     const id = setInterval(() => loadLiveMatches(true), intervalMs);
     return () => clearInterval(id);
-  }, [tab, loadLiveMatches]);
+  }, [authorized, tab, loadLiveMatches]);
 
   // Même principe pour les matchs à venir : rythme normal quand l'onglet est affiché,
   // ralenti sinon — permet à un match qui démarre ou une erreur passagère de se
   // rétablir tout seul, sans recharger la page.
   useEffect(() => {
+    if (!authorized) return;
     const intervalMs = tab === "upcoming" ? WEEK_REFRESH_ACTIVE_MS : WEEK_REFRESH_BACKGROUND_MS;
     const id = setInterval(() => loadWeekMatches(true), intervalMs);
     return () => clearInterval(id);
-  }, [tab, loadWeekMatches]);
+  }, [authorized, tab, loadWeekMatches]);
 
   const logout = async () => supabase.auth.signOut();
 
@@ -234,17 +230,25 @@ export default function Home() {
   const data = tab === "live" ? liveData : weekData;
   const feed = tab === "live" ? liveFeed : weekFeed;
 
+  // L'accès à l'application nécessite un compte : tant que la session n'a pas été
+  // vérifiée, ou si personne n'est connecté (redirection vers /login en cours), on
+  // n'affiche aucune donnée.
+  if (!sessionChecked) {
+    return (
+      <div style={st.page}>
+        <p style={st.hint}>Chargement…</p>
+      </div>
+    );
+  }
+  if (!authorized) return null;
+
   return (
     <div style={st.page}>
       <header style={st.header}>
         <h1 style={st.h1}>Matchs</h1>
         <div style={st.headerRight}>
-          {sessionChecked &&
-            (session ? (
-              <button onClick={logout} style={st.smallBtn}>Déconnexion</button>
-            ) : (
-              <a href="/login" style={st.smallBtn}>Se connecter</a>
-            ))}
+          <span style={st.userEmail}>{session.user?.email}</span>
+          <button onClick={logout} style={st.smallBtn}>Déconnexion</button>
         </div>
       </header>
 
@@ -366,6 +370,7 @@ const st = {
   header: { maxWidth: 640, margin: "0 auto 20px", display: "flex", justifyContent: "space-between", alignItems: "center" },
   h1: { fontSize: 20, fontWeight: 800, margin: 0 },
   headerRight: { display: "flex", alignItems: "center", gap: 10 },
+  userEmail: { fontSize: 11.5, color: "#7EA694", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   smallBtn: {
     background: "transparent", border: "1px solid #1E3D2C", color: "#E9F1EC",
     borderRadius: 999, padding: "6px 12px", fontSize: 12, textDecoration: "none", cursor: "pointer",

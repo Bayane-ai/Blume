@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../lib/supabaseClient";
 
@@ -10,6 +10,13 @@ export default function Login() {
   const [error, setError] = useState(null);
   const [info, setInfo] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  // Déjà connecté ? Inutile de repasser par cette page : direction l'application.
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) router.replace("/");
+    });
+  }, [router]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -66,7 +73,6 @@ export default function Login() {
         >
           {mode === "signin" ? "Pas encore de compte ? Créer un compte" : "Déjà un compte ? Se connecter"}
         </button>
-        <a href="/" style={styles.backLink}>← Retour à l'app (sans se connecter)</a>
       </form>
     </div>
   );
@@ -88,7 +94,6 @@ const styles = {
     borderRadius: 999, padding: "11px 0", fontSize: 14, cursor: "pointer", marginTop: 6,
   },
   switchBtn: { background: "transparent", border: "none", color: "#7EA694", fontSize: 12.5, cursor: "pointer" },
-  backLink: { textAlign: "center", fontSize: 12.5, color: "#7EA694", marginTop: 4, textDecoration: "none" },
   error: { color: "#D8685E", fontSize: 12.5, margin: 0 },
   info: { color: "#39B577", fontSize: 12.5, margin: 0 },
 };

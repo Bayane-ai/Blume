@@ -5,14 +5,17 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import Home from "../pages/index";
 
 const pushMock = jest.fn();
+const replaceMock = jest.fn();
 jest.mock("next/router", () => ({
-  useRouter: () => ({ push: pushMock }),
+  useRouter: () => ({ push: pushMock, replace: replaceMock }),
 }));
+
+let mockSession = { user: { email: "test@example.com" } };
 
 jest.mock("../lib/supabaseClient", () => ({
   supabase: {
     auth: {
-      getSession: () => Promise.resolve({ data: { session: null } }),
+      getSession: () => Promise.resolve({ data: { session: mockSession } }),
       onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
       signOut: () => Promise.resolve({}),
     },
@@ -103,6 +106,8 @@ describe("Page Matchs — chaque bouton est fonctionnel", () => {
   beforeEach(() => {
     mockFetchRouter();
     pushMock.mockClear();
+    replaceMock.mockClear();
+    mockSession = { user: { email: "test@example.com" } };
   });
 
   test('les onglets "Matchs en ligne" / "Matchs à venir" changent réellement le contenu affiché', async () => {
@@ -147,10 +152,20 @@ describe("Page Matchs — chaque bouton est fonctionnel", () => {
     expect(input.value).toBe("");
   });
 
-  test('le lien "Se connecter" pointe vers une vraie page', async () => {
+  test("un compte connecté voit son email et un bouton de déconnexion (l'accès n'est plus possible sans compte)", async () => {
     render(<Home />);
-    const link = await screen.findByRole("link", { name: /se connecter/i });
-    expect(link).toHaveAttribute("href", "/login");
+    await screen.findByText("Arsenal FC");
+    expect(screen.getByText("test@example.com")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /déconnexion/i })).toBeInTheDocument();
+  });
+
+  test("sans session, la page redirige vers /login au lieu d'afficher les matchs", async () => {
+    mockSession = null;
+
+    render(<Home />);
+
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/login"));
+    expect(screen.queryByText("Arsenal FC")).not.toBeInTheDocument();
   });
 
   test('le bouton "ANALYSER" de chaque carte mène vers la page des pronostics de ce match', async () => {
