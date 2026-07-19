@@ -1,0 +1,33 @@
+name: Vérification du site en production
+
+# Vérifie régulièrement que le site déployé (blume-rho.vercel.app) répond
+# correctement. N'interroge que les pages qui ne consomment pas le quota API
+# football-data.org (10 requêtes/minute, partagé par tous les visiteurs) : /api/*
+# n'est jamais appelé ici. En cas d'échec, GitHub notifie automatiquement par email
+# le propriétaire du dépôt (comportement par défaut pour un workflow planifié).
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Vérifie que la page d'accueil répond
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 https://blume-rho.vercel.app/)
+          echo "Code HTTP page d'accueil : $code"
+          if [ "$code" -ge 500 ] || [ "$code" -eq 000 ]; then
+            echo "::error::La page d'accueil ne répond pas correctement (code $code)"
+            exit 1
+          fi
+
+      - name: Vérifie que la page de connexion répond
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 https://blume-rho.vercel.app/login)
+          echo "Code HTTP page de connexion : $code"
+          if [ "$code" -ge 500 ] || [ "$code" -eq 000 ]; then
+            echo "::error::La page de connexion ne répond pas correctement (code $code)"
+            exit 1
+          fi
