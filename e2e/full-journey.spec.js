@@ -5,9 +5,9 @@
 // lib/supabaseClient.js par un client factice déjà connecté (backup/restauration
 // autour de l'exécution de cette suite) : le code applicatif réel n'est jamais modifié.
 //
-// PROMPT 2 du plan : la navigation ne comporte plus que deux boutons ("Matchs en
-// ligne" / "Matchs à venir") — les écrans Compétitions et Analyse IA de l'ancienne
-// maquette de référence ont été retirés en conséquence (voir CLAUDE.md/historique).
+// La navigation comporte trois boutons ("Live" / "Matchs à venir" / "News") — les
+// écrans Compétitions et Analyse IA de l'ancienne maquette de référence ont été
+// retirés en conséquence (voir CLAUDE.md/historique).
 const { test, expect } = require("@playwright/test");
 const { installApiMocks } = require("./mockApi");
 
@@ -37,14 +37,15 @@ test.describe("Écran 1 — Matchs en ligne (accueil)", () => {
     await expect(page.getByText("test@example.com")).toBeVisible();
     await expect(page.getByRole("button", { name: "Déconnexion", exact: true })).toBeVisible();
 
-    // Navigation : exactement deux boutons.
+    // Navigation : exactement trois boutons.
     const nav = page.getByTestId("main-nav");
-    await expect(nav.getByRole("link")).toHaveCount(2);
+    await expect(nav.getByRole("link")).toHaveCount(3);
     const liveLink = nav.getByRole("link", { name: "Live" });
     await expect(liveLink).toBeVisible();
     // Bouton "Live" marqué visuellement par un point rouge à côté du texte.
     await expect(liveLink.locator("span").first()).toBeVisible();
     await expect(nav.getByRole("link", { name: "Matchs à venir" })).toBeVisible();
+    await expect(nav.getByRole("link", { name: "News" })).toBeVisible();
 
     await expect(page.getByRole("heading", { name: /football en direct/i })).toBeVisible();
 
@@ -118,6 +119,43 @@ test.describe("Écran 2 — Matchs à venir", () => {
     await page.getByTestId("main-nav").getByRole("link", { name: "Live" }).click();
     await expect(page).toHaveURL("/");
     await expect(page.getByTestId("match-list").getByText("Arsenal FC").first()).toBeVisible();
+  });
+});
+
+test.describe("Écran — News", () => {
+  test('le bouton "News" mène à une vraie page listant les actualités, triées par importance, chaque carte cliquable', async ({ page }) => {
+    const errors = trackErrors(page);
+    await page.goto("/");
+
+    await page.getByTestId("main-nav").getByRole("link", { name: "News", exact: true }).click();
+    await expect(page).toHaveURL("/news");
+    await expect(page.getByRole("heading", { name: /actualités football/i })).toBeVisible();
+
+    const list = page.getByTestId("news-list");
+    const cards = list.getByTestId("news-card");
+    await expect(cards).toHaveCount(2);
+
+    // Tri : la grosse actualité (transfert, Champions League) apparaît avant
+    // l'actualité mineure (amical de deuxième division) — voir e2e/mockApi.js.
+    await expect(cards.first()).toContainText("Real Madrid officialise le transfert");
+    await expect(cards.last()).toContainText("Match amical de pré-saison");
+
+    // Chaque carte est un vrai lien cliquable vers l'article réel.
+    await expect(cards.first()).toHaveAttribute("href", "https://example.com/news/major");
+    await expect(cards.first()).toHaveAttribute("target", "_blank");
+
+    // Navigation toujours intacte depuis l'onglet News.
+    const nav = page.getByTestId("main-nav");
+    await expect(nav.getByRole("link", { name: "Live" })).toBeVisible();
+    await expect(nav.getByRole("link", { name: "Matchs à venir" })).toBeVisible();
+
+    expect(errors.consoleErrors, `Erreurs console : ${errors.consoleErrors.join(" | ")}`).toEqual([]);
+  });
+
+  test("aucune actualité disponible : message clair, jamais une page blanche", async ({ page }) => {
+    await page.route("**/api/news", (route) => route.fulfill({ json: { articles: [] } }));
+    await page.goto("/news");
+    await expect(page.getByText("Aucune actualité disponible pour le moment.")).toBeVisible();
   });
 });
 

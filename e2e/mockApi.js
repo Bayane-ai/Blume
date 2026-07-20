@@ -37,6 +37,31 @@ async function installApiMocks(page) {
       return route.fulfill({ json: { ...comp, table: standingsByCompetition[code] || [] } });
     }
 
+    if (path === "/api/news") {
+      return route.fulfill({
+        json: {
+          articles: [
+            {
+              title: "Real Madrid officialise le transfert d'un grand attaquant",
+              link: "https://example.com/news/major",
+              summary: "Un transfert record qui bouscule le mercato de la Champions League.",
+              source: "BBC Sport",
+              publishedAt: new Date().toISOString(),
+              image: "https://example.com/news/major.jpg",
+            },
+            {
+              title: "Match amical de pré-saison entre deux clubs de deuxième division",
+              link: "https://example.com/news/minor",
+              summary: "Une rencontre sans grand enjeu avant la reprise du championnat.",
+              source: "Sky Sports",
+              publishedAt: new Date(Date.now() - 3600000).toISOString(),
+              image: null,
+            },
+          ],
+        },
+      });
+    }
+
     if (path === "/api/analyze") {
       // Appelle le VRAI moteur de pronostic (lib/pronostic.js) avec les vraies
       // statistiques du match (standingsByCompetition, ci-dessous) — comme le ferait

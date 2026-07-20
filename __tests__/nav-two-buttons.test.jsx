@@ -1,9 +1,9 @@
 /**
  * @jest-environment jsdom
  *
- * PROMPT 2 : la navigation du site ne doit avoir QUE deux boutons — « Matchs en
- * ligne » et « Matchs à venir » — chacun menant vers du contenu réel (vraie API),
- * sans lien mort ni page vide, et sans aucun autre bouton de navigation.
+ * La navigation du site a exactement trois boutons — « Live », « Matchs à venir » et
+ * « News » — chacun menant vers du contenu réel (vraie API/vrais flux), sans lien mort
+ * ni page vide, et sans aucun autre bouton de navigation.
  */
 import { render, screen, waitFor, within } from "@testing-library/react";
 import Home from "../pages/index";
@@ -86,17 +86,19 @@ beforeEach(() => {
   mockFetchRouter();
 });
 
-test('exactement deux boutons de navigation existent : "Live" et "Matchs à venir", et rien d\'autre', async () => {
+test('exactement trois boutons de navigation existent : "Live", "Matchs à venir" et "News", et rien d\'autre', async () => {
   mockPathname = "/";
   render(<Home />);
 
   const nav = await screen.findByTestId("main-nav");
   const links = within(nav).getAllByRole("link");
-  expect(links).toHaveLength(2);
+  expect(links).toHaveLength(3);
   expect(links[0]).toHaveTextContent("Live");
   expect(links[1]).toHaveTextContent("Matchs à venir");
+  expect(links[2]).toHaveTextContent("News");
   expect(links[0]).toHaveAttribute("href", "/");
   expect(links[1]).toHaveAttribute("href", "/a-venir");
+  expect(links[2]).toHaveAttribute("href", "/news");
 
   // Aucun autre bouton de NAVIGATION (ancien onglet "Tous", ancien onglet
   // "Compétitions" isolé, "Analyse IA") — le bouton "Toutes les compétitions" du
