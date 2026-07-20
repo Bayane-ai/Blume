@@ -894,7 +894,7 @@ describe("/api/analyze — pronostics figés : sauvegarde au premier calcul, rel
     const { default: handler } = await import("../pages/api/analyze.js");
     await handler({ query: baseQuery }, mockRes());
 
-    expect(verifyFrozenPrediction).toHaveBeenCalledWith("777", { home: 3, away: 1 });
+    expect(verifyFrozenPrediction).toHaveBeenCalledWith("777", { home: 3, away: 1 }, undefined);
   });
 
   test("match pas encore terminé : jamais de compte-rendu de fin de match", async () => {

@@ -7,9 +7,10 @@ import { listAndMaintainHistory } from "../../lib/pronosticHistory";
 export default async function handler(req, res) {
   const status = req.query.status === "failure" ? "failure" : "success";
   const token = process.env.FOOTBALL_DATA_TOKEN;
+  const apiFootballKey = process.env.API_FOOTBALL_KEY;
 
   try {
-    const items = await listAndMaintainHistory(status, token);
+    const items = await listAndMaintainHistory(status, token, apiFootballKey);
     res.setHeader("Cache-Control", "s-maxage=10, stale-while-revalidate=30");
     return res.status(200).json({ items });
   } catch (e) {

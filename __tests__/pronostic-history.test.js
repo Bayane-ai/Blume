@@ -11,9 +11,14 @@ import {
 } from "../lib/pronosticHistory";
 import { supabase } from "../lib/supabaseClient";
 import { getLiveMatch } from "../lib/liveMatchCache";
+import { fetchRealMatchStats, verifyPredictionLines } from "../lib/pronosticVerification";
 
 jest.mock("../lib/supabaseClient", () => ({ supabase: { from: jest.fn() } }));
 jest.mock("../lib/liveMatchCache", () => ({ getLiveMatch: jest.fn() }));
+jest.mock("../lib/pronosticVerification", () => ({
+  fetchRealMatchStats: jest.fn(() => Promise.resolve(null)),
+  verifyPredictionLines: jest.fn(() => ({ totalGoals: null })),
+}));
 
 // Objet chaînable façon query-builder Supabase : chaque méthode de chaîne (select, eq,
 // order, limit, not, is, lt, upsert, update, delete) renvoie le MÊME objet, qui est
@@ -39,6 +44,8 @@ function mockSupabaseFrom(...responses) {
 beforeEach(() => {
   supabase.from = jest.fn();
   getLiveMatch.mockReset();
+  fetchRealMatchStats.mockReset().mockResolvedValue(null);
+  verifyPredictionLines.mockReset().mockReturnValue({ totalGoals: null });
 });
 
 describe("classifyOutcome — jugé sur le 1X2 et le Total de buts, contre le VRAI score final", () => {
@@ -234,6 +241,41 @@ describe("saveFrozenPrediction — fige le pronostic la toute première fois, ja
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
   });
+
+  test("match déjà terminé dès la première analyse : compare AUSSI chaque ligne individuellement et fusionne le résultat dans le pronostic sauvegardé (PROMPT — indicateur ✓/✗ par ligne)", async () => {
+    const realStats = { corners: { home: 6, away: 3, total: 9 } };
+    const verification = { totalGoals: true, corners: { total: false, home: true, away: null } };
+    fetchRealMatchStats.mockResolvedValue(realStats);
+    verifyPredictionLines.mockReturnValue(verification);
+    const upsertCall = jest.fn(() => chainable({ error: null }));
+    supabase.from = jest.fn(() => ({ upsert: upsertCall }));
+
+    await saveFrozenPrediction({
+      matchId: "101", competitionCode: "PL", homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC",
+      matchDate: "2026-01-01T00:00:00Z", result: basePrediction, matchStatus: "FINISHED",
+      finalScore: { home: 3, away: 0 }, apiFootballKey: "af-key",
+    });
+
+    expect(fetchRealMatchStats).toHaveBeenCalledWith({
+      homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC", matchDate: "2026-01-01T00:00:00Z", apiFootballKey: "af-key",
+    });
+    expect(verifyPredictionLines).toHaveBeenCalledWith({ prediction: basePrediction, finalScore: { home: 3, away: 0 }, realStats });
+    expect(upsertCall.mock.calls[0][0].prediction).toEqual({ ...basePrediction, verification });
+  });
+
+  test("match pas encore terminé : jamais de vérification ligne par ligne (le match n'a pas de résultat réel)", async () => {
+    const upsertCall = jest.fn(() => chainable({ error: null }));
+    supabase.from = jest.fn(() => ({ upsert: upsertCall }));
+
+    await saveFrozenPrediction({
+      matchId: "101", competitionCode: "PL", homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC",
+      matchDate: "2026-01-01T00:00:00Z", result: basePrediction, matchStatus: "IN_PLAY", finalScore: null,
+    });
+
+    expect(fetchRealMatchStats).not.toHaveBeenCalled();
+    expect(verifyPredictionLines).not.toHaveBeenCalled();
+    expect(upsertCall.mock.calls[0][0].prediction).toEqual(basePrediction);
+  });
 });
 
 describe("verifyFrozenPrediction — compte-rendu de fin de match : compare le pronostic FIGÉ au vrai résultat", () => {
@@ -259,6 +301,26 @@ describe("verifyFrozenPrediction — compte-rendu de fin de match : compare le p
 
     expect(updateCall).toHaveBeenCalledTimes(1);
     expect(updateCall.mock.calls[0][0]).toMatchObject({ status: "success", final_score: { home: 2, away: 1 } });
+  });
+
+  test("compare AUSSI chaque ligne individuellement (fautes, corners, totaux...) et fusionne le résultat dans le pronostic FIGÉ, avec les vrais noms d'équipe/date de la ligne déjà enregistrée", async () => {
+    const realStats = { fouls: { home: 11, away: 9, total: 20 } };
+    const verification = { totalGoals: true, fouls: { total: true, home: false, away: true } };
+    fetchRealMatchStats.mockResolvedValue(realStats);
+    verifyPredictionLines.mockReturnValue(verification);
+    const updateCall = jest.fn(() => chainable({ error: null }));
+    const pendingRow = { prediction: basePrediction, home_team_name: "Arsenal FC", away_team_name: "Chelsea FC", match_date: "2026-01-01T00:00:00Z" };
+    supabase.from = jest.fn()
+      .mockReturnValueOnce(chainable({ data: pendingRow, error: null }))
+      .mockImplementationOnce(() => ({ update: updateCall }));
+
+    await verifyFrozenPrediction("101", { home: 2, away: 1 }, "af-key");
+
+    expect(fetchRealMatchStats).toHaveBeenCalledWith({
+      homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC", matchDate: "2026-01-01T00:00:00Z", apiFootballKey: "af-key",
+    });
+    expect(verifyPredictionLines).toHaveBeenCalledWith({ prediction: basePrediction, finalScore: { home: 2, away: 1 }, realStats });
+    expect(updateCall.mock.calls[0][0].prediction).toEqual({ ...basePrediction, verification });
   });
 
   test("ignoré pour un match identifié uniquement par API-Football (\"af-...\"), aucun appel Supabase", async () => {
@@ -351,6 +413,37 @@ describe("listAndMaintainHistory — nettoyage (5 jours) + revérification des \
     expect(getLiveMatch).toHaveBeenCalledWith("202", "test-token");
     expect(updateCall).toHaveBeenCalledTimes(1);
     expect(updateCall.mock.calls[0][0]).toMatchObject({ status: "success" });
+  });
+
+  test("un match \"pending\" reclassé pendant le chargement de la page compare AUSSI chaque ligne individuellement, avec les vrais noms d'équipe/date déjà enregistrés et la clé API-Football transmise", async () => {
+    const updateCall = jest.fn(() => chainable({ error: null }));
+    const prediction = {
+      probabilities: { home: 60, draw: 25, away: 15 },
+      markets: { totalGoals: { line: 2.5, side: "Plus" } },
+    };
+    const realStats = { shots: { home: 12, away: 9, total: 21 } };
+    const verification = { totalGoals: true, shots: true };
+    fetchRealMatchStats.mockResolvedValue(realStats);
+    verifyPredictionLines.mockReturnValue(verification);
+    supabase.from = jest.fn()
+      .mockReturnValueOnce(chainable({ error: null })) // cleanup 1
+      .mockReturnValueOnce(chainable({ error: null })) // cleanup 2
+      .mockReturnValueOnce(chainable({
+        data: [{ match_id: "202", prediction, home_team_name: "Real Madrid", away_team_name: "FC Barcelona", match_date: "2026-01-01T00:00:00Z" }],
+        error: null,
+      })) // pending list
+      .mockImplementationOnce(() => ({ update: updateCall }))
+      .mockReturnValueOnce(chainable({ data: [], error: null }));
+
+    getLiveMatch.mockResolvedValue({ status: "FINISHED", score: { fullTime: { home: 3, away: 0 } } });
+
+    await listAndMaintainHistory("success", "test-token", "af-key");
+
+    expect(fetchRealMatchStats).toHaveBeenCalledWith({
+      homeTeamName: "Real Madrid", awayTeamName: "FC Barcelona", matchDate: "2026-01-01T00:00:00Z", apiFootballKey: "af-key",
+    });
+    expect(verifyPredictionLines).toHaveBeenCalledWith({ prediction, finalScore: { home: 3, away: 0 }, realStats });
+    expect(updateCall.mock.calls[0][0].prediction).toEqual({ ...prediction, verification });
   });
 
   test("sans token football-data.org, ne tente aucune revérification (pas d'appel getLiveMatch)", async () => {

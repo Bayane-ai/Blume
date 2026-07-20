@@ -94,6 +94,71 @@ describe("mapApiFootballEvents", () => {
   });
 });
 
+describe("getFixtureStatistics / mapFixtureStatistics — vraies statistiques FINALES (compte-rendu de fin de match uniquement)", () => {
+  test("sans clé API ou sans id de match, renvoie null sans jamais appeler l'API", async () => {
+    const { getFixtureStatistics } = await import("../lib/apiFootball.js");
+    global.fetch = jest.fn();
+    expect(await getFixtureStatistics(555, null)).toBeNull();
+    expect(await getFixtureStatistics(null, TOKEN)).toBeNull();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test("interroge /fixtures/statistics?fixture=ID avec la vraie clé API", async () => {
+    const { getFixtureStatistics } = await import("../lib/apiFootball.js");
+    const fetchMock = jest.fn((url, opts) => {
+      expect(url).toBe("https://v3.football.api-sports.io/fixtures/statistics?fixture=555");
+      expect(opts.headers).toEqual({ "x-apisports-key": TOKEN });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) });
+    });
+    global.fetch = fetchMock;
+    await getFixtureStatistics(555, TOKEN);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("plusieurs appels rapprochés pour le MÊME match ne déclenchent qu'un seul appel réel", async () => {
+    const { getFixtureStatistics } = await import("../lib/apiFootball.js");
+    const fetchMock = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) }));
+    global.fetch = fetchMock;
+    await Promise.all([getFixtureStatistics(555, TOKEN), getFixtureStatistics(555, TOKEN)]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("mapFixtureStatistics traduit corners/hors-jeu/fautes/tirs/cartons réels, home/away/total, en identifiant la bonne équipe à domicile", async () => {
+    const { mapFixtureStatistics } = await import("../lib/apiFootball.js");
+    const raw = [
+      {
+        team: { id: 101 }, // extérieur, volontairement en premier dans la réponse
+        statistics: [
+          { type: "Corner Kicks", value: 4 }, { type: "Offsides", value: 1 }, { type: "Fouls", value: 9 },
+          { type: "Total Shots", value: "11" }, { type: "Yellow Cards", value: 2 }, { type: "Red Cards", value: null },
+        ],
+      },
+      {
+        team: { id: 100 }, // domicile
+        statistics: [
+          { type: "Corner Kicks", value: 9 }, { type: "Offsides", value: 3 }, { type: "Fouls", value: 8 },
+          { type: "Total Shots", value: 15 }, { type: "Yellow Cards", value: 3 }, { type: "Red Cards", value: 1 },
+        ],
+      },
+    ];
+    const stats = mapFixtureStatistics(raw, 100);
+    expect(stats.corners).toEqual({ home: 9, away: 4, total: 13 });
+    expect(stats.offsides).toEqual({ home: 3, away: 1, total: 4 });
+    expect(stats.fouls).toEqual({ home: 8, away: 9, total: 17 });
+    expect(stats.shots).toEqual({ home: 15, away: 11, total: 26 });
+    expect(stats.yellowCards).toEqual({ home: 3, away: 2, total: 5 });
+    // Une valeur `null` (pas de carton rouge) est un vrai zéro, jamais une donnée manquante inventée.
+    expect(stats.redCards).toEqual({ home: 1, away: 0, total: 1 });
+  });
+
+  test("mapFixtureStatistics renvoie null si la réponse n'a pas la forme attendue (pas les deux équipes)", async () => {
+    const { mapFixtureStatistics } = await import("../lib/apiFootball.js");
+    expect(mapFixtureStatistics([], 100)).toBeNull();
+    expect(mapFixtureStatistics([{ team: { id: 100 }, statistics: [] }], 100)).toBeNull();
+    expect(mapFixtureStatistics(null, 100)).toBeNull();
+  });
+});
+
 describe("mapFixtureToLiveMatch / mapFixtureToLiveState — bloc 2 (liste live mondiale + repli score/minute)", () => {
   function rawFixture(overrides = {}) {
     return {

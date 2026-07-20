@@ -165,6 +165,7 @@ export default async function handler(req, res) {
           result,
           matchStatus: liveMatch?.status || null,
           finalScore: liveMatch?.score?.fullTime || null,
+          apiFootballKey,
         });
       }
     }
@@ -241,12 +242,15 @@ export default async function handler(req, res) {
 
     // Compte-rendu de fin de match (voir PROMPT) : dès que le match est constaté
     // "FINISHED", compare le pronostic FIGÉ (jamais un nouveau calcul) au vrai
-    // résultat pour classer Succès/Échec — automatique, sans action de l'utilisateur
-    // au-delà du simple fait d'avoir consulté cette page au moins une fois. Jamais
-    // fatal pour le reste de la réponse si Supabase échoue.
+    // résultat pour classer Succès/Échec, ET ligne par ligne (voir
+    // lib/pronosticVerification.js — fautes, corners, totaux, cartons...) pour les
+    // indicateurs ✓/✗ affichés sur les pages "Probabilités réussies/échouées" —
+    // automatique, sans action de l'utilisateur au-delà du simple fait d'avoir
+    // consulté cette page au moins une fois. Jamais fatal pour le reste de la réponse
+    // si Supabase échoue.
     if (liveMatch?.status === "FINISHED" && canPersistMatch(matchId)) {
       try {
-        await verifyFrozenPrediction(matchId, liveMatch.score?.fullTime || null);
+        await verifyFrozenPrediction(matchId, liveMatch.score?.fullTime || null, apiFootballKey);
       } catch (e) {
         console.error("Erreur compte-rendu de fin de match:", e.message);
       }

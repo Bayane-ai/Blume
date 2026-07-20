@@ -2,6 +2,7 @@ const { liveMatches, upcomingByCompetition, finishedMatch, standingsByCompetitio
 const { COMPETITIONS } = require("../lib/competitions");
 const { computePronostic, computeLiveOutcome } = require("../lib/pronostic");
 const { classifyOutcome, toPredictionSnapshot } = require("../lib/pronosticHistory");
+const { verifyPredictionLines } = require("../lib/pronosticVerification");
 const { isBettableCompetitionName } = require("../lib/bettableFilter");
 const { buildProbableScorers } = require("../lib/probableScorers");
 
@@ -9,13 +10,19 @@ const { buildProbableScorers } = require("../lib/probableScorers");
 // lib/pronosticHistory.js (pas une donnée recopiée) tranche chaque match ci-dessous —
 // vérifie en conditions réelles (navigateur) que le bon badge atterrit sur le bon
 // match, à partir d'un vrai pronostic calculé (computePronostic) et d'un score final
-// choisi pour chaque scénario.
+// choisi pour chaque scénario. `verification` (VRAI verifyPredictionLines, voir PROMPT
+// "chaque ligne de pronostic doit porter un indicateur visuel") utilise `realStats:
+// null` — aucune clé API-Football dans cet environnement E2E — ce qui exerce
+// honnêtement le cas le plus courant en production actuelle : seules les lignes de
+// buts (dérivées du vrai score final, toujours connu) restent vérifiables, le reste
+// s'affiche "Indisponible", jamais un résultat inventé.
 function historyFixtureItem({ matchId, homeRow, awayRow, homeTeamName, awayTeamName, matchDate, finalScore }) {
   const prediction = toPredictionSnapshot(computePronostic({ homeRow, awayRow, homeTeamName, awayTeamName }));
   const status = classifyOutcome(prediction, finalScore);
+  const verification = verifyPredictionLines({ prediction, finalScore, realStats: null });
   return {
     match_id: String(matchId), home_team_name: homeTeamName, away_team_name: awayTeamName,
-    match_date: matchDate, final_score: finalScore, status, prediction,
+    match_date: matchDate, final_score: finalScore, status, prediction: { ...prediction, verification },
   };
 }
 

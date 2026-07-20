@@ -442,6 +442,17 @@ test.describe("Écran 5 — Probabilités réussies / échouées", () => {
     await expect(card.getByTestId("history-badge")).toHaveText("Succès");
     await expect(card.getByTestId("history-final-score")).toHaveText("3 - 0");
 
+    // PROMPT — chaque ligne de pronostic (fautes, total, corners, cartons, tirs...)
+    // porte son propre indicateur visuel : au moins une ligne vérifiée (crochet vert
+    // ou croix rouge, à partir du vrai score final 3-0) ET au moins une ligne
+    // "Indisponible" (corners/hors-jeu/fautes/tirs/cartons : aucune clé API-Football
+    // dans cet environnement E2E, jamais un résultat inventé).
+    const verifiedLines = card.getByTestId("verified-line");
+    await expect(verifiedLines.first()).toBeVisible();
+    const iconCount = await card.getByTestId("line-icon-success").count() + await card.getByTestId("line-icon-failure").count();
+    expect(iconCount).toBeGreaterThan(0);
+    await expect(card.getByTestId("line-icon-unavailable").first()).toBeVisible();
+
     expect(errors.consoleErrors, `Erreurs console : ${errors.consoleErrors.join(" | ")}`).toEqual([]);
   });
 
