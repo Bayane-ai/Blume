@@ -80,7 +80,7 @@ test("les compétitions majeures connues gardent leur ordre de priorité habitue
             matches: [
               fdMatch(1, "ZZZ", "Zeta Zone Cup"),
               fdMatch(2, "FL1", "Ligue 1"),
-              fdMatch(3, "AAA", "Alpha Amateur Cup"),
+              fdMatch(3, "AAA", "Alpha Athletic Cup"),
               fdMatch(4, "PL", "Premier League"),
             ],
           }),
@@ -127,7 +127,7 @@ test("plusieurs fédérations différentes s'affichent bien ensemble dans une se
   expect(names).toEqual(expect.arrayContaining(["Premier League", "Campeonato Brasileiro Série A", "Copa Libertadores"]));
 });
 
-test("avec API_FOOTBALL_KEY, les vrais matchs à venir supplémentaires (autres fédérations, jeunes U20...) sont ajoutés, jamais dupliqués", async () => {
+test("avec API_FOOTBALL_KEY, les vrais matchs à venir supplémentaires (autres fédérations seniors) sont ajoutés, jamais dupliqués", async () => {
   process.env.API_FOOTBALL_KEY = AF_KEY;
   global.fetch = jest.fn((url) => {
     if (url.includes("/v4/matches?")) {
@@ -141,7 +141,7 @@ test("avec API_FOOTBALL_KEY, les vrais matchs à venir supplémentaires (autres 
       if (date === todayIso) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ response: [afFixture(1, { leagueName: "Coupe du Monde U20", country: "Monde" })] }),
+          json: () => Promise.resolve({ response: [afFixture(1, { leagueName: "Eredivisie", country: "Pays-Bas" })] }),
         });
       }
       return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) });
@@ -155,10 +155,52 @@ test("avec API_FOOTBALL_KEY, les vrais matchs à venir supplémentaires (autres 
 
   const allMatches = res.body.competitions.flatMap((c) => c.matches);
   expect(allMatches).toHaveLength(2);
-  const u20Comp = res.body.competitions.find((c) => c.name === "Coupe du Monde U20");
-  expect(u20Comp).toBeDefined();
-  expect(u20Comp.matches[0].pronostic).toEqual({ available: false });
-  expect(u20Comp.matches[0].id).toBe("af-5001");
+  const comp = res.body.competitions.find((c) => c.name === "Eredivisie");
+  expect(comp).toBeDefined();
+  expect(comp.matches[0].pronostic).toEqual({ available: false });
+  expect(comp.matches[0].id).toBe("af-5001");
+});
+
+test('"les matchs sur lesquels on peut parier" : les catégories jeunes/réserves/amateurs sont écartées, aussi bien côté football-data.org que côté API-Football', async () => {
+  process.env.API_FOOTBALL_KEY = AF_KEY;
+  global.fetch = jest.fn((url) => {
+    if (url.includes("/v4/matches?")) {
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            matches: [
+              fdMatch(1, "PL", "Premier League"),
+              fdMatch(2, "U20WC", "Coupe du Monde U20"),
+              fdMatch(3, "RES", "Reserve League"),
+            ],
+          }),
+      });
+    }
+    if (url.includes("v3.football.api-sports.io/fixtures")) {
+      const parsed = new URL(url);
+      const date = parsed.searchParams.get("date");
+      const todayIso = new Date().toISOString().slice(0, 10);
+      if (date === todayIso) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ response: [afFixture(1, { leagueName: "Copa Sub-20" }), afFixture(2, { leagueName: "Amateur Cup" })] }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) });
+    }
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [{ table: [] }] }) });
+  });
+
+  const { default: handler } = await import("../pages/api/matches.js");
+  const res = mockRes();
+  await handler({}, res);
+
+  const names = res.body.competitions.map((c) => c.name);
+  expect(names).toEqual(["Premier League"]);
+  const allMatches = res.body.competitions.flatMap((c) => c.matches);
+  expect(allMatches).toHaveLength(1);
+  expect(allMatches[0].id).toBe(1);
 });
 
 test("un match API-Football qui correspond déjà à un match football-data.org (mêmes équipes) n'est jamais dupliqué", async () => {

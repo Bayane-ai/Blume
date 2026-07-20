@@ -1,6 +1,7 @@
 const { liveMatches, upcomingByCompetition, finishedMatch, standingsByCompetition } = require("./fixtures");
 const { COMPETITIONS } = require("../lib/competitions");
 const { computePronostic, computeLivePronostic } = require("../lib/pronostic");
+const { isBettableCompetitionName } = require("../lib/bettableFilter");
 
 // Intercepte /api/* au niveau réseau (avant même que le serveur Next.js ne les
 // reçoive) et rejoue des données réalistes — le vrai football-data.org est
@@ -18,11 +19,14 @@ async function installApiMocks(page) {
 
     if (path === "/api/matches") {
       // Reflète pages/api/matches.js : toute compétition réellement présente dans les
-      // matchs apparaît (pas seulement celles de lib/competitions.js) — les
-      // compétitions majeures connues d'abord, dans leur ordre habituel, les autres
-      // ensuite, triées alphabétiquement.
+      // matchs apparaît (pas seulement celles de lib/competitions.js), sauf les
+      // catégories jeunes/réserves/amateurs ("les matchs sur lesquels on peut parier",
+      // voir lib/bettableFilter.js) — les compétitions majeures connues d'abord, dans
+      // leur ordre habituel, les autres ensuite, triées alphabétiquement.
       const priorityCodes = COMPETITIONS.map((c) => c.code);
-      const codes = Object.keys(upcomingByCompetition).filter((code) => (upcomingByCompetition[code] || []).length > 0);
+      const codes = Object.keys(upcomingByCompetition).filter(
+        (code) => (upcomingByCompetition[code] || []).length > 0 && isBettableCompetitionName(upcomingByCompetition[code][0].competition.name)
+      );
       const orderedCodes = [
         ...priorityCodes.filter((code) => codes.includes(code)),
         ...codes

@@ -203,7 +203,7 @@ test.describe("PROMPT 6 — Carrousels de compétitions et de journées", () => 
     await expect(page.getByTestId("matchday-filter")).toHaveCount(0);
   });
 
-  test('"Matchs à venir" affiche bien des compétitions de plusieurs fédérations différentes, y compris celles absentes de la liste des compétitions majeures connues', async ({ page }) => {
+  test('"Matchs à venir" affiche bien des compétitions de plusieurs fédérations différentes, y compris celles absentes de la liste des compétitions majeures connues — mais jamais une catégorie jeune (non pariable)', async ({ page }) => {
     await page.goto("/a-venir");
     const compCarousel = page.getByTestId("competition-filter");
     const list = page.getByTestId("match-list");
@@ -211,17 +211,18 @@ test.describe("PROMPT 6 — Carrousels de compétitions et de journées", () => 
     // Par défaut ("Toutes les compétitions"), les matchs de fédérations variées sont
     // déjà tous affichés ensemble, sans action de l'utilisateur.
     await expect(list.getByText("Boca Juniors")).toBeVisible(); // Copa Libertadores (CONMEBOL)
-    await expect(list.getByText("Argentine U20")).toBeVisible(); // catégorie jeune (U20)
 
-    // Chaque fédération a bien son propre bouton de filtre fonctionnel, même absente
-    // de lib/competitions.js.
+    // "Les matchs sur lesquels on peut parier" : la Coupe du Monde U20 (catégorie
+    // jeune, jamais proposée par un bookmaker) n'apparaît nulle part, ni dans la
+    // liste, ni comme bouton de filtre — alors que Copa Libertadores, elle, absente
+    // de lib/competitions.js mais bien senior/pro, reste affichée.
+    await expect(list.getByText("Argentine U20")).toHaveCount(0);
     await expect(compCarousel.getByRole("button", { name: "Copa Libertadores" })).toBeVisible();
-    await expect(compCarousel.getByRole("button", { name: "Coupe du Monde U20" })).toBeVisible();
+    await expect(compCarousel.getByRole("button", { name: "Coupe du Monde U20" })).toHaveCount(0);
 
     await compCarousel.getByRole("button", { name: "Copa Libertadores" }).click();
     await expect(list.getByText("Boca Juniors")).toBeVisible();
     await expect(list.getByText("River Plate")).toBeVisible();
-    await expect(list.getByText("Argentine U20")).toHaveCount(0);
   });
 });
 
