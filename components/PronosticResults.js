@@ -9,9 +9,9 @@
 //     marge (deux lignes voisines) quand l'issue est trop incertaine pour une seule.
 //     Total 1 (équipe à domicile seule).
 //     Total 2 (équipe à l'extérieur seule) — jamais mélangé avec le domicile.
-//     Tirs. Scores exacts (3 à 4), suivis d'un conseil de mise (miser petit sur
-//     chaque score, encore moins quand les cotes sont élevées) — jamais de cote
-//     chiffrée affichée, juste ce conseil de prudence.
+//     Tirs. Tirs cadrés. Scores exacts (3 à 4), suivis d'un conseil de mise (miser
+//     petit sur chaque score, encore moins quand les cotes sont élevées) — jamais de
+//     cote chiffrée affichée, juste ce conseil de prudence.
 // Corners et cartons ont leur propre bloc en bas de page (components/CardsAndCorners.js).
 // Les lignes ("X,5") et les probabilités viennent de lib/pronostic.js, calculées à
 // partir des vraies statistiques des deux équipes pour CE match précis — jamais une
@@ -64,6 +64,7 @@ export default function PronosticResults({ pronostic, loading }) {
           <div style={st.marketRow} data-testid="market-total-1">Total 1 : {marketLabel(markets?.totalHome)}</div>
           <div style={st.marketRow} data-testid="market-total-2">Total 2 : {marketLabel(markets?.totalAway)}</div>
           <div style={st.marketRow} data-testid="market-shots">Tirs : {marketLabel(markets?.shots)}</div>
+          <div style={st.marketRow} data-testid="market-shots-on-target">Tirs cadrés : {marketLabel(markets?.shotsOnTarget)}</div>
         </div>
 
         {pronostic.correctScores && pronostic.correctScores.length > 0 && (

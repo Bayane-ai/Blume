@@ -36,6 +36,7 @@ function basePrediction() {
       totalHome: { line: 1.5, side: "Plus", lines: [] },
       totalAway: { line: 0.5, side: "Moins", lines: [] },
       shots: { line: 20.5, side: "Plus", lines: [] },
+      shotsOnTarget: { line: 6.5, side: "Plus", lines: [] },
       yellowCards: { safe: { line: 3.5, side: "Moins" }, risky: { line: 2.5, side: "Moins" } },
       redCards: { safe: { line: 0.5, side: "Moins" }, risky: { line: 0.5, side: "Plus" } },
     },
@@ -102,18 +103,25 @@ describe("verifyPredictionLines — corners/hors-jeu/fautes : vérifiées ligne 
   });
 });
 
-describe("verifyPredictionLines — tirs et cartons (best-effort, API-Football)", () => {
-  test("tirs et cartons jaunes/rouges (sûr/risqué) vérifiés individuellement contre le vrai décompte final", () => {
+describe("verifyPredictionLines — tirs, tirs cadrés et cartons (best-effort, API-Football)", () => {
+  test("tirs, tirs cadrés et cartons jaunes/rouges (sûr/risqué) vérifiés individuellement contre le vrai décompte final", () => {
     const realStats = {
       corners: { home: 0, away: 0, total: 0 }, offsides: { home: 0, away: 0, total: 0 }, fouls: { home: 0, away: 0, total: 0 },
       shots: { home: 12, away: 9, total: 21 }, // 21 > 20.5 -> true
+      shotsOnTarget: { home: 3, away: 2, total: 5 }, // 5 pas > 6.5 -> false
       yellowCards: { home: 2, away: 1, total: 3 }, // safe: 3 < 3.5 -> true ; risky: 3 < 2.5 -> false
       redCards: { home: 1, away: 0, total: 1 }, // safe: 1 < 0.5 -> false ; risky: 1 > 0.5 -> true
     };
     const result = verifyPredictionLines({ prediction: basePrediction(), finalScore: { home: 2, away: 1 }, realStats });
     expect(result.shots).toBe(true);
+    expect(result.shotsOnTarget).toBe(false);
     expect(result.yellowCards).toEqual({ safe: true, risky: false });
     expect(result.redCards).toEqual({ safe: false, risky: true });
+  });
+
+  test("sans vraies stats disponibles, \"Tirs cadrés\" devient honnêtement \"Indisponible\" (null), comme \"Tirs\"", () => {
+    const result = verifyPredictionLines({ prediction: basePrediction(), finalScore: { home: 2, away: 1 }, realStats: null });
+    expect(result.shotsOnTarget).toBeNull();
   });
 });
 

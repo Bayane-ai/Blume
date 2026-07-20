@@ -11,7 +11,8 @@
  * 3) Total 1 (domicile seul).
  * 4) Total 2 (extérieur seul) — jamais mélangé avec le domicile.
  * 5) Tirs.
- * 6) Scores exacts (3 à 4, différents par match). Corners/cartons/passes décisives
+ * 6) Tirs cadrés.
+ * 7) Scores exacts (3 à 4, différents par match). Corners/cartons/passes décisives
  *    ont désormais leur propre bloc, en bas de la page de match (voir
  *    components/CardsAndCorners.js et components/AssistsProbables.js).
  */
@@ -43,21 +44,22 @@ test("structure exacte du bloc, dans l'ordre demandé, sans aucune cote affiché
   // 2-5) Lignes de marché au format exact demandé ("Total : Plus de X,X"), avec une
   // virgule française et jamais un nombre entier (toujours X,5) — une marge
   // optionnelle ("(ou X,5)") est acceptée pour les totaux de buts uniquement.
-  const lineFormat = /^(Total|Total 1|Total 2|Tirs) : (Plus|Moins) de \d+,5( \(ou \d+,5\))?$/;
+  const lineFormat = /^(Total|Total 1|Total 2|Tirs|Tirs cadrés) : (Plus|Moins) de \d+,5( \(ou \d+,5\))?$/;
   expect(screen.getByTestId("market-total")).toHaveTextContent(lineFormat);
   expect(screen.getByTestId("market-total-1")).toHaveTextContent(lineFormat);
   expect(screen.getByTestId("market-total-2")).toHaveTextContent(lineFormat);
   expect(screen.getByTestId("market-shots")).toHaveTextContent(lineFormat);
+  expect(screen.getByTestId("market-shots-on-target")).toHaveTextContent(lineFormat);
 
   // Corners et cartons ne sont plus dans ce bloc (voir components/CardsAndCorners.js).
   expect(screen.queryByTestId("market-corners")).not.toBeInTheDocument();
   expect(screen.queryByTestId("market-cards")).not.toBeInTheDocument();
 
   // Ordre exact dans le document : 1X2 (3 lignes) puis Total, Total 1, Total 2,
-  // Tirs, puis Scores exacts — jamais un autre ordre.
+  // Tirs, Tirs cadrés, puis Scores exacts — jamais un autre ordre.
   const orderedTestIds = [
     "prob-home", "prob-draw", "prob-away",
-    "market-total", "market-total-1", "market-total-2", "market-shots",
+    "market-total", "market-total-1", "market-total-2", "market-shots", "market-shots-on-target",
   ];
   const nodes = orderedTestIds.map((id) => screen.getByTestId(id));
   for (let i = 1; i < nodes.length; i++) {

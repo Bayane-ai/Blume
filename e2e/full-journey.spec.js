@@ -251,6 +251,7 @@ test.describe("Écran 3 — Analyser un match", () => {
     await expect(page.getByTestId("market-total-1")).toContainText(lineFormat);
     await expect(page.getByTestId("market-total-2")).toContainText(lineFormat);
     await expect(page.getByTestId("market-shots")).toContainText(lineFormat);
+    await expect(page.getByTestId("market-shots-on-target")).toContainText(lineFormat);
     // Total 1 (domicile) et Total 2 (extérieur) ne sont jamais la même ligne recopiée.
     const totalHomeText = await page.getByTestId("market-total-1").textContent();
     const totalAwayText = await page.getByTestId("market-total-2").textContent();

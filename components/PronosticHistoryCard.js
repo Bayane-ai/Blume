@@ -115,6 +115,7 @@ export default function PronosticHistoryCard({ item }) {
           <VerifiedRow label={`Total 1 : ${marketLabel(markets.totalHome)}`} verified={verification.totalHome} />
           <VerifiedRow label={`Total 2 : ${marketLabel(markets.totalAway)}`} verified={verification.totalAway} />
           <VerifiedRow label={`Tirs : ${marketLabel(markets.shots)}`} verified={verification.shots} />
+          <VerifiedRow label={`Tirs cadrés : ${marketLabel(markets.shotsOnTarget)}`} verified={verification.shotsOnTarget} />
           {yellowCardLabels && (
             <>
               <VerifiedRow label={`Cartons jaunes (sûr) : ${yellowCardLabels.safe}`} verified={verification.yellowCards?.safe} />

@@ -123,21 +123,23 @@ describe("getFixtureStatistics / mapFixtureStatistics — vraies statistiques FI
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  test("mapFixtureStatistics traduit corners/hors-jeu/fautes/tirs/cartons réels, home/away/total, en identifiant la bonne équipe à domicile", async () => {
+  test("mapFixtureStatistics traduit corners/hors-jeu/fautes/tirs/tirs cadrés/cartons réels, home/away/total, en identifiant la bonne équipe à domicile", async () => {
     const { mapFixtureStatistics } = await import("../lib/apiFootball.js");
     const raw = [
       {
         team: { id: 101 }, // extérieur, volontairement en premier dans la réponse
         statistics: [
           { type: "Corner Kicks", value: 4 }, { type: "Offsides", value: 1 }, { type: "Fouls", value: 9 },
-          { type: "Total Shots", value: "11" }, { type: "Yellow Cards", value: 2 }, { type: "Red Cards", value: null },
+          { type: "Total Shots", value: "11" }, { type: "Shots on Goal", value: 4 },
+          { type: "Yellow Cards", value: 2 }, { type: "Red Cards", value: null },
         ],
       },
       {
         team: { id: 100 }, // domicile
         statistics: [
           { type: "Corner Kicks", value: 9 }, { type: "Offsides", value: 3 }, { type: "Fouls", value: 8 },
-          { type: "Total Shots", value: 15 }, { type: "Yellow Cards", value: 3 }, { type: "Red Cards", value: 1 },
+          { type: "Total Shots", value: 15 }, { type: "Shots on Goal", value: 6 },
+          { type: "Yellow Cards", value: 3 }, { type: "Red Cards", value: 1 },
         ],
       },
     ];
@@ -146,6 +148,7 @@ describe("getFixtureStatistics / mapFixtureStatistics — vraies statistiques FI
     expect(stats.offsides).toEqual({ home: 3, away: 1, total: 4 });
     expect(stats.fouls).toEqual({ home: 8, away: 9, total: 17 });
     expect(stats.shots).toEqual({ home: 15, away: 11, total: 26 });
+    expect(stats.shotsOnTarget).toEqual({ home: 6, away: 4, total: 10 });
     expect(stats.yellowCards).toEqual({ home: 3, away: 2, total: 5 });
     // Une valeur `null` (pas de carton rouge) est un vrai zéro, jamais une donnée manquante inventée.
     expect(stats.redCards).toEqual({ home: 1, away: 0, total: 1 });

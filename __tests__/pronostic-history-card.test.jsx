@@ -35,6 +35,7 @@ function baseItem(overrides = {}) {
         totalHome: { line: 1.5, side: "Plus", lines: [{ line: 1.5, side: "Plus" }] },
         totalAway: { line: 0.5, side: "Moins", lines: [{ line: 0.5, side: "Moins" }] },
         shots: { line: 23.5, side: "Plus", lines: [{ line: 23.5, side: "Plus" }] },
+        shotsOnTarget: { line: 7.5, side: "Plus", lines: [{ line: 7.5, side: "Plus" }] },
         yellowCards: { safe: { line: 3.5, side: "Moins" }, risky: { line: 2.5, side: "Moins" } },
         redCards: { safe: { line: 0.5, side: "Moins" }, risky: { line: 0.5, side: "Plus" } },
       },
@@ -53,6 +54,7 @@ function baseItem(overrides = {}) {
         fouls: { total: false, home: false, away: true },
         throwIns: { total: null, home: null, away: null },
         shots: true,
+        shotsOnTarget: false,
         yellowCards: { safe: true, risky: false },
         redCards: { safe: null, risky: null },
       },
@@ -95,6 +97,14 @@ test("une ligne ratée affiche une croix rouge", () => {
   const row = screen.getByText(/Total 1 : Plus de 1,5/).closest('[data-testid="verified-line"]');
   expect(row.querySelector('[data-testid="line-icon-failure"]')).toHaveTextContent("✗");
   expect(row.querySelector('[data-testid="line-icon-success"]')).not.toBeInTheDocument();
+});
+
+test("la ligne \"Tirs cadrés\" est vérifiée individuellement, comme \"Tirs\"", () => {
+  render(<PronosticHistoryCard item={baseItem()} />);
+  const shots = screen.getByText(/^Tirs : Plus de 23,5$/).closest('[data-testid="verified-line"]');
+  const shotsOnTarget = screen.getByText(/^Tirs cadrés : Plus de 7,5$/).closest('[data-testid="verified-line"]');
+  expect(shots.querySelector('[data-testid="line-icon-success"]')).toBeInTheDocument();
+  expect(shotsOnTarget.querySelector('[data-testid="line-icon-failure"]')).toBeInTheDocument();
 });
 
 test("une ligne sans donnée réelle disponible affiche \"Indisponible\", jamais un crochet/une croix inventés", () => {

@@ -10,15 +10,18 @@ const homeRow = { position: 3, points: 55, form: "WWDLW", playedGames: 20, goals
 const awayRow = { position: 7, points: 44, form: "LWDDW", playedGames: 20, goalsFor: 28, goalsAgainst: 26, team: { id: 11 } };
 
 describe("Pronostics détaillés — corners, tirs, cartons", () => {
-  test("computePronostic renvoie des corners/tirs cohérents (total = domicile + extérieur), et des cartons jaunes/rouges séparés", () => {
+  test("computePronostic renvoie des corners/tirs/tirs cadrés cohérents (total = domicile + extérieur), et des cartons jaunes/rouges séparés", () => {
     const result = computePronostic({ homeRow, awayRow, homeTeamName: "A", awayTeamName: "B" });
     expect(result.extraStats).toBeDefined();
-    for (const key of ["corners", "shots"]) {
+    for (const key of ["corners", "shots", "shotsOnTarget"]) {
       const stat = result.extraStats[key];
       expect(stat.total).toBe(stat.home + stat.away);
       expect(stat.home).toBeGreaterThanOrEqual(0);
       expect(stat.away).toBeGreaterThanOrEqual(0);
     }
+    // Les tirs cadrés sont toujours un sous-ensemble des tirs totaux de CE match.
+    expect(result.extraStats.shotsOnTarget.total).toBeLessThan(result.extraStats.shots.total);
+    expect(result.markets.shotsOnTarget.side).toMatch(/^Plus|Moins$/);
     // Cartons jaunes (majorité, ligne Plus/Moins) et rouges (rares, propre ligne
     // sûre/risquée — voir riskLines) — jamais un total combiné qui masquerait cette
     // distinction.
@@ -50,5 +53,14 @@ describe("Pronostics détaillés — corners, tirs, cartons", () => {
     const result = computePronostic({ homeRow: strongHome, awayRow: weakAway, homeTeamName: "A", awayTeamName: "B" });
     expect(result.extraStats.corners.home).toBeGreaterThan(result.extraStats.corners.away);
     expect(result.extraStats.shots.home).toBeGreaterThan(result.extraStats.shots.away);
+    expect(result.extraStats.shotsOnTarget.home).toBeGreaterThan(result.extraStats.shotsOnTarget.away);
+  });
+
+  test("deux matchs différents ont des lignes \"Tirs cadrés\" différentes — jamais la même valeur recopiée d'un match à l'autre", () => {
+    const matchA = computePronostic({ homeRow, awayRow, homeTeamName: "A", awayTeamName: "B" });
+    const strongHome = { position: 1, points: 70, form: "WWWWW", playedGames: 20, goalsFor: 60, goalsAgainst: 15, team: { id: 12 } };
+    const weakAway = { position: 18, points: 15, form: "LLLLL", playedGames: 20, goalsFor: 12, goalsAgainst: 50, team: { id: 13 } };
+    const matchB = computePronostic({ homeRow: strongHome, awayRow: weakAway, homeTeamName: "C", awayTeamName: "D" });
+    expect(matchA.markets.shotsOnTarget).not.toEqual(matchB.markets.shotsOnTarget);
   });
 });
