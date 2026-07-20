@@ -1,6 +1,6 @@
 const { liveMatches, upcomingByCompetition, finishedMatch, standingsByCompetition } = require("./fixtures");
 const { COMPETITIONS } = require("../lib/competitions");
-const { computePronostic } = require("../lib/pronostic");
+const { computePronostic, computeLiveOutcome } = require("../lib/pronostic");
 const { classifyOutcome, toPredictionSnapshot } = require("../lib/pronosticHistory");
 const { isBettableCompetitionName } = require("../lib/bettableFilter");
 const { buildProbableScorers } = require("../lib/probableScorers");
@@ -172,12 +172,30 @@ async function installApiMocks(page) {
       const awayRow = table.find((r) => String(r.team.id) === awayTeamId) || null;
 
       const result = computePronostic({ homeRow, awayRow, homeTeamName, awayTeamName });
-      result.live = Boolean(live && (live.status === "IN_PLAY" || live.status === "PAUSED"));
+      const isLive = Boolean(live && (live.status === "IN_PLAY" || live.status === "PAUSED"));
+      result.live = isLive;
 
       if (live) {
         result.matchStatus = live.status;
         result.matchMinute = live.minute;
         result.matchScore = live.score.fullTime;
+      }
+      // Retour en arrière partiel (demande explicite de l'utilisateur) : reproduit ici
+      // le même recalcul que pages/api/analyze.js — probabilités/scores exacts/totaux
+      // suivent le score/la minute en direct, le reste (Corners/Hors-jeu/Fautes/
+      // Touches, tirs, cartons...) reste figé sur l'estimation pré-match.
+      if (isLive) {
+        const liveOutcome = computeLiveOutcome({
+          lambdaHome: result.goals.expectedHome,
+          lambdaAway: result.goals.expectedAway,
+          currentHome: live.score.fullTime.home,
+          currentAway: live.score.fullTime.away,
+          minute: live.minute,
+        });
+        result.probabilities = liveOutcome.probabilities;
+        result.correctScores = liveOutcome.correctScores;
+        result.goals = liveOutcome.goals;
+        result.markets = { ...result.markets, ...liveOutcome.markets };
       }
       // Non fournis par les fixtures de classement : valeurs réalistes fixes pour ces
       // deux champs annexes (coup d'envoi/stade/arbitre), sans lien avec le calcul.

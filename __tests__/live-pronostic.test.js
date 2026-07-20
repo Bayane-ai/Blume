@@ -1,13 +1,14 @@
 /**
  * Vérifie que /api/analyze relit systématiquement le score/la minute/le statut du
  * match EN COURS depuis l'API (jamais de valeur mise en cache côté client sans
- * vérification), MAIS que les lignes de pronostics elles-mêmes (probabilités, buts
- * attendus, corners/hors-jeu/fautes/touches, etc.) restent strictement figées pendant
- * toute la durée du match — voir lib/pronosticHistory.js (mécanisme de gel) et
- * lib/pronostic.js (computeLivePronostic, qui recalculait ces lignes à partir du
- * score/de la minute en direct, a été retiré à la demande explicite de l'utilisateur).
+ * vérification). Depuis le retour en arrière partiel demandé par l'utilisateur, SEULS
+ * les probabilités de victoire, les scores exacts et les totaux de buts (Total, Total
+ * 1, Total 2) suivent réellement l'évolution du match (voir lib/pronostic.js,
+ * computeLiveOutcome) ; toutes les autres lignes (Corners/Hors-jeu/Fautes/Touches,
+ * tirs, cartons...) restent strictement figées pendant toute la durée du match — voir
+ * lib/pronosticHistory.js (mécanisme de gel).
  */
-import { computePronostic } from "../lib/pronostic";
+import { computePronostic, computeLiveOutcome } from "../lib/pronostic";
 
 // La sauvegarde/relecture/vérification du pronostic figé (voir describe "pronostics
 // figés" plus bas) est mockée pour tous les AUTRES tests de ce fichier, qui ne s'y
@@ -38,6 +39,54 @@ beforeEach(() => {
 
 const homeRow = { position: 3, points: 55, form: "WWDLW", playedGames: 20, goalsFor: 40, goalsAgainst: 20, team: { id: 10 } };
 const awayRow = { position: 7, points: 44, form: "LWDDW", playedGames: 20, goalsFor: 28, goalsAgainst: 26, team: { id: 11 } };
+
+describe("computeLiveOutcome — probabilités/scores exacts/totaux suivent le score réel, à partir des lambdas PRÉ-MATCH", () => {
+  const prematch = computePronostic({ homeRow, awayRow, homeTeamName: "A", awayTeamName: "B" });
+  const { expectedHome: lambdaHome, expectedAway: lambdaAway } = prematch.goals;
+
+  test("à 0-0 en début de match, les probabilités restent proches du pronostic pré-match", () => {
+    const live = computeLiveOutcome({ lambdaHome, lambdaAway, currentHome: 0, currentAway: 0, minute: 1 });
+    expect(Math.abs(live.probabilities.home - prematch.probabilities.home)).toBeLessThan(5);
+  });
+
+  test("l'équipe qui mène largement voit sa probabilité de victoire nettement augmenter", () => {
+    const level = computeLiveOutcome({ lambdaHome, lambdaAway, currentHome: 0, currentAway: 0, minute: 60 });
+    const leading = computeLiveOutcome({ lambdaHome, lambdaAway, currentHome: 3, currentAway: 0, minute: 60 });
+    expect(leading.probabilities.home).toBeGreaterThan(level.probabilities.home);
+    expect(leading.probabilities.away).toBeLessThan(level.probabilities.away);
+  });
+
+  test("changer le score change bien les probabilités (jamais figées au pré-match, contrairement aux lambdas d'entrée)", () => {
+    const scoreA = computeLiveOutcome({ lambdaHome, lambdaAway, currentHome: 1, currentAway: 0, minute: 70 });
+    const scoreB = computeLiveOutcome({ lambdaHome, lambdaAway, currentHome: 1, currentAway: 2, minute: 70 });
+    expect(scoreA.probabilities.home).not.toBeCloseTo(scoreB.probabilities.home, 1);
+    expect(scoreA.probabilities.away).not.toBeCloseTo(scoreB.probabilities.away, 1);
+  });
+
+  test("en fin de match, le score actuel détermine quasi entièrement le résultat (plus de temps pour changer)", () => {
+    const live = computeLiveOutcome({ lambdaHome, lambdaAway, currentHome: 2, currentAway: 0, minute: 90 });
+    expect(live.probabilities.home).toBeGreaterThan(90);
+    expect(live.correctScores[0].score).toBe("2-0");
+  });
+
+  test("les buts attendus (score final estimé) intègrent le score déjà marqué", () => {
+    const live = computeLiveOutcome({ lambdaHome, lambdaAway, currentHome: 2, currentAway: 1, minute: 80 });
+    expect(live.goals.expectedHome).toBeGreaterThanOrEqual(2);
+    expect(live.goals.expectedAway).toBeGreaterThanOrEqual(1);
+  });
+
+  test("les totaux de buts (Total, Total 1, Total 2) suivent aussi le score/la minute en direct", () => {
+    const early = computeLiveOutcome({ lambdaHome, lambdaAway, currentHome: 0, currentAway: 0, minute: 5 });
+    const late = computeLiveOutcome({ lambdaHome, lambdaAway, currentHome: 2, currentAway: 0, minute: 85 });
+    expect(late.markets.totalHome.line).toBeGreaterThanOrEqual(early.markets.totalHome.line);
+  });
+
+  test("deux appels identiques (même score, même minute) renvoient un résultat strictement identique", () => {
+    const first = computeLiveOutcome({ lambdaHome, lambdaAway, currentHome: 1, currentAway: 1, minute: 40 });
+    const second = computeLiveOutcome({ lambdaHome, lambdaAway, currentHome: 1, currentAway: 1, minute: 40 });
+    expect(second).toEqual(first);
+  });
+});
 
 describe("/api/analyze — relit toujours le score/la minute/le statut depuis l'API pour un match en direct", () => {
   const TOKEN = "test-token";
@@ -95,11 +144,11 @@ describe("/api/analyze — relit toujours le score/la minute/le statut depuis l'
     expect(res.setHeader).toHaveBeenCalledWith("Cache-Control", expect.stringContaining("s-maxage"));
   });
 
-  // Correction demandée après coup : les probabilités (et toutes les autres lignes de
-  // pronostics) ne dépendent plus jamais du score en direct — un but marqué entre deux
-  // sondages du même match ne doit RIEN changer aux pronostics déjà figés, seulement
-  // au score affiché.
-  test("un but marqué entre deux sondages change le score affiché mais jamais les probabilités déjà figées", async () => {
+  // Retour en arrière partiel (demande explicite de l'utilisateur) : un but marqué
+  // entre deux sondages du même match doit bien faire évoluer les probabilités, les
+  // scores exacts et les totaux de buts — mais jamais le bloc Corners/Hors-jeu/Fautes/
+  // Touches (matchStats), qui reste figé sur l'estimation pré-match.
+  test("un but marqué entre deux sondages change le score affiché ET les probabilités/scores exacts/totaux, mais jamais les blocs Corners/Hors-jeu/Fautes/Touches", async () => {
     global.fetch = mockFetchFor({ status: "IN_PLAY", minute: 50, score: { fullTime: { home: 0, away: 0 } } });
     const { default: handlerBefore } = await import("../pages/api/analyze.js");
     const resBefore = mockRes();
@@ -128,10 +177,21 @@ describe("/api/analyze — relit toujours le score/la minute/le statut depuis l'
 
     expect(resAfter.body.matchScore).toEqual({ home: 1, away: 0 });
     expect(resAfter.body.matchMinute).toBe(51);
-    // Le score a changé, mais pas les pronostics : ils servent de référence stable.
-    expect(resAfter.body.probabilities).toEqual(resBefore.body.probabilities);
-    expect(resAfter.body.goals).toEqual(resBefore.body.goals);
-    expect(resAfter.body.correctScores).toEqual(resBefore.body.correctScores);
+    // Le score a changé : les probabilités/scores exacts/totaux suivent — un but
+    // marqué à la 51e minute doit se voir dans ces lignes.
+    expect(resAfter.body.probabilities).not.toEqual(resBefore.body.probabilities);
+    expect(resAfter.body.goals).not.toEqual(resBefore.body.goals);
+    const expectedLive = computeLiveOutcome({
+      lambdaHome: frozenResult.goals.expectedHome, lambdaAway: frozenResult.goals.expectedAway,
+      currentHome: 1, currentAway: 0, minute: 51,
+    });
+    expect(resAfter.body.probabilities).toEqual(expectedLive.probabilities);
+    expect(resAfter.body.correctScores).toEqual(expectedLive.correctScores);
+    expect(resAfter.body.goals).toEqual(expectedLive.goals);
+    // Corners/Hors-jeu/Fautes/Touches, eux, restent strictement figés.
+    expect(resAfter.body.matchStats).toEqual(resBefore.body.matchStats);
+    expect(resAfter.body.markets.shots).toEqual(resBefore.body.markets.shots);
+    expect(resAfter.body.markets.yellowCards).toEqual(resBefore.body.markets.yellowCards);
   });
 
   test("deux requêtes rapprochées (dans la fenêtre de cache partagé) réutilisent le même appel en amont", async () => {
@@ -781,8 +841,23 @@ describe("/api/analyze — pronostics figés : sauvegarde au premier calcul, rel
     expect(saveFrozenPrediction.mock.calls[0][0].result).toBeDefined();
   });
 
-  test("un pronostic déjà figé pour ce match : relu tel quel, jamais recalculé ni resauvegardé, même si le score a bougé", async () => {
-    const frozenPrediction = { probabilities: { home: 77, draw: 15, away: 8 }, goals: { expectedTotal: 2.4 } };
+  test("un pronostic déjà figé pour ce match : jamais recalculé côté persistance ni resauvegardé — les lignes live suivent le score/la minute, le reste (Corners/Hors-jeu/Fautes/Touches, tirs, cartons) reste figé", async () => {
+    const frozenPrediction = {
+      probabilities: { home: 60, draw: 25, away: 15 },
+      goals: { expectedHome: 1.8, expectedAway: 0.9, expectedTotal: 2.7, range: { low: 1, high: 4 }, over25: 55, under25: 45, bttsYes: 40, bttsNo: 60 },
+      correctScores: [{ score: "2-1", probability: 12 }],
+      markets: {
+        totalGoals: { line: 2.5, side: "Plus", lines: [{ line: 2.5, side: "Plus" }] },
+        totalHome: { line: 1.5, side: "Plus", lines: [{ line: 1.5, side: "Plus" }] },
+        totalAway: { line: 0.5, side: "Plus", lines: [{ line: 0.5, side: "Plus" }] },
+        shots: { line: 23.5, side: "Plus", lines: [{ line: 23.5, side: "Plus" }] },
+        yellowCards: { safe: { line: 3.5, side: "Moins" }, risky: { line: 2.5, side: "Moins" } },
+        redCards: { safe: { line: 0.5, side: "Moins" }, risky: { line: 0.5, side: "Plus" } },
+      },
+      matchStats: {
+        corners: { total: { line: 9.5, side: "Plus", lines: [{ line: 9.5, side: "Plus" }] }, home: {}, away: {}, half: { label: "1ère mi-temps", market: {} } },
+      },
+    };
     getFrozenPrediction.mockResolvedValueOnce({ prediction: frozenPrediction, status: "pending", final_score: null });
     global.fetch = mockFetch({ status: "IN_PLAY", minute: 60, utcDate: "2026-01-01T15:00:00Z", score: { fullTime: { home: 2, away: 0 } } });
 
@@ -790,8 +865,23 @@ describe("/api/analyze — pronostics figés : sauvegarde au premier calcul, rel
     const res = mockRes();
     await handler({ query: baseQuery }, res);
 
-    expect(res.body.probabilities).toEqual(frozenPrediction.probabilities);
-    expect(res.body.goals).toEqual(frozenPrediction.goals);
+    const expectedLive = computeLiveOutcome({
+      lambdaHome: frozenPrediction.goals.expectedHome, lambdaAway: frozenPrediction.goals.expectedAway,
+      currentHome: 2, currentAway: 0, minute: 60,
+    });
+    expect(res.body.probabilities).toEqual(expectedLive.probabilities);
+    expect(res.body.correctScores).toEqual(expectedLive.correctScores);
+    expect(res.body.goals).toEqual(expectedLive.goals);
+    expect(res.body.markets.totalGoals).toEqual(expectedLive.markets.totalGoals);
+    expect(res.body.markets.totalHome).toEqual(expectedLive.markets.totalHome);
+    expect(res.body.markets.totalAway).toEqual(expectedLive.markets.totalAway);
+
+    // Corners/Hors-jeu/Fautes/Touches, tirs, cartons : jamais recalculés, relus tels quels.
+    expect(res.body.matchStats).toEqual(frozenPrediction.matchStats);
+    expect(res.body.markets.shots).toEqual(frozenPrediction.markets.shots);
+    expect(res.body.markets.yellowCards).toEqual(frozenPrediction.markets.yellowCards);
+    expect(res.body.markets.redCards).toEqual(frozenPrediction.markets.redCards);
+
     expect(saveFrozenPrediction).not.toHaveBeenCalled();
     // Le score/la minute, eux, restent bien lus en direct même si le pronostic est figé.
     expect(res.body.matchScore).toEqual({ home: 2, away: 0 });

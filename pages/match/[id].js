@@ -95,10 +95,12 @@ export default function MatchPage() {
 
   const currentStatus = liveState?.status || initialStatus;
 
-  // Rafraîchissement automatique tant que le match est en direct — seuls le score, la
-  // minute et la timeline d'événements en profitent réellement : les pronostics sont
-  // figés côté serveur (voir pages/api/analyze.js) et reviennent donc identiques à
-  // chaque appel pendant tout le match.
+  // Rafraîchissement automatique tant que le match est en direct — le score, la
+  // minute, la timeline d'événements, les probabilités de victoire, les scores exacts
+  // et les totaux de buts en profitent réellement (voir pages/api/analyze.js,
+  // computeLiveOutcome) ; les autres lignes de pronostics (Corners/Hors-jeu/Fautes/
+  // Touches, tirs, cartons...) restent figées et reviennent donc identiques à chaque
+  // appel pendant tout le match.
   useEffect(() => {
     if (!authorized || !LIVE_STATUSES.includes(currentStatus)) return;
     const intervalId = setInterval(() => runAnalysis(true), LIVE_REFRESH_MS);
@@ -194,9 +196,10 @@ export default function MatchPage() {
           <h2 style={st.h2}>Pronostics automatiques</h2>
           {isLiveNow && (
             <p style={st.liveHint}>
-              Le score et les moments forts se mettent à jour automatiquement. Les pronostics ci-dessous ont été
-              calculés une seule fois avant le match et restent identiques jusqu'à la fin — une référence stable
-              pour parier dessus.
+              Le score, les moments forts, les probabilités de victoire, les scores exacts et les totaux de buts
+              suivent l'évolution du match en direct. Les autres lignes (Corners, Hors-jeu, Fautes, Touches, tirs,
+              cartons...) ont été calculées une seule fois avant le match et restent identiques jusqu'à la fin —
+              une référence stable pour parier dessus.
             </p>
           )}
 

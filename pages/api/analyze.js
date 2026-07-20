@@ -5,7 +5,7 @@ import { getHeadToHead } from "../../lib/headToHead";
 import { getScorers } from "../../lib/scorersCache";
 import { buildProbableScorers } from "../../lib/probableScorers";
 import { getFrozenPrediction, saveFrozenPrediction, verifyFrozenPrediction, canPersistMatch } from "../../lib/pronosticHistory";
-import { computePronostic } from "../../lib/pronostic";
+import { computePronostic, computeLiveOutcome } from "../../lib/pronostic";
 import {
   getAllLiveFixtures, findLiveFixtureByTeams, getFixtureEvents, mapApiFootballEvents, mapFixtureToLiveState,
   findApiFootballTeamId, getTeamCardProneness,
@@ -123,11 +123,9 @@ export default async function handler(req, res) {
     const isApiFootballOnlyId = typeof matchId === "string" && matchId.startsWith("af-");
 
     // Le score/la minute/le statut viennent toujours de l'API, jamais d'une valeur
-    // transmise par le client — CE SONT LES SEULES CHOSES qui restent réellement en
-    // direct sur cette page (avec le chronomètre et la timeline d'événements) : les
-    // lignes de pronostics, elles, sont figées (voir plus bas). Le cache de quelques
-    // secondes ici n'est pas "figé" : il sert seulement à mutualiser les appels entre
-    // plusieurs visiteurs qui suivent le même match en même temps.
+    // transmise par le client. Le cache de quelques secondes ici n'est pas "figé" : il
+    // sert seulement à mutualiser les appels entre plusieurs visiteurs qui suivent le
+    // même match en même temps.
     let liveMatch = matchId && !isApiFootballOnlyId ? await getLiveMatch(matchId, token) : null;
 
     // football-data.org ne connaît pas ce match (hors de ses compétitions couvertes, ou
@@ -142,11 +140,13 @@ export default async function handler(req, res) {
 
     const isLive = liveMatch && LIVE_STATUSES.includes(liveMatch.status);
 
-    // PRONOSTICS FIGÉS (correction demandée après coup) : calculés une seule fois à la
-    // première analyse de CE match, jamais recalculés ensuite — voir
-    // lib/pronosticHistory.js. Un pronostic déjà figé est relu tel quel ; il ne dépend
-    // ni du score ni de la minute en direct, donc s'affiche à l'identique du début à
-    // la fin du match, comme demandé ("ces lignes servent de référence au parieur").
+    // PRONOSTIC FIGÉ (correction demandée après coup) : calculé une seule fois à la
+    // première analyse de CE match, jamais recalculé ensuite — voir
+    // lib/pronosticHistory.js. Un pronostic déjà figé est relu tel quel. La majorité
+    // des lignes (corners/hors-jeu/fautes/touches, tirs, cartons, buteurs probables...)
+    // s'affiche ainsi à l'identique du début à la fin du match, comme référence stable
+    // pour le parieur — SAUF probabilités/scores exacts/totaux de buts, qui suivent
+    // bien l'évolution réelle du match (voir le recalcul plus bas, jamais persisté).
     let result;
     const frozen = await getFrozenPrediction(matchId);
     if (frozen) {
@@ -181,6 +181,29 @@ export default async function handler(req, res) {
       result.referee = liveMatch.referees?.[0]?.name || null;
     }
     result.live = Boolean(isLive);
+
+    // RETOUR EN ARRIÈRE PARTIEL (demande explicite de l'utilisateur) : le bloc
+    // "Probabilités de victoire", les "Scores exacts" et les Totaux de buts (Total,
+    // Total 1, Total 2) suivent bien l'évolution réelle du match — recalculés à
+    // chaque actualisation à partir des lambdas PRÉ-MATCH (jamais modifiées elles-
+    // mêmes) et du score/de la minute en direct. Tout le reste (Corners/Hors-jeu/
+    // Fautes/Touches, tirs, cartons, buteurs probables...) continue de venir du
+    // pronostic figé ci-dessus, sans le moindre changement. Ce recalcul n'est jamais
+    // sauvegardé : chaque actualisation repart des mêmes lambdas pré-match figées,
+    // jamais d'un état déjà recalculé la fois précédente.
+    if (isLive) {
+      const live = computeLiveOutcome({
+        lambdaHome: result.goals.expectedHome,
+        lambdaAway: result.goals.expectedAway,
+        currentHome: liveMatch.score?.fullTime?.home,
+        currentAway: liveMatch.score?.fullTime?.away,
+        minute: liveMatch.minute,
+      });
+      result.probabilities = live.probabilities;
+      result.correctScores = live.correctScores;
+      result.goals = live.goals;
+      result.markets = { ...result.markets, ...live.markets };
+    }
 
     // La ressource "match" de football-data.org (plan utilisé ici) ne fournit pas de
     // fil d'événements minute par minute (buts/cartons/remplacements) — seulement le
