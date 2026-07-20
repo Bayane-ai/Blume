@@ -46,9 +46,7 @@ function liveFixture() {
 }
 
 function upcomingFixture() {
-  // Plus tard aujourd'hui (pas dans plusieurs jours) : la page "Matchs à venir"
-  // s'ouvre par défaut sur l'onglet "Aujourd'hui" (voir lib/dayGrouping.js).
-  const kickoff = new Date(Date.now() + 3 * 3600000).toISOString();
+  const kickoff = new Date(Date.now() + 2 * 24 * 3600000).toISOString();
   return {
     competitions: [
       {
@@ -145,6 +143,6 @@ test('"Matchs à venir" affiche un message clair (jamais une page vide) quand l\
   });
 
   render(<UpcomingMatches />);
-  expect(await screen.findByText("Aucun match ce jour")).toBeInTheDocument();
+  expect(await screen.findByText("Aucun match à venir cette semaine.")).toBeInTheDocument();
   expect(screen.queryAllByRole("button", { name: /^analyser$/i })).toHaveLength(0);
 });

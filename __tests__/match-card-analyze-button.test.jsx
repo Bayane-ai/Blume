@@ -63,10 +63,8 @@ function liveMatchesFixture() {
 }
 
 function upcomingMatchesFixture() {
-  // Deux horaires plus tard AUJOURD'HUI (pas dans plusieurs jours) : la page "Matchs
-  // à venir" s'ouvre par défaut sur l'onglet "Aujourd'hui" (voir lib/dayGrouping.js).
-  const kickoff1 = new Date(Date.now() + 3 * 3600000).toISOString();
-  const kickoff2 = new Date(Date.now() + 5 * 3600000).toISOString();
+  const kickoff1 = new Date(Date.now() + 2 * 24 * 3600000).toISOString();
+  const kickoff2 = new Date(Date.now() + 3 * 24 * 3600000).toISOString();
   return {
     competitions: [
       {

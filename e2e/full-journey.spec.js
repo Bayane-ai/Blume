@@ -145,41 +145,24 @@ test.describe("PROMPT 6 — Carrousels de compétitions et de journées", () => 
     await expect(list.getByText("Arsenal FC")).toBeVisible();
   });
 
-});
-
-test.describe("PROMPT — Matchs à venir jour par jour", () => {
-  test('"Matchs à venir" regroupe par jour, toutes compétitions confondues, aucun filtre par compétition', async ({ page }) => {
+  test('"Matchs à venir" : filtre par compétition puis par journée, sur de vraies compétitions et journées', async ({ page }) => {
     await page.goto("/a-venir");
+    const compCarousel = page.getByTestId("competition-filter");
     const list = page.getByTestId("match-list");
 
-    // Plus de carrousel de compétitions/journées sur cette page.
-    await expect(page.getByTestId("competition-filter")).toHaveCount(0);
-    await expect(page.getByTestId("matchday-filter")).toHaveCount(0);
-
-    // Barre de jours : au moins 7 jours, "Aujourd'hui" actif par défaut.
-    const dayTabs = page.getByTestId("day-tabs");
-    const dayButtons = dayTabs.getByRole("button");
-    expect(await dayButtons.count()).toBeGreaterThanOrEqual(7);
-    await expect(dayButtons.first()).toHaveText("Aujourd'hui");
-    await expect(page.getByTestId("day-heading")).toHaveText("Aujourd'hui");
-
-    // Aujourd'hui : les deux matchs Premier League réels de la fixture, toutes
-    // compétitions confondues (rien à filtrer manuellement).
+    await compCarousel.getByRole("button", { name: "Premier League" }).click();
+    const mdCarousel = page.getByTestId("matchday-filter");
+    await expect(mdCarousel.getByRole("button", { name: "Journée 27" })).toBeVisible();
+    await mdCarousel.getByRole("button", { name: "Journée 27" }).click();
+    // Les deux matchs réels de cette journée sont bien affichés.
     await expect(list.getByText("Liverpool FC")).toBeVisible();
     await expect(list.getByText("Newcastle United FC")).toBeVisible();
-    // Rien des autres jours (Ligue des Champions demain, Coupe du Monde après-demain).
-    await expect(list.getByText("Bayern Munich")).toHaveCount(0);
-    await expect(list.getByText("France")).toHaveCount(0);
 
-    // "Demain" : le match de Ligue des Champions apparaît, plus aucun match d'aujourd'hui.
-    await dayTabs.getByRole("button", { name: "Demain" }).click();
-    await expect(page.getByTestId("day-heading")).toHaveText("Demain");
-    await expect(list.getByText("Bayern Munich")).toBeVisible();
-    await expect(list.getByText("Liverpool FC")).toHaveCount(0);
-
-    // Le 3e jour (index 2, "Mercredi ..." ou similaire) : le match Coupe du Monde.
-    await dayButtons.nth(2).click();
+    // Coupe du Monde (phase à élimination directe, pas de champ "journée" exploitable) :
+    // aucun carrousel de journées vide ne doit s'afficher — pas de bouton sans effet.
+    await compCarousel.getByRole("button", { name: "Coupe du Monde" }).click();
     await expect(list.getByText("France")).toBeVisible();
+    await expect(page.getByTestId("matchday-filter")).toHaveCount(0);
   });
 });
 

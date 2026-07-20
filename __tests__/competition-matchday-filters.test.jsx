@@ -2,14 +2,14 @@
  * @jest-environment jsdom
  *
  * PROMPT 6 : des carrousels horizontaux de compétitions et de journées, sur
- * "Matchs en ligne" — chaque bouton de compétition filtre la liste sur de vraies
- * données API ; chaque bouton de journée affiche les bons matchs ; aucun bouton vide
- * ou sans effet (chaque option correspond à au moins un vrai match chargé).
- * ("Matchs à venir" n'a plus de filtre par compétition depuis le passage à un
- * affichage jour par jour — voir __tests__/upcoming-day-tabs.test.jsx.)
+ * "Matchs en ligne" ET "Matchs à venir". Chaque bouton de compétition filtre la
+ * liste sur de vraies données API ; chaque bouton de journée affiche les bons
+ * matchs ; aucun bouton vide ou sans effet (chaque option correspond à au moins un
+ * vrai match chargé).
  */
 import { render, screen, waitFor, within, fireEvent } from "@testing-library/react";
 import Home from "../pages/index";
+import UpcomingMatches from "../pages/a-venir";
 
 jest.mock("next/router", () => ({
   useRouter: () => ({ pathname: "/", push: jest.fn(), replace: jest.fn() }),
@@ -55,10 +55,33 @@ function liveMatchesFixture() {
   };
 }
 
+function upcomingFixture() {
+  const kickoff = new Date(Date.now() + 2 * 24 * 3600000).toISOString();
+  return {
+    competitions: [
+      {
+        code: "PL", name: "Premier League",
+        matches: [
+          { id: 101, status: "SCHEDULED", minute: null, utcDate: kickoff, matchday: 27, competition: { code: "PL", name: "Premier League", emblem: "" }, homeTeam: { id: 1010, name: "Manchester City FC", crest: "" }, awayTeam: { id: 1011, name: "Tottenham Hotspur FC", crest: "" }, score: { fullTime: { home: null, away: null } }, pronostic: basePronostic },
+        ],
+      },
+      {
+        code: "BL1", name: "Bundesliga",
+        matches: [
+          { id: 102, status: "TIMED", minute: null, utcDate: kickoff, matchday: 22, competition: { code: "BL1", name: "Bundesliga", emblem: "" }, homeTeam: { id: 1020, name: "Borussia Dortmund", crest: "" }, awayTeam: { id: 1021, name: "RB Leipzig", crest: "" }, score: { fullTime: { home: null, away: null } }, pronostic: basePronostic },
+        ],
+      },
+    ],
+  };
+}
+
 function mockFetchRouter() {
   global.fetch = jest.fn((url) => {
     if (url.startsWith("/api/live-matches")) {
       return Promise.resolve({ json: () => Promise.resolve(liveMatchesFixture()) });
+    }
+    if (url.startsWith("/api/matches")) {
+      return Promise.resolve({ json: () => Promise.resolve(upcomingFixture()) });
     }
     return Promise.reject(new Error(`URL inattendue : ${url}`));
   });
@@ -121,5 +144,24 @@ describe('"Matchs en ligne" — carrousels compétitions et journées', () => {
     fireEvent.click(compCarousel.querySelector("button")); // "Toutes les compétitions"
     await waitFor(() => expect(within(screen.getByTestId("match-list")).getAllByRole("button", { name: /^analyser$/i })).toHaveLength(5));
     expect(screen.queryByTestId("matchday-filter")).not.toBeInTheDocument();
+  });
+});
+
+describe('"Matchs à venir" — carrousels compétitions et journées', () => {
+  test("filtrer par compétition puis par journée affiche les bons matchs, avec de vraies données", async () => {
+    render(<UpcomingMatches />);
+    const compCarousel = await screen.findByTestId("competition-filter");
+
+    expect(within(compCarousel).getByRole("button", { name: "Premier League" })).toBeInTheDocument();
+    expect(within(compCarousel).getByRole("button", { name: "Bundesliga" })).toBeInTheDocument();
+
+    fireEvent.click(within(compCarousel).getByRole("button", { name: "Bundesliga" }));
+    const list = screen.getByTestId("match-list");
+    await waitFor(() => expect(within(list).getByText("Borussia Dortmund")).toBeInTheDocument());
+    expect(within(list).queryByText("Manchester City FC")).not.toBeInTheDocument();
+
+    const mdCarousel = await screen.findByTestId("matchday-filter");
+    fireEvent.click(within(mdCarousel).getByRole("button", { name: "Journée 22" }));
+    await waitFor(() => expect(within(list).getByText("Borussia Dortmund")).toBeInTheDocument());
   });
 });

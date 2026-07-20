@@ -1,14 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRequireAuth } from "../lib/useRequireAuth";
-import { buildDayList, groupMatchesByDay, sortDayMatches } from "../lib/dayGrouping";
+import { presentCompetitions, presentMatchdays } from "../lib/matchFilters";
 import MatchCard from "../components/MatchCard";
 import SiteHeader from "../components/SiteHeader";
-import DayTabs from "../components/DayTabs";
+import FilterCarousel from "../components/FilterCarousel";
 
-// Statuts affichables sur cette page : en direct ou pas encore joué. Un match déjà
-// terminé plus tôt dans la journée appartient aux résultats (page compétition), pas
-// à ce navigateur "à venir".
-const DISPLAYABLE_STATUSES = ["SCHEDULED", "TIMED", "IN_PLAY", "PAUSED"];
+const UPCOMING_STATUSES = ["SCHEDULED", "TIMED"];
 // Les matchs à venir changent moins vite que le direct, mais un rafraîchissement
 // périodique permet quand même de voir un match basculer en direct sans recharger la
 // page, et de se rétablir tout seul après un incident passager de l'API (quota,
@@ -22,22 +19,17 @@ function normalize(str) {
     .toLowerCase();
 }
 
-// Page "Matchs à venir" : navigateur jour par jour, toutes compétitions et tous pays
-// confondus (aucun filtre par compétition — voir la demande "Affichage des matchs
-// jour par jour"). Chaque jour a sa propre section ; dans le jour affiché, les
-// matchs en direct passent avant les matchs à venir, eux-mêmes triés par heure de
-// coup d'envoi. Vraies données API (/api/matches, mêmes compétitions que la page
-// "Live"), jamais de match inventé.
+// Page "Matchs à venir" (PROMPT 2 du plan) : deuxième et dernier bouton de
+// navigation du site. Vraies données API (/api/matches, mêmes compétitions que
+// PROMPT 1), jamais de match inventé.
 export default function UpcomingMatches() {
   const { session, sessionChecked, authorized } = useRequireAuth();
 
   const [search, setSearch] = useState("");
   const [weekData, setWeekData] = useState(null);
   const [weekLoading, setWeekLoading] = useState(true);
-  // Toujours au moins 7 jours ; calculée une seule fois par montage de la page (la
-  // liste ne bouge pas pendant qu'on navigue entre les jours).
-  const [days] = useState(() => buildDayList());
-  const [selectedDayKey, setSelectedDayKey] = useState(() => days[0]?.key);
+  const [compFilter, setCompFilter] = useState("all");
+  const [matchdayFilter, setMatchdayFilter] = useState("all");
 
   // silent=true (rafraîchissement automatique) : une erreur passagère ne doit jamais
   // effacer des matchs déjà affichés — on réessaie simplement au prochain cycle.
@@ -72,30 +64,53 @@ export default function UpcomingMatches() {
 
   const searchQuery = search.trim();
 
-  // Tous les matchs affichables, toutes compétitions confondues, regroupés par jour
-  // calendaire — jamais filtrés par compétition sur cette page.
-  const dayGroups = useMemo(() => {
-    const allMatches = (weekData?.competitions || [])
-      .flatMap((c) => c.matches || [])
-      .filter((m) => m?.homeTeam && m?.awayTeam && m?.utcDate && DISPLAYABLE_STATUSES.includes(m.status));
-    return groupMatchesByDay(allMatches);
-  }, [weekData]);
+  // Choisir une compétition réinitialise la journée sélectionnée (une journée n'a de
+  // sens que dans le contexte de la compétition qui vient d'être choisie).
+  const selectCompetitionFilter = (value) => {
+    setCompFilter(value);
+    setMatchdayFilter("all");
+  };
 
-  const selectedDayMatches = useMemo(() => {
-    let matches = dayGroups.get(selectedDayKey) || [];
-    if (searchQuery) {
-      const q = normalize(searchQuery);
-      matches = matches.filter(
-        (m) =>
-          normalize(m.homeTeam.name).includes(q) ||
-          normalize(m.awayTeam.name).includes(q) ||
-          normalize(m.competition?.name).includes(q)
-      );
-    }
-    return sortDayMatches(matches);
-  }, [dayGroups, selectedDayKey, searchQuery]);
+  // Options des deux carrousels (PROMPT 6), déduites des vrais matchs actuellement
+  // chargés (toutes compétitions confondues) — jamais une compétition ou une
+  // journée sans aucun match derrière.
+  const allUpcomingMatches = useMemo(
+    () => (weekData?.competitions || []).flatMap((c) => c.matches || []),
+    [weekData]
+  );
+  const competitionOptions = useMemo(() => presentCompetitions(allUpcomingMatches), [allUpcomingMatches]);
+  const matchdayOptions = useMemo(
+    () => (compFilter === "all" ? [] : presentMatchdays(allUpcomingMatches, compFilter)),
+    [allUpcomingMatches, compFilter]
+  );
 
-  const selectedDay = days.find((d) => d.key === selectedDayKey) || days[0];
+  const weekFeed = useMemo(() => {
+    if (!weekData?.competitions) return [];
+    const rows = [];
+    const now = Date.now();
+    weekData.competitions.forEach((comp) => {
+      if (compFilter !== "all" && comp.code !== compFilter) return;
+      const validMatches = (comp.matches || []).filter((m) => m?.homeTeam && m?.awayTeam && m?.utcDate);
+      let matches;
+      if (searchQuery) {
+        const q = normalize(searchQuery);
+        matches = validMatches.filter(
+          (m) =>
+            normalize(m.homeTeam.name).includes(q) ||
+            normalize(m.awayTeam.name).includes(q) ||
+            normalize(comp.name).includes(q)
+        );
+      } else {
+        matches = validMatches.filter(
+          (m) => UPCOMING_STATUSES.includes(m.status) && new Date(m.utcDate).getTime() > now
+        );
+      }
+      if (matchdayFilter !== "all") matches = matches.filter((m) => String(m.matchday) === matchdayFilter);
+      matches.forEach((m) => rows.push({ m, comp }));
+    });
+    rows.sort((a, b) => new Date(a.m.utcDate) - new Date(b.m.utcDate));
+    return rows;
+  }, [weekData, searchQuery, compFilter, matchdayFilter]);
 
   if (!sessionChecked) {
     return (
@@ -114,13 +129,26 @@ export default function UpcomingMatches() {
         <section style={st.hero}>
           <h1 style={st.heroTitle}>Matchs à venir</h1>
           <p style={st.heroSubtitle}>
-            Les prochains matchs, jour par jour, toutes compétitions et tous pays confondus —
-            Coupe du Monde, Ligue des Champions, Premier League, LaLiga, Serie A, Bundesliga,
-            Ligue 1 et plus.
+            Les prochains matchs programmés sur les compétitions suivies par Blume — Coupe du
+            Monde, Ligue des Champions, Premier League, LaLiga, Serie A, Bundesliga, Ligue 1 et
+            plus.
           </p>
         </section>
 
-        <DayTabs days={days} selectedKey={selectedDayKey} onSelect={setSelectedDayKey} />
+        <FilterCarousel
+          testId="competition-filter"
+          allLabel="Toutes les compétitions"
+          items={competitionOptions}
+          selected={compFilter}
+          onSelect={selectCompetitionFilter}
+        />
+        <FilterCarousel
+          testId="matchday-filter"
+          allLabel="Toutes les journées"
+          items={matchdayOptions}
+          selected={matchdayFilter}
+          onSelect={setMatchdayFilter}
+        />
 
         <div style={st.searchRow}>
           <input
@@ -134,21 +162,23 @@ export default function UpcomingMatches() {
           )}
         </div>
 
-        <h2 style={st.dayHeading} data-testid="day-heading">{selectedDay?.label}</h2>
-
         {weekLoading && <p style={st.hint}>Chargement des matchs…</p>}
         {!weekLoading && (!weekData || weekData?.error) && (
           <p style={st.hint}>Les matchs ne sont pas disponibles pour le moment. Réessaie dans quelques minutes.</p>
         )}
-        {!weekLoading && weekData && !weekData.error && selectedDayMatches.length === 0 && (
+        {!weekLoading && weekData && !weekData.error && weekFeed.length === 0 && (
           <p style={st.hint}>
-            {searchQuery ? "Aucun match ne correspond à ta recherche." : "Aucun match ce jour"}
+            {searchQuery
+              ? "Aucun match ne correspond à ta recherche."
+              : compFilter !== "all"
+              ? "Aucun match à venir pour ce filtre."
+              : "Aucun match à venir cette semaine."}
           </p>
         )}
 
         <div data-testid="match-list">
-          {selectedDayMatches.map((m) => (
-            <MatchCard key={m.id} m={m} comp={m.competition} />
+          {weekFeed.map(({ m, comp }) => (
+            <MatchCard key={m.id} m={m} comp={comp} />
           ))}
         </div>
       </main>
@@ -163,7 +193,6 @@ const st = {
   heroTitle: { fontSize: 21, fontWeight: 800, margin: "0 0 8px", lineHeight: 1.25 },
   heroSubtitle: { fontSize: 12, color: "#7EA694", margin: 0, lineHeight: 1.5 },
   hint: { fontSize: 12.5, color: "#7EA694" },
-  dayHeading: { fontSize: 15, fontWeight: 800, margin: "4px 0 0" },
   searchRow: { display: "flex", gap: 8 },
   searchInput: {
     flex: 1, background: "#12291E", border: "1px solid #1E3D2C", color: "#E9F1EC",
