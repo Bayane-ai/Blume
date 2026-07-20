@@ -76,7 +76,9 @@ async function openMatch(m) {
     home: screen.getByTestId("prob-home").textContent,
     draw: screen.getByTestId("prob-draw").textContent,
     away: screen.getByTestId("prob-away").textContent,
-    goals: screen.getByTestId("stat-goals").textContent,
+    total: screen.getByTestId("market-total").textContent,
+    totalHome: screen.getByTestId("market-total-1").textContent,
+    totalAway: screen.getByTestId("market-total-2").textContent,
     scores: screen.getAllByTestId("correct-scores")[0].textContent,
   };
 }
@@ -94,7 +96,9 @@ test("ouvrir les pronostics de 3 matchs différents affiche 3 jeux de chiffres d
   expect(r1.home).not.toBe(r3.home);
   expect(r2.home).not.toBe(r3.home);
 
-  // Et sa propre estimation de buts / ses propres scores exacts.
-  const fingerprints = results.map((r) => `${r.home}|${r.draw}|${r.away}|${r.goals}|${r.scores}`);
+  // Et ses propres lignes de marché (total, total par équipe) / ses propres scores exacts.
+  const fingerprints = results.map(
+    (r) => `${r.home}|${r.draw}|${r.away}|${r.total}|${r.totalHome}|${r.totalAway}|${r.scores}`
+  );
   expect(new Set(fingerprints).size).toBe(3);
 });

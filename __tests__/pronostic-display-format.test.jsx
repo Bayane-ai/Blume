@@ -1,10 +1,16 @@
 /**
  * @jest-environment jsdom
  *
- * Règle d'affichage demandée : seules les probabilités de victoire (domicile/nul/
- * extérieur) sont montrées en pourcentage. Tout le reste (buts, corners, tirs,
- * cartons, possession, tendances +2.5 buts/les 2 marquent, scores exacts) doit être
- * un intervalle ou une estimation — jamais un "%".
+ * Bloc statistiques — refonte "app de paris sportifs" : structure EXACTE demandée,
+ * dans cet ordre, sans jamais afficher de cote (pas de 1.85, 2.40...) :
+ * 1) Probabilité de victoire (1X2) — 3 lignes en "%", qui somment à 100. C'est la
+ *    SEULE section du bloc où un "%" apparaît.
+ * 2) Total (buts du match entier) — "Total : Plus de X,X" / "Moins de X,X".
+ * 3) Total 1 (domicile seul).
+ * 4) Total 2 (extérieur seul) — jamais mélangé avec le domicile.
+ * 5) Corners.
+ * 6) Cartons.
+ * 7) Scores exacts (au moins 3, différents par match).
  */
 import { render, screen, within } from "@testing-library/react";
 import PronosticResults from "../components/PronosticResults";
@@ -14,7 +20,7 @@ function rowFor({ goalsFor, goalsAgainst, playedGames = 20, id, position = 5, po
   return { position, points, form: null, playedGames, goalsFor, goalsAgainst, team: { id } };
 }
 
-test('seules les probabilités de victoire affichent un "%" — buts/corners/tirs/cartons/possession/tendances/scores sont des intervalles ou estimations', () => {
+test("structure exacte du bloc, dans l'ordre demandé, sans aucune cote affichée", () => {
   const pronostic = computePronostic({
     homeRow: rowFor({ goalsFor: 45, goalsAgainst: 20, id: 1 }),
     awayRow: rowFor({ goalsFor: 30, goalsAgainst: 28, id: 2 }),
@@ -23,32 +29,48 @@ test('seules les probabilités de victoire affichent un "%" — buts/corners/tir
 
   const { container } = render(<PronosticResults pronostic={pronostic} loading={false} />);
 
-  expect(screen.getByTestId("prob-home").textContent).toMatch(/^\d+(\.\d+)?%$/);
-  expect(screen.getByTestId("prob-draw").textContent).toMatch(/^\d+(\.\d+)?%$/);
-  expect(screen.getByTestId("prob-away").textContent).toMatch(/^\d+(\.\d+)?%$/);
+  // 1) 1X2 : trois lignes au format exact demandé, qui somment à 100.
+  expect(screen.getByTestId("prob-home")).toHaveTextContent(/^Victoire Arsenal FC : \d+(\.\d+)? %$/);
+  expect(screen.getByTestId("prob-draw")).toHaveTextContent(/^Match nul : \d+(\.\d+)? %$/);
+  expect(screen.getByTestId("prob-away")).toHaveTextContent(/^Victoire Chelsea FC : \d+(\.\d+)? %$/);
+  const sum = pronostic.probabilities.home + pronostic.probabilities.draw + pronostic.probabilities.away;
+  expect(Math.round(sum * 10) / 10).toBe(100);
 
-  expect(screen.getByTestId("stat-goals").textContent).toMatch(/^entre \d+ et \d+$/);
-  expect(screen.getByTestId("stat-corners").textContent).toMatch(/^environ \d+-\d+$/);
-  expect(screen.getByTestId("stat-shots").textContent).toMatch(/^environ \d+-\d+$/);
-  expect(screen.getByTestId("stat-cards").textContent).toMatch(/^environ \d+-\d+$/);
-  expect(screen.getByTestId("stat-possession").textContent).toMatch(/^\d+ - \d+$/);
-  expect(screen.getByTestId("stat-over25").textContent).toMatch(/^\d+\.\d\/10$/);
-  expect(screen.getByTestId("stat-btts").textContent).toMatch(/^\d+\.\d\/10$/);
+  // 2-6) Lignes de marché au format exact demandé ("Total : Plus de X,X"), avec une
+  // virgule française et jamais un nombre entier (toujours X,5).
+  const lineFormat = /^(Total|Total 1|Total 2|Corners|Cartons) : (Plus|Moins) de \d+,5$/;
+  expect(screen.getByTestId("market-total")).toHaveTextContent(lineFormat);
+  expect(screen.getByTestId("market-total-1")).toHaveTextContent(lineFormat);
+  expect(screen.getByTestId("market-total-2")).toHaveTextContent(lineFormat);
+  expect(screen.getByTestId("market-corners")).toHaveTextContent(lineFormat);
+  expect(screen.getByTestId("market-cards")).toHaveTextContent(lineFormat);
 
-  const scoresBlock = screen.getByTestId("correct-scores");
-  expect(within(scoresBlock).getAllByText(/^Le plus probable$|^Possible$/).length).toBeGreaterThanOrEqual(3);
-  expect(scoresBlock.textContent).not.toMatch(/%/);
+  // Ordre exact dans le document : 1X2 (3 lignes) puis Total, Total 1, Total 2,
+  // Corners, Cartons, puis Scores exacts — jamais un autre ordre.
+  const orderedTestIds = [
+    "prob-home", "prob-draw", "prob-away",
+    "market-total", "market-total-1", "market-total-2", "market-corners", "market-cards",
+  ];
+  const nodes = orderedTestIds.map((id) => screen.getByTestId(id));
+  for (let i = 1; i < nodes.length; i++) {
+    expect(nodes[i - 1].compareDocumentPosition(nodes[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  }
+  const correctScoresBlock = screen.getByTestId("correct-scores");
+  expect(nodes[nodes.length - 1].compareDocumentPosition(correctScoresBlock) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-  // Aucun "%" nulle part sur la page hors des 3 valeurs de victoire et du titre de
-  // cette section ("% de victoire", qui nomme légitimement la seule partie en %).
+  // 7) Au moins 3 scores exacts, sans aucun pourcentage ni cote affichée à côté.
+  expect(within(correctScoresBlock).getAllByText(/^Le plus probable$|^Possible$/).length).toBeGreaterThanOrEqual(3);
+  expect(correctScoresBlock.textContent).not.toMatch(/%/);
+
+  // Aucune cote nulle part (format décimal typique d'une cote, ex: 1.85, 2.40) et
+  // aucun "%" en dehors des 3 valeurs de victoire 1X2.
+  expect(container.textContent).not.toMatch(/\b\d\.\d{2}\b/);
   const percentCount = (container.textContent.match(/%/g) || []).length;
-  expect(percentCount).toBe(4);
+  expect(percentCount).toBe(3);
 });
 
-test("chaque équipe a ses propres statistiques affichées séparément — jamais mélangées ni copiées d'une équipe à l'autre", () => {
-  // Deux profils délibérément opposés : l'équipe à domicile très offensive, celle à
-  // l'extérieur très défensive — si les stats étaient mélangées/copiées, les deux
-  // colonnes se ressembleraient malgré ces profils opposés.
+test("Total 1 et Total 2 ne sont jamais mélangés : chaque équipe a sa propre ligne, dérivée de ses propres buts attendus", () => {
+  // Profils délibérément opposés : domicile très offensif, extérieur très défensif.
   const pronostic = computePronostic({
     homeRow: rowFor({ goalsFor: 65, goalsAgainst: 15, id: 1 }),
     awayRow: rowFor({ goalsFor: 15, goalsAgainst: 55, id: 2 }),
@@ -57,28 +79,14 @@ test("chaque équipe a ses propres statistiques affichées séparément — jama
 
   render(<PronosticResults pronostic={pronostic} loading={false} />);
 
-  const teamStats = screen.getByTestId("team-stats");
-  expect(within(teamStats).getByText("Attaque FC")).toBeInTheDocument();
-  expect(within(teamStats).getByText("Defense FC")).toBeInTheDocument();
-
-  const homeGoals = Number(screen.getByTestId("team-goals-home").textContent);
-  const awayGoals = Number(screen.getByTestId("team-goals-away").textContent);
-  expect(homeGoals).toBeGreaterThan(awayGoals);
-  expect(homeGoals).toBe(pronostic.goals.expectedHome);
-  expect(awayGoals).toBe(pronostic.goals.expectedAway);
-
-  const homeCorners = Number(screen.getByTestId("team-corners-home").textContent);
-  const awayCorners = Number(screen.getByTestId("team-corners-away").textContent);
-  expect(homeCorners).toBe(pronostic.extraStats.corners.home);
-  expect(awayCorners).toBe(pronostic.extraStats.corners.away);
-  expect(homeCorners).not.toBe(awayCorners);
-
-  const homeShots = Number(screen.getByTestId("team-shots-home").textContent);
-  const awayShots = Number(screen.getByTestId("team-shots-away").textContent);
-  expect(homeShots).toBeGreaterThan(awayShots);
+  expect(pronostic.markets.totalHome.line).not.toBe(pronostic.markets.totalAway.line);
+  const totalHomeText = screen.getByTestId("market-total-1").textContent;
+  const totalAwayText = screen.getByTestId("market-total-2").textContent;
+  expect(totalHomeText).toBe(`Total 1 : ${pronostic.markets.totalHome.side} de ${String(pronostic.markets.totalHome.line).replace(".", ",")}`);
+  expect(totalAwayText).not.toBe(totalHomeText.replace("Total 1", "Total 2"));
 });
 
-test("l'ordre des scores exacts va bien du plus probable au moins probable, sans pourcentage affiché", () => {
+test("l'ordre des scores exacts va du plus probable au moins probable, sans aucun pourcentage affiché", () => {
   const pronostic = computePronostic({
     homeRow: rowFor({ goalsFor: 60, goalsAgainst: 15, id: 1 }),
     awayRow: rowFor({ goalsFor: 20, goalsAgainst: 45, id: 2 }),
@@ -91,4 +99,5 @@ test("l'ordre des scores exacts va bien du plus probable au moins probable, sans
 
   expect(labels[0]).toBe("Le plus probable");
   expect(labels.slice(1).every((l) => l === "Possible")).toBe(true);
+  expect(pronostic.correctScores.length).toBeGreaterThanOrEqual(3);
 });

@@ -4,7 +4,7 @@
  * Sur la page d'un match en direct, un cycle d'actualisation automatique qui échoue
  * (quota API, réseau) ne doit jamais faire disparaître le pronostic déjà affiché.
  */
-import { render, screen, act } from "@testing-library/react";
+import { render, screen, act, waitFor } from "@testing-library/react";
 import MatchPage from "../pages/match/[id]";
 
 const mockQuery = {
@@ -50,13 +50,13 @@ test("le pronostic déjà affiché reste visible même si un cycle d'actualisati
   });
 
   render(<MatchPage />);
-  await screen.findByText("48.2%");
+  await waitFor(() => expect(screen.getByTestId("prob-home")).toHaveTextContent("48.2 %"));
 
   await act(async () => {
     await new Promise((r) => setTimeout(r, 2200));
   });
 
   expect(analyzeCallCount).toBeGreaterThan(1);
-  expect(screen.getByText("48.2%")).toBeInTheDocument();
+  expect(screen.getByTestId("prob-home")).toHaveTextContent("48.2 %");
   expect(screen.queryByText(/pronostics indisponibles/i)).not.toBeInTheDocument();
 }, 10000);

@@ -174,34 +174,32 @@ test.describe("Écran 3 — Analyser un match", () => {
     await page.getByTestId("match-list").getByText("ANALYSER").first().click();
     await expect(page).toHaveURL(/\/match\/101/);
 
-    await expect(page.getByTestId("prob-home")).toBeVisible();
-    await expect(page.getByTestId("prob-draw")).toBeVisible();
-    await expect(page.getByTestId("prob-away")).toBeVisible();
-    await expect(page.getByTestId("stat-goals")).toBeVisible();
-    await expect(page.getByTestId("stat-corners")).toBeVisible();
-    await expect(page.getByTestId("stat-shots")).toBeVisible();
-    await expect(page.getByTestId("stat-cards")).toBeVisible();
-    await expect(page.getByTestId("stat-possession")).toBeVisible();
+    // Structure exacte "app de paris sportifs" : 1X2, puis Total/Total 1/Total 2/
+    // Corners/Cartons (lignes "Plus de X,X" / "Moins de X,X", jamais une cote), puis
+    // au moins 3 scores exacts.
+    await expect(page.getByTestId("prob-home")).toContainText(/^Victoire .+ : \d+(\.\d+)? %$/);
+    await expect(page.getByTestId("prob-draw")).toContainText(/^Match nul : \d+(\.\d+)? %$/);
+    await expect(page.getByTestId("prob-away")).toContainText(/^Victoire .+ : \d+(\.\d+)? %$/);
+
+    const lineFormat = /: (Plus|Moins) de \d+,5$/;
+    await expect(page.getByTestId("market-total")).toContainText(lineFormat);
+    await expect(page.getByTestId("market-total-1")).toContainText(lineFormat);
+    await expect(page.getByTestId("market-total-2")).toContainText(lineFormat);
+    await expect(page.getByTestId("market-corners")).toContainText(lineFormat);
+    await expect(page.getByTestId("market-cards")).toContainText(lineFormat);
+    // Total 1 (domicile) et Total 2 (extérieur) ne sont jamais la même ligne recopiée.
+    const totalHomeText = await page.getByTestId("market-total-1").textContent();
+    const totalAwayText = await page.getByTestId("market-total-2").textContent();
+    expect(totalHomeText.replace("Total 1", "")).not.toBe(totalAwayText.replace("Total 2", ""));
+
     // Au moins 3 scores exacts, du plus probable au moins probable (PROMPT 5).
     const scoreCells = page.getByTestId("correct-scores").locator("div");
     expect(await scoreCells.count()).toBeGreaterThanOrEqual(3);
 
-    // Chaque équipe a ses propres statistiques affichées séparément (pas seulement
-    // un total combiné) : Arsenal (domicile) et Chelsea (extérieur) ont chacun leur
-    // propre bloc, avec leurs propres valeurs.
-    const teamStats = page.getByTestId("team-stats");
-    await expect(teamStats.getByText("Arsenal FC")).toBeVisible();
-    await expect(teamStats.getByText("Chelsea FC")).toBeVisible();
-    await expect(page.getByTestId("team-goals-home")).toBeVisible();
-    await expect(page.getByTestId("team-goals-away")).toBeVisible();
-
-    // Seules les 3 probabilités de victoire sont en "%" — buts/corners/tirs/cartons/
-    // possession/tendances/scores sont des intervalles ou estimations.
-    await expect(page.getByTestId("stat-goals")).toContainText(/^entre \d+ et \d+$/);
-    await expect(page.getByTestId("stat-corners")).toContainText(/^environ \d+-\d+$/);
-    await expect(page.getByTestId("stat-possession")).not.toContainText("%");
+    // Aucune cote affichée nulle part (ex : 1.85, 2.40), et "%" réservé au 1X2.
+    const bodyText = await page.locator("body").innerText();
+    expect(bodyText).not.toMatch(/\b\d\.\d{2}\b/);
     await expect(page.getByTestId("correct-scores")).not.toContainText("%");
-    await expect(page.getByTestId("stat-over25")).toContainText(/^\d+\.\d\/10$/);
 
     expect(errors.consoleErrors, `Erreurs console : ${errors.consoleErrors.join(" | ")}`).toEqual([]);
   });
@@ -223,8 +221,8 @@ test.describe("Écran 3 — Analyser un match", () => {
     async function readAnalysis() {
       return {
         home: await page.getByTestId("prob-home").textContent(),
-        goals: await page.getByTestId("stat-goals").textContent(),
-        shots: await page.getByTestId("stat-shots").textContent(),
+        total: await page.getByTestId("market-total").textContent(),
+        corners: await page.getByTestId("market-corners").textContent(),
       };
     }
 
@@ -247,9 +245,9 @@ test.describe("Écran 3 — Analyser un match", () => {
     expect(a1.home).not.toBe(a3.home);
     expect(a2.home).not.toBe(a3.home);
 
-    // Régression : le total de tirs (et de buts attendus) ne doit plus être une
+    // Régression : le total de corners (et de buts attendus) ne doit plus être une
     // quasi-constante recopiée sur tous les matchs.
-    const fingerprints = [a1, a2, a3].map((a) => `${a.home}|${a.goals}|${a.shots}`);
+    const fingerprints = [a1, a2, a3].map((a) => `${a.home}|${a.total}|${a.corners}`);
     expect(new Set(fingerprints).size).toBe(3);
   });
 });

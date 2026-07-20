@@ -97,7 +97,7 @@ test("match à venir (pas encore commencé) : aucun score n'est affiché, unique
 
   render(<MatchPage />);
 
-  await waitFor(() => expect(screen.getByText("30%")).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByTestId("prob-home")).toHaveTextContent("30 %"));
 
   // Aucun score réel affiché dans l'en-tête (le match n'a pas commencé) — un score
   // exact PRÉDIT peut légitimement apparaître plus bas, dans les pronostics.
@@ -144,7 +144,7 @@ test("match en direct : le score et la minute affichés viennent de l'API et se 
 
   // Attend la résolution du premier appel réel à /api/analyze (pas seulement
   // l'instantané des query params pris au moment du clic, qui peut être périmé).
-  await waitFor(() => expect(screen.getByText("55%")).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByTestId("prob-home")).toHaveTextContent("55 %"));
   expect(screen.getByTestId("live-score")).toHaveTextContent("1 - 0");
   expect(screen.getByTestId("live-minute")).toHaveTextContent("40’");
 
@@ -154,7 +154,7 @@ test("match en direct : le score et la minute affichés viennent de l'API et se 
   });
 
   expect(call).toBeGreaterThan(1);
-  await waitFor(() => expect(screen.getByText("78%")).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByTestId("prob-home")).toHaveTextContent("78 %"));
   expect(screen.getByTestId("live-score")).toHaveTextContent("2 - 0");
   expect(screen.getByTestId("live-minute")).toHaveTextContent("42’");
 }, 10000);

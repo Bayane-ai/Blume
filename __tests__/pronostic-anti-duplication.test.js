@@ -137,6 +137,31 @@ describe("Anti-duplication : 3 matchs différents ont 3 pronostics différents",
     expect(new Set(stats).size).toBe(3);
   });
 
+  // Bloc statistiques (refonte "app de paris sportifs") : les 5 lignes de marché
+  // (Total, Total 1, Total 2, Corners, Cartons) doivent elles aussi être propres à
+  // chaque match — jamais la même ligne/le même sens recopiés sur 3 matchs différents.
+  test("les lignes de marché (Total, Total 1, Total 2, Corners, Cartons) diffèrent selon le match", async () => {
+    const r1 = await analyzeMatch(MATCH_1);
+    const r2 = await analyzeMatch(MATCH_2);
+    const r3 = await analyzeMatch(MATCH_3);
+
+    for (const r of [r1, r2, r3]) {
+      for (const key of ["totalGoals", "totalHome", "totalAway", "corners", "cards"]) {
+        expect(r.markets[key].side).toMatch(/^Plus|Moins$/);
+        expect(r.markets[key].line % 1).toBeCloseTo(0.5, 5); // toujours une ligne X,5
+      }
+    }
+
+    const markets = [r1, r2, r3].map((r) => JSON.stringify(r.markets));
+    expect(new Set(markets).size).toBe(3);
+
+    // Total 1 (domicile) et Total 2 (extérieur) ne sont jamais la même ligne au sein
+    // d'un même match, sauf coïncidence — mais jamais un simple recopiage de l'un vers
+    // l'autre : ici Arsenal (fort) vs Fulham (faible) doit avoir des totaux nettement
+    // différents entre les deux équipes.
+    expect(r1.markets.totalHome).not.toEqual(r1.markets.totalAway);
+  });
+
   // Régression : le TOTAL de corners/tirs/cartons était calé sur une moyenne de
   // championnat fixe, seule la répartition domicile/extérieur variait — deux matchs
   // d'intensité très différente (une démonstration offensive vs un match fermé)
