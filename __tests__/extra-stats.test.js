@@ -10,15 +10,24 @@ const homeRow = { position: 3, points: 55, form: "WWDLW", playedGames: 20, goals
 const awayRow = { position: 7, points: 44, form: "LWDDW", playedGames: 20, goalsFor: 28, goalsAgainst: 26, team: { id: 11 } };
 
 describe("Pronostics détaillés — corners, tirs, cartons", () => {
-  test("computePronostic renvoie des corners/tirs/cartons cohérents (total = domicile + extérieur)", () => {
+  test("computePronostic renvoie des corners/tirs cohérents (total = domicile + extérieur), et des cartons jaunes/rouges séparés", () => {
     const result = computePronostic({ homeRow, awayRow, homeTeamName: "A", awayTeamName: "B" });
     expect(result.extraStats).toBeDefined();
-    for (const key of ["corners", "shots", "cards"]) {
+    for (const key of ["corners", "shots"]) {
       const stat = result.extraStats[key];
       expect(stat.total).toBe(stat.home + stat.away);
       expect(stat.home).toBeGreaterThanOrEqual(0);
       expect(stat.away).toBeGreaterThanOrEqual(0);
     }
+    // Cartons jaunes (majorité, ligne Plus/Moins) et rouges (rares, probabilité) —
+    // jamais un total combiné qui masquerait cette distinction.
+    const yellow = result.extraStats.cards.yellow;
+    expect(yellow.total).toBe(yellow.home + yellow.away);
+    expect(yellow.home).toBeGreaterThanOrEqual(0);
+    expect(yellow.away).toBeGreaterThanOrEqual(0);
+    expect(result.extraStats.cards.redProbability).toBeGreaterThanOrEqual(0);
+    expect(result.extraStats.cards.redProbability).toBeLessThanOrEqual(100);
+
     expect(result.statsNote).toEqual(expect.stringContaining("estimation"));
     expect(result.goals.expectedTotal).toBeCloseTo(result.goals.expectedHome + result.goals.expectedAway, 5);
   });

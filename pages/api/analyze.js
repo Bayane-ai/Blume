@@ -5,7 +5,10 @@ import { getHeadToHead } from "../../lib/headToHead";
 import { getScorers } from "../../lib/scorersCache";
 import { buildProbableScorers } from "../../lib/probableScorers";
 import { computePronostic, computeLivePronostic } from "../../lib/pronostic";
-import { getAllLiveFixtures, findLiveFixtureByTeams, getFixtureEvents, mapApiFootballEvents, mapFixtureToLiveState } from "../../lib/apiFootball";
+import {
+  getAllLiveFixtures, findLiveFixtureByTeams, getFixtureEvents, mapApiFootballEvents, mapFixtureToLiveState,
+  findApiFootballTeamId, getTeamCardProneness,
+} from "../../lib/apiFootball";
 
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
 
@@ -37,6 +40,18 @@ async function resolveTeamStats(teamId, standingsRow, token) {
   }
 
   return { stats: null, source: "estimation moyenne" };
+}
+
+// "Joueurs susceptibles de prendre un carton" (bloc "Corners et cartons") : football-
+// data.org n'a aucune statistique de cartons par joueur — voir lib/apiFootball.js pour
+// la source réelle (API-Football, best-effort). Sans clé API-Football, ou si l'équipe
+// n'est pas retrouvée, renvoie honnêtement une liste vide plutôt qu'un plantage ou une
+// donnée inventée.
+async function resolveCardProneness(teamName, key) {
+  if (!key || !teamName) return [];
+  const teamId = await findApiFootballTeamId(teamName, key);
+  if (!teamId) return [];
+  return getTeamCardProneness(teamId, key);
 }
 
 export default async function handler(req, res) {
@@ -84,13 +99,15 @@ export default async function handler(req, res) {
     // affinent ensuite le résultat quand l'API en fournit assez (voir lib/pronostic.js).
     const homeStandingsRow = table?.find((r) => String(r.team.id) === String(homeTeamId));
     const awayStandingsRow = table?.find((r) => String(r.team.id) === String(awayTeamId));
-    const [homeResolved, awayResolved, h2h, scorers] = await Promise.all([
+    const [homeResolved, awayResolved, h2h, scorers, homeCardProneness, awayCardProneness] = await Promise.all([
       resolveTeamStats(homeTeamId, homeStandingsRow, token),
       resolveTeamStats(awayTeamId, awayStandingsRow, token),
       matchId && !isApiFootballOnlyId ? getHeadToHead(matchId, token) : Promise.resolve(null),
       // "Buteurs probables" (voir lib/probableScorers.js) : indisponible pour un match
       // connu uniquement d'API-Football (hors compétitions football-data.org).
       isApiFootballOnlyId ? Promise.resolve(null) : getScorers(competitionCode, token),
+      resolveCardProneness(homeTeamName, apiFootballKey),
+      resolveCardProneness(awayTeamName, apiFootballKey),
     ]);
 
     const isLive = liveMatch && LIVE_STATUSES.includes(liveMatch.status);
@@ -122,6 +139,9 @@ export default async function handler(req, res) {
     // voir lib/probableScorers.js pour la logique et son honnêteté sur ce que la donnée
     // représente réellement (total saison, pas match par match).
     result.probableScorers = buildProbableScorers(scorers, homeTeamId, awayTeamId);
+    // Best-effort (API-Football) : voir lib/apiFootball.js — jamais un joueur inventé,
+    // liste vide et honnête ("Indisponible" côté interface) si la source ne répond pas.
+    result.cardProneness = { home: homeCardProneness, away: awayCardProneness };
 
     if (liveMatch) {
       result.matchStatus = liveMatch.status;

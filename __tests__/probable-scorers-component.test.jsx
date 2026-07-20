@@ -3,7 +3,9 @@
  *
  * components/ProbableScorers.js — bloc "Buteurs probables" : deux colonnes séparées
  * (domicile/extérieur), format ligne de pari sportif ("X marque (ou son remplaçant)")
- * SANS jamais afficher de cote, et jamais de pourcentage (réservé au 1X2).
+ * SANS jamais afficher de cote, et jamais de pourcentage (réservé au 1X2). Les
+ * passeurs décisifs probables ont désormais leur propre bloc (voir
+ * components/AssistsProbables.js et assists-probables.test.jsx).
  */
 import { render, screen, within } from "@testing-library/react";
 import ProbableScorers from "../components/ProbableScorers";
@@ -41,11 +43,11 @@ test('chaque buteur probable est présenté comme une ligne de pari ("X marque (
   expect(container.textContent).not.toMatch(/%/);
 });
 
-test("les passeurs décisifs probables sont présentés séparément, même principe de ligne de pari", () => {
+test("les passeurs décisifs probables n'apparaissent plus dans ce bloc (déplacés vers leur propre carte)", () => {
   render(<ProbableScorers pronostic={pronosticFixture()} />);
   const homeCol = screen.getByTestId("scorers-home");
-  expect(within(homeCol).getByText("Martin Ødegaard passe décisive (ou son remplaçant)")).toBeInTheDocument();
-  expect(within(homeCol).getByText("9 passes décisives cette saison")).toBeInTheDocument();
+  expect(within(homeCol).queryByText(/passe décisive/)).not.toBeInTheDocument();
+  expect(within(homeCol).queryByText(/Martin Ødegaard/)).not.toBeInTheDocument();
 });
 
 test("chaque équipe affiche SES propres joueurs — jamais mélangés entre les deux colonnes", () => {
@@ -58,8 +60,6 @@ test("chaque équipe affiche SES propres joueurs — jamais mélangés entre les
 
   expect(within(homeCol).queryByText(/Cole Palmer/)).not.toBeInTheDocument();
   expect(within(awayCol).queryByText(/Bukayo Saka/)).not.toBeInTheDocument();
-  expect(within(homeCol).queryByText(/Enzo Fernández/)).not.toBeInTheDocument();
-  expect(within(awayCol).queryByText(/Martin Ødegaard/)).not.toBeInTheDocument();
 });
 
 test("une équipe sans donnée de buteur affiche \"Indisponible\", jamais un joueur inventé ni une section vide", () => {
@@ -72,7 +72,7 @@ test("une équipe sans donnée de buteur affiche \"Indisponible\", jamais un jou
   render(<ProbableScorers pronostic={pronostic} />);
 
   const homeCol = screen.getByTestId("scorers-home");
-  expect(within(homeCol).getAllByText("Indisponible").length).toBe(2); // buteur + passeur
+  expect(within(homeCol).getAllByText("Indisponible").length).toBe(1);
 });
 
 test("aucune donnée pour aucune des deux équipes : message honnête, jamais une section vide", () => {

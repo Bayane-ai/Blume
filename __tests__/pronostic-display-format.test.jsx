@@ -4,18 +4,21 @@
  * Bloc statistiques — refonte "app de paris sportifs" : structure EXACTE demandée,
  * dans cet ordre, sans jamais afficher de cote (pas de 1.85, 2.40...) :
  * 1) Probabilité de victoire (1X2) — 3 lignes en "%", qui somment à 100. C'est la
- *    SEULE section du bloc où un "%" apparaît.
- * 2) Total (buts du match entier) — "Total : Plus de X,X" / "Moins de X,X".
+ *    SEULE section du bloc où un "%" apparaît (les autres blocs — Corners et
+ *    cartons — ont leur propre carte séparée, voir cards-and-corners.test.jsx).
+ * 2) Total (buts du match entier) — "Total : Plus de X,X" / "Moins de X,X", avec
+ *    une marge (deux lignes) possible quand l'issue est incertaine.
  * 3) Total 1 (domicile seul).
  * 4) Total 2 (extérieur seul) — jamais mélangé avec le domicile.
- * 5) Corners.
- * 6) Tirs.
- * 7) Cartons.
- * 8) Scores exacts (au moins 3, différents par match).
+ * 5) Tirs.
+ * 6) Scores exacts (3 à 4, différents par match). Corners/cartons/passes décisives
+ *    ont désormais leur propre bloc, en bas de la page de match (voir
+ *    components/CardsAndCorners.js et components/AssistsProbables.js).
  */
 import { render, screen, within } from "@testing-library/react";
 import PronosticResults from "../components/PronosticResults";
 import { computePronostic } from "../lib/pronostic";
+import { marketLabel } from "../lib/marketFormat";
 
 function rowFor({ goalsFor, goalsAgainst, playedGames = 20, id, position = 5, points = 30 }) {
   return { position, points, form: null, playedGames, goalsFor, goalsAgainst, team: { id } };
@@ -37,21 +40,24 @@ test("structure exacte du bloc, dans l'ordre demandé, sans aucune cote affiché
   const sum = pronostic.probabilities.home + pronostic.probabilities.draw + pronostic.probabilities.away;
   expect(Math.round(sum * 10) / 10).toBe(100);
 
-  // 2-7) Lignes de marché au format exact demandé ("Total : Plus de X,X"), avec une
-  // virgule française et jamais un nombre entier (toujours X,5).
-  const lineFormat = /^(Total|Total 1|Total 2|Corners|Tirs|Cartons) : (Plus|Moins) de \d+,5$/;
+  // 2-5) Lignes de marché au format exact demandé ("Total : Plus de X,X"), avec une
+  // virgule française et jamais un nombre entier (toujours X,5) — une marge
+  // optionnelle ("(ou X,5)") est acceptée pour les totaux de buts uniquement.
+  const lineFormat = /^(Total|Total 1|Total 2|Tirs) : (Plus|Moins) de \d+,5( \(ou \d+,5\))?$/;
   expect(screen.getByTestId("market-total")).toHaveTextContent(lineFormat);
   expect(screen.getByTestId("market-total-1")).toHaveTextContent(lineFormat);
   expect(screen.getByTestId("market-total-2")).toHaveTextContent(lineFormat);
-  expect(screen.getByTestId("market-corners")).toHaveTextContent(lineFormat);
   expect(screen.getByTestId("market-shots")).toHaveTextContent(lineFormat);
-  expect(screen.getByTestId("market-cards")).toHaveTextContent(lineFormat);
+
+  // Corners et cartons ne sont plus dans ce bloc (voir components/CardsAndCorners.js).
+  expect(screen.queryByTestId("market-corners")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("market-cards")).not.toBeInTheDocument();
 
   // Ordre exact dans le document : 1X2 (3 lignes) puis Total, Total 1, Total 2,
-  // Corners, Tirs, Cartons, puis Scores exacts — jamais un autre ordre.
+  // Tirs, puis Scores exacts — jamais un autre ordre.
   const orderedTestIds = [
     "prob-home", "prob-draw", "prob-away",
-    "market-total", "market-total-1", "market-total-2", "market-corners", "market-shots", "market-cards",
+    "market-total", "market-total-1", "market-total-2", "market-shots",
   ];
   const nodes = orderedTestIds.map((id) => screen.getByTestId(id));
   for (let i = 1; i < nodes.length; i++) {
@@ -60,8 +66,10 @@ test("structure exacte du bloc, dans l'ordre demandé, sans aucune cote affiché
   const correctScoresBlock = screen.getByTestId("correct-scores");
   expect(nodes[nodes.length - 1].compareDocumentPosition(correctScoresBlock) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-  // 7) Au moins 3 scores exacts, sans aucun pourcentage ni cote affichée à côté.
-  expect(within(correctScoresBlock).getAllByText(/^Le plus probable$|^Possible$/).length).toBeGreaterThanOrEqual(3);
+  // Entre 3 et 4 scores exacts, sans aucun pourcentage ni cote affichée à côté.
+  const scoreLabels = within(correctScoresBlock).getAllByText(/^Le plus probable$|^Possible$/);
+  expect(scoreLabels.length).toBeGreaterThanOrEqual(3);
+  expect(scoreLabels.length).toBeLessThanOrEqual(4);
   expect(correctScoresBlock.textContent).not.toMatch(/%/);
 
   // Aucune cote nulle part (format décimal typique d'une cote, ex: 1.85, 2.40) et
@@ -84,7 +92,7 @@ test("Total 1 et Total 2 ne sont jamais mélangés : chaque équipe a sa propre 
   expect(pronostic.markets.totalHome.line).not.toBe(pronostic.markets.totalAway.line);
   const totalHomeText = screen.getByTestId("market-total-1").textContent;
   const totalAwayText = screen.getByTestId("market-total-2").textContent;
-  expect(totalHomeText).toBe(`Total 1 : ${pronostic.markets.totalHome.side} de ${String(pronostic.markets.totalHome.line).replace(".", ",")}`);
+  expect(totalHomeText).toBe(`Total 1 : ${marketLabel(pronostic.markets.totalHome)}`);
   expect(totalAwayText).not.toBe(totalHomeText.replace("Total 1", "Total 2"));
 });
 
@@ -111,8 +119,8 @@ test('"Probabilité de victoire" est une carte à part, avec son propre titre, s
   // La carte "Probabilité de victoire" apparaît en premier dans le document.
   expect(winCard.compareDocumentPosition(statsCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-  // Le 1X2 est bien DANS sa propre carte, et rien des statistiques (Total, Corners,
-  // Cartons, scores exacts) n'y apparaît.
+  // Le 1X2 est bien DANS sa propre carte, et rien des statistiques (Total,
+  // scores exacts) n'y apparaît.
   expect(within(winCard).getByTestId("prob-home")).toBeInTheDocument();
   expect(within(winCard).getByTestId("prob-draw")).toBeInTheDocument();
   expect(within(winCard).getByTestId("prob-away")).toBeInTheDocument();
@@ -176,4 +184,5 @@ test("l'ordre des scores exacts va du plus probable au moins probable, sans aucu
   expect(labels[0]).toBe("Le plus probable");
   expect(labels.slice(1).every((l) => l === "Possible")).toBe(true);
   expect(pronostic.correctScores.length).toBeGreaterThanOrEqual(3);
+  expect(pronostic.correctScores.length).toBeLessThanOrEqual(4);
 });

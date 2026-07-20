@@ -234,30 +234,37 @@ test.describe("Écran 3 — Analyser un match", () => {
     await page.getByTestId("match-list").getByText("ANALYSER").first().click();
     await expect(page).toHaveURL(/\/match\/101/);
 
-    // Structure exacte "app de paris sportifs" : 1X2, puis Total/Total 1/Total 2/
-    // Corners/Cartons (lignes "Plus de X,X" / "Moins de X,X", jamais une cote), puis
-    // au moins 3 scores exacts.
+    // Structure exacte "app de paris sportifs" : 1X2, puis Total/Total 1/Total 2/Tirs
+    // (lignes "Plus de X,X" / "Moins de X,X", jamais une cote), puis 3 à 4 scores
+    // exacts. Corners/cartons jaunes/rouges et passes décisives ont leur propre bloc
+    // en bas de page.
     await expect(page.getByTestId("prob-home")).toContainText(/^Victoire .+ : \d+(\.\d+)? %$/);
     await expect(page.getByTestId("prob-draw")).toContainText(/^Match nul : \d+(\.\d+)? %$/);
     await expect(page.getByTestId("prob-away")).toContainText(/^Victoire .+ : \d+(\.\d+)? %$/);
 
-    const lineFormat = /: (Plus|Moins) de \d+,5$/;
+    const lineFormat = /: (Plus|Moins) de \d+,5( \(ou \d+,5\))?$/;
     await expect(page.getByTestId("market-total")).toContainText(lineFormat);
     await expect(page.getByTestId("market-total-1")).toContainText(lineFormat);
     await expect(page.getByTestId("market-total-2")).toContainText(lineFormat);
-    await expect(page.getByTestId("market-corners")).toContainText(lineFormat);
     await expect(page.getByTestId("market-shots")).toContainText(lineFormat);
-    await expect(page.getByTestId("market-cards")).toContainText(lineFormat);
     // Total 1 (domicile) et Total 2 (extérieur) ne sont jamais la même ligne recopiée.
     const totalHomeText = await page.getByTestId("market-total-1").textContent();
     const totalAwayText = await page.getByTestId("market-total-2").textContent();
     expect(totalHomeText.replace("Total 1", "")).not.toBe(totalAwayText.replace("Total 2", ""));
 
-    // Au moins 3 scores exacts, du plus probable au moins probable (PROMPT 5).
+    // Entre 3 et 4 scores exacts, du plus probable au moins probable (PROMPT 5).
     const scoreCells = page.getByTestId("correct-scores").locator("div");
-    expect(await scoreCells.count()).toBeGreaterThanOrEqual(3);
+    const scoreCount = await scoreCells.count();
+    expect(scoreCount).toBeGreaterThanOrEqual(3);
+    expect(scoreCount).toBeLessThanOrEqual(4);
 
-    // Aucune cote affichée nulle part (ex : 1.85, 2.40), et "%" réservé au 1X2.
+    // Bloc "Corners et cartons" (en bas de page) : corners/cartons jaunes en ligne,
+    // carton rouge en probabilité (rare, événement binaire).
+    await expect(page.getByTestId("market-corners")).toContainText(lineFormat);
+    await expect(page.getByTestId("market-yellow-cards")).toContainText(lineFormat);
+    await expect(page.getByTestId("market-red-card")).toContainText(/^Cartons rouges : \d+(\.\d+)? % de risque$/);
+
+    // Aucune cote affichée nulle part (ex : 1.85, 2.40).
     const bodyText = await page.locator("body").innerText();
     expect(bodyText).not.toMatch(/\b\d\.\d{2}\b/);
     await expect(page.getByTestId("correct-scores")).not.toContainText("%");

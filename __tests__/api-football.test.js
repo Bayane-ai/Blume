@@ -273,3 +273,82 @@ describe("getFixturesByDate / mapFixtureToUpcomingMatch — couverture mondiale 
     expect(m.score.fullTime).toEqual({ home: null, away: null });
   });
 });
+
+describe("findApiFootballTeamId / getTeamCardProneness — joueurs susceptibles de prendre un carton (best-effort)", () => {
+  test("sans clé API, renvoie null/liste vide sans jamais appeler l'API", async () => {
+    const { findApiFootballTeamId, getTeamCardProneness } = await import("../lib/apiFootball.js");
+    global.fetch = jest.fn();
+    expect(await findApiFootballTeamId("Arsenal FC", null)).toBeNull();
+    expect(await getTeamCardProneness(42, null)).toEqual([]);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test("findApiFootballTeamId interroge /teams?search=... et retrouve l'équipe par son nom réel (accents/suffixes ignorés)", async () => {
+    const { findApiFootballTeamId } = await import("../lib/apiFootball.js");
+    const fetchMock = jest.fn((url) => {
+      expect(url).toContain("/teams?search=");
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ response: [{ team: { id: 42, name: "Arsenal" } }] }),
+      });
+    });
+    global.fetch = fetchMock;
+
+    const teamId = await findApiFootballTeamId("Arsenal FC", TOKEN);
+    expect(teamId).toBe(42);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("équipe introuvable dans les résultats de recherche : renvoie null plutôt qu'un id au hasard qui désignerait la mauvaise équipe", async () => {
+    const { findApiFootballTeamId } = await import("../lib/apiFootball.js");
+    global.fetch = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) }));
+    expect(await findApiFootballTeamId("Équipe Inconnue FC", TOKEN)).toBeNull();
+  });
+
+  test("plusieurs recherches rapprochées pour la MÊME équipe ne déclenchent qu'un seul appel réel", async () => {
+    const { findApiFootballTeamId } = await import("../lib/apiFootball.js");
+    const fetchMock = jest.fn(() =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [{ team: { id: 42, name: "Arsenal" } }] }) })
+    );
+    global.fetch = fetchMock;
+
+    await Promise.all([findApiFootballTeamId("Arsenal FC", TOKEN), findApiFootballTeamId("Arsenal", TOKEN)]);
+    expect(fetchMock).toHaveBeenCalledTimes(1); // même équipe une fois normalisée
+  });
+
+  test("getTeamCardProneness renvoie les vrais joueurs (jaunes+rouges réels), triés par intensité, jamais un joueur sans carton ni un joueur inventé", async () => {
+    const { getTeamCardProneness } = await import("../lib/apiFootball.js");
+    const fetchMock = jest.fn((url) => {
+      expect(url).toContain("/players?team=42&season=");
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            response: [
+              { player: { name: "Joueur Discipliné" }, statistics: [{ cards: { yellow: 0, red: 0 } }] },
+              { player: { name: "Joueur Averti" }, statistics: [{ cards: { yellow: 3, red: 0 } }] },
+              { player: { name: "Joueur Expulsé" }, statistics: [{ cards: { yellow: 1, red: 1 } }] },
+            ],
+          }),
+      });
+    });
+    global.fetch = fetchMock;
+
+    const players = await getTeamCardProneness(42, TOKEN);
+    expect(players.map((p) => p.name)).not.toContain("Joueur Discipliné"); // 0 carton : pas "susceptible"
+    expect(players[0].name).toBe("Joueur Expulsé"); // jaune + rouge pèse plus lourd qu'un simple jaune
+    expect(players.find((p) => p.name === "Joueur Averti").yellow).toBe(3);
+  });
+
+  test("une équipe sans aucune donnée de cartons renvoie une liste vide, jamais inventée", async () => {
+    const { getTeamCardProneness } = await import("../lib/apiFootball.js");
+    global.fetch = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) }));
+    expect(await getTeamCardProneness(42, TOKEN)).toEqual([]);
+  });
+
+  test("une erreur de l'API (quota, réseau) renvoie une liste vide plutôt qu'un plantage", async () => {
+    const { getTeamCardProneness } = await import("../lib/apiFootball.js");
+    global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 429 }));
+    expect(await getTeamCardProneness(42, TOKEN)).toEqual([]);
+  });
+});

@@ -307,7 +307,7 @@ describe("/api/analyze — événements live réels (API-Football), en compléme
     expect(res.body.probabilities).toBeDefined();
   });
 
-  test("un match pas encore commencé n'appelle jamais API-Football (events null, aucun appel superflu)", async () => {
+  test("un match pas encore commencé n'appelle jamais API-Football pour le fil d'événements live (events null, aucun appel superflu)", async () => {
     const fetchMock = jest.fn((url) => {
       if (url.includes("/matches/777")) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: "SCHEDULED", minute: null, score: { fullTime: { home: null, away: null } } }) });
@@ -318,6 +318,12 @@ describe("/api/analyze — événements live réels (API-Football), en compléme
       if (url.includes("head2head")) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ aggregates: { numberOfMatches: 0 } }) });
       }
+      // "Joueurs susceptibles de prendre un carton" (lib/apiFootball.js) est lui bien
+      // interrogé quel que soit le statut du match, comme les buteurs probables — pas
+      // une donnée "live", donc pas concerné par cette assertion.
+      if (url.includes("/teams?search=")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) });
+      }
       return Promise.reject(new Error(`URL inattendue : ${url}`));
     });
     global.fetch = fetchMock;
@@ -327,7 +333,7 @@ describe("/api/analyze — événements live réels (API-Football), en compléme
     await handler({ query: baseQuery }, res);
 
     expect(res.body.events).toBeNull();
-    expect(fetchMock.mock.calls.some(([url]) => url.includes("api-sports") || url.includes("fixtures"))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => url.includes("fixtures"))).toBe(false);
   });
 
   test("bloc 2 — un match identifié par un id 'af-' (connu seulement d'API-Football) n'interroge jamais football-data.org pour son score, et suit son propre score/minute en direct", async () => {
@@ -516,5 +522,109 @@ describe("/api/analyze — buteurs probables, filtrés sur les vrais joueurs de 
     }, res2);
 
     expect(JSON.stringify(res1.body.probableScorers)).not.toBe(JSON.stringify(res2.body.probableScorers));
+  });
+});
+
+describe("/api/analyze — joueurs susceptibles de prendre un carton (best-effort, API-Football)", () => {
+  const TOKEN = "test-token";
+  const AF_KEY = "test-af-key";
+
+  function mockRes() {
+    const res = {};
+    res.status = jest.fn(() => res);
+    res.json = jest.fn((body) => { res.body = body; return res; });
+    res.setHeader = jest.fn();
+    return res;
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    process.env.FOOTBALL_DATA_TOKEN = TOKEN;
+    process.env.API_FOOTBALL_KEY = AF_KEY;
+  });
+
+  afterEach(() => {
+    delete process.env.API_FOOTBALL_KEY;
+  });
+
+  const baseQuery = { matchId: "777", competitionCode: "PL", homeTeamId: "10", awayTeamId: "11", homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC" };
+
+  function mockFetchWithCardStats({ homeTeamId, homePlayers, awayTeamId, awayPlayers }) {
+    return jest.fn((url) => {
+      if (url.includes("head2head")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ aggregates: { numberOfMatches: 0 } }) });
+      if (url.includes("/matches/777")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: "SCHEDULED", minute: null, score: { fullTime: { home: null, away: null } } }) });
+      if (url.includes("/standings")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [{ table: [homeRow, awayRow] }] }) });
+      if (url.includes("/scorers")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ scorers: [] }) });
+      if (url.includes("/teams?search=")) {
+        const q = decodeURIComponent(new URL(url).searchParams.get("search"));
+        if (q === "Arsenal FC") return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [{ team: { id: homeTeamId, name: "Arsenal" } }] }) });
+        if (q === "Chelsea FC") return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [{ team: { id: awayTeamId, name: "Chelsea" } }] }) });
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) });
+      }
+      if (url.includes(`/players?team=${homeTeamId}`)) return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: homePlayers }) });
+      if (url.includes(`/players?team=${awayTeamId}`)) return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: awayPlayers }) });
+      return Promise.reject(new Error(`URL inattendue : ${url}`));
+    });
+  }
+
+  test("renvoie les vrais joueurs les plus sujets aux cartons de chaque équipe, séparés, jamais mélangés", async () => {
+    global.fetch = mockFetchWithCardStats({
+      homeTeamId: 100, awayTeamId: 101,
+      homePlayers: [{ player: { name: "Declan Rice" }, statistics: [{ cards: { yellow: 5, red: 0 } }] }],
+      awayPlayers: [{ player: { name: "Moises Caicedo" }, statistics: [{ cards: { yellow: 6, red: 1 } }] }],
+    });
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    const res = mockRes();
+    await handler({ query: baseQuery }, res);
+
+    expect(res.body.cardProneness.home).toEqual([{ name: "Declan Rice", yellow: 5, red: 0 }]);
+    expect(res.body.cardProneness.away).toEqual([{ name: "Moises Caicedo", yellow: 6, red: 1 }]);
+  });
+
+  test("sans clé API_FOOTBALL_KEY, cardProneness reste honnêtement vide (jamais un joueur inventé), sans casser le reste du pronostic", async () => {
+    delete process.env.API_FOOTBALL_KEY;
+    global.fetch = jest.fn((url) => {
+      if (url.includes("head2head")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ aggregates: { numberOfMatches: 0 } }) });
+      if (url.includes("/matches/777")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: "SCHEDULED", minute: null, score: { fullTime: { home: null, away: null } } }) });
+      if (url.includes("/standings")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [{ table: [homeRow, awayRow] }] }) });
+      if (url.includes("/scorers")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ scorers: [] }) });
+      if (url.includes("api-sports") || url.includes("/teams?search=") || url.includes("/players?")) {
+        throw new Error("Ne devrait jamais être appelé sans clé");
+      }
+      return Promise.reject(new Error(`URL inattendue : ${url}`));
+    });
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    const res = mockRes();
+    await handler({ query: baseQuery }, res);
+
+    expect(res.body.cardProneness).toEqual({ home: [], away: [] });
+    expect(res.body.probabilities).toBeDefined();
+  });
+
+  test("équipe introuvable côté API-Football : liste vide pour cette équipe, jamais un plantage", async () => {
+    global.fetch = mockFetchWithCardStats({
+      homeTeamId: 100, awayTeamId: 101,
+      homePlayers: [{ player: { name: "Declan Rice" }, statistics: [{ cards: { yellow: 5, red: 0 } }] }],
+      awayPlayers: [],
+    });
+    // "Chelsea FC" ne sera volontairement pas trouvé : force une recherche vide pour l'extérieur.
+    const fetchMock = jest.fn((url) => {
+      if (url.includes("/teams?search=Chelsea")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) });
+      return mockFetchWithCardStats({
+        homeTeamId: 100, awayTeamId: 101,
+        homePlayers: [{ player: { name: "Declan Rice" }, statistics: [{ cards: { yellow: 5, red: 0 } }] }],
+        awayPlayers: [],
+      })(url);
+    });
+    global.fetch = fetchMock;
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    const res = mockRes();
+    await handler({ query: baseQuery }, res);
+
+    expect(res.body.cardProneness.home).toEqual([{ name: "Declan Rice", yellow: 5, red: 0 }]);
+    expect(res.body.cardProneness.away).toEqual([]);
   });
 });

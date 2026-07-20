@@ -123,7 +123,8 @@ describe("Anti-duplication : 3 matchs différents ont 3 pronostics différents",
 
       expect(r.extraStats.corners.total).toBeGreaterThan(0);
       expect(r.extraStats.shots.total).toBeGreaterThan(0);
-      expect(r.extraStats.cards.total).toBeGreaterThan(0);
+      expect(r.extraStats.cards.yellow.total).toBeGreaterThan(0);
+      expect(r.extraStats.cards.redProbability).toBeGreaterThanOrEqual(0);
       expect(r.extraStats.possession.home + r.extraStats.possession.away).toBe(100);
     }
   });
@@ -137,18 +138,23 @@ describe("Anti-duplication : 3 matchs différents ont 3 pronostics différents",
     expect(new Set(stats).size).toBe(3);
   });
 
-  // Bloc statistiques (refonte "app de paris sportifs") : les 5 lignes de marché
-  // (Total, Total 1, Total 2, Corners, Cartons) doivent elles aussi être propres à
-  // chaque match — jamais la même ligne/le même sens recopiés sur 3 matchs différents.
-  test("les lignes de marché (Total, Total 1, Total 2, Corners, Cartons) diffèrent selon le match", async () => {
+  // Bloc statistiques (refonte "app de paris sportifs") : les lignes de marché
+  // (Total, Total 1, Total 2, Corners, Cartons jaunes) doivent elles aussi être
+  // propres à chaque match — jamais la même ligne/le même sens recopiés sur 3 matchs
+  // différents.
+  test("les lignes de marché (Total, Total 1, Total 2, Corners, Cartons jaunes) diffèrent selon le match", async () => {
     const r1 = await analyzeMatch(MATCH_1);
     const r2 = await analyzeMatch(MATCH_2);
     const r3 = await analyzeMatch(MATCH_3);
 
     for (const r of [r1, r2, r3]) {
-      for (const key of ["totalGoals", "totalHome", "totalAway", "corners", "cards"]) {
+      for (const key of ["totalGoals", "totalHome", "totalAway", "corners", "yellowCards"]) {
         expect(r.markets[key].side).toMatch(/^Plus|Moins$/);
         expect(r.markets[key].line % 1).toBeCloseTo(0.5, 5); // toujours une ligne X,5
+        for (const l of r.markets[key].lines) {
+          expect(l.side).toMatch(/^Plus|Moins$/);
+          expect(l.line % 1).toBeCloseTo(0.5, 5);
+        }
       }
     }
 

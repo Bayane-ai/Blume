@@ -2,6 +2,21 @@ const { liveMatches, upcomingByCompetition, finishedMatch, standingsByCompetitio
 const { COMPETITIONS } = require("../lib/competitions");
 const { computePronostic, computeLivePronostic } = require("../lib/pronostic");
 const { isBettableCompetitionName } = require("../lib/bettableFilter");
+const { buildProbableScorers } = require("../lib/probableScorers");
+
+// Vrais buteurs/passeurs (format football-data.org /scorers) pour les équipes des
+// fixtures ci-dessus — sert à vérifier en conditions réelles (navigateur) que
+// "Buteurs probables" et "Passes décisives probables" affichent de vraies données,
+// propres à chaque équipe.
+const scorersFixture = [
+  { player: { name: "Bukayo Saka" }, team: { id: 10 }, goals: 12, assists: 6 },
+  { player: { name: "Martin Ødegaard" }, team: { id: 10 }, goals: 4, assists: 9 },
+  { player: { name: "Cole Palmer" }, team: { id: 11 }, goals: 15, assists: 7 },
+  { player: { name: "Vinícius Júnior" }, team: { id: 20 }, goals: 18, assists: 8 },
+  { player: { name: "Jude Bellingham" }, team: { id: 20 }, goals: 14, assists: 6 },
+  { player: { name: "Robert Lewandowski" }, team: { id: 21 }, goals: 22, assists: 5 },
+  { player: { name: "Raphinha" }, team: { id: 21 }, goals: 10, assists: 9 },
+];
 
 // Intercepte /api/* au niveau réseau (avant même que le serveur Next.js ne les
 // reçoive) et rejoue des données réalistes — le vrai football-data.org est
@@ -116,6 +131,13 @@ async function installApiMocks(page) {
       // deux champs annexes (coup d'envoi/stade/arbitre), sans lien avec le calcul.
       result.venue = "Emirates Stadium";
       result.referee = "Michael Oliver";
+      // Vrais buteurs/passeurs (voir scorersFixture ci-dessus) : nécessaire pour
+      // vérifier en conditions réelles que "Buteurs probables" et "Passes décisives
+      // probables" affichent bien du contenu (pas seulement testé via Jest).
+      result.probableScorers = buildProbableScorers(scorersFixture, homeTeamId, awayTeamId);
+      // Pas de clé API-Football dans cet environnement E2E : honnêtement vide,
+      // affiché comme "Indisponible" côté interface (voir components/CardsAndCorners.js).
+      result.cardProneness = { home: [], away: [] };
       return route.fulfill({ json: result });
     }
 

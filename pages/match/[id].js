@@ -5,6 +5,8 @@ import MatchTimeline from "../../components/MatchTimeline";
 import FormBadges from "../../components/FormBadges";
 import PronosticResults from "../../components/PronosticResults";
 import ProbableScorers from "../../components/ProbableScorers";
+import CardsAndCorners from "../../components/CardsAndCorners";
+import AssistsProbables from "../../components/AssistsProbables";
 import { useRequireAuth } from "../../lib/useRequireAuth";
 
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
@@ -207,6 +209,12 @@ export default function MatchPage() {
             <MatchTimeline events={liveState?.events} homeTeamId={homeTeamId} />
           </section>
         )}
+
+        {/* Corners/cartons puis passes décisives : tout en bas de la page, comme
+            demandé — chacune sa propre carte visuelle (voir components/CardsAndCorners.js
+            et components/AssistsProbables.js). */}
+        {!loading && hasRequested && <CardsAndCorners pronostic={pronostic} />}
+        {!loading && hasRequested && <AssistsProbables pronostic={pronostic} />}
       </main>
     </div>
   );

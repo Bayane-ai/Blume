@@ -1,12 +1,12 @@
 // "Buteurs probables" : deux colonnes (domicile / extérieur), chacune avec SES propres
 // joueurs — jamais mélangés entre équipes ni entre matchs. Basé sur les vrais buteurs
-// et passeurs décisifs de la saison en cours pour la compétition de ce match (voir
-// lib/probableScorers.js et lib/scorersCache.js — endpoint football-data.org dédié) :
-// jamais un joueur inventé. Présenté façon lignes de paris sportifs ("X marque (ou son
-// remplaçant)"), mais sans jamais afficher de cote.
+// de la saison en cours pour la compétition de ce match (voir lib/probableScorers.js
+// et lib/scorersCache.js — endpoint football-data.org dédié) : jamais un joueur
+// inventé. Présenté façon ligne de pari sportif ("X marque (ou son remplaçant)"),
+// mais sans jamais afficher de cote. Les passeurs décisifs probables (même source)
+// ont leur propre bloc, en bas de page (components/AssistsProbables.js).
 function TeamScorers({ testId, teamName, data }) {
   const scorers = data?.scorers || [];
-  const assists = data?.assists || [];
 
   return (
     <div style={st.col} data-testid={testId}>
@@ -20,17 +20,6 @@ function TeamScorers({ testId, teamName, data }) {
           <span style={st.lineStat}>{p.goals} but{p.goals > 1 ? "s" : ""} cette saison</span>
         </div>
       ))}
-
-      <p style={st.subLabel}>Passe décisive probable</p>
-      {assists.length === 0 && <p style={st.emptyHint}>Indisponible</p>}
-      {assists.map((p) => (
-        <div key={p.name} style={st.line} data-testid="assist-row">
-          <span style={st.lineName}>{p.name} passe décisive (ou son remplaçant)</span>
-          <span style={st.lineStat}>
-            {p.assists} passe{p.assists > 1 ? "s" : ""} décisive{p.assists > 1 ? "s" : ""} cette saison
-          </span>
-        </div>
-      ))}
     </div>
   );
 }
@@ -42,9 +31,7 @@ export default function ProbableScorers({ pronostic }) {
   const homeName = pronostic.home?.name || "Domicile";
   const awayName = pronostic.away?.name || "Extérieur";
 
-  const totalEntries =
-    (home?.scorers?.length || 0) + (home?.assists?.length || 0) +
-    (away?.scorers?.length || 0) + (away?.assists?.length || 0);
+  const totalEntries = (home?.scorers?.length || 0) + (away?.scorers?.length || 0);
 
   return (
     <section style={st.card} data-testid="probable-scorers-card">
@@ -60,8 +47,8 @@ export default function ProbableScorers({ pronostic }) {
       )}
 
       <p style={st.noteText}>
-        Basé sur les buteurs et passeurs décisifs réels de la saison en cours (source :
-        l'API connectée au site) — pas un relevé match par match, non fourni par l'API.
+        Basé sur les buteurs réels de la saison en cours (source : l'API connectée au
+        site) — pas un relevé match par match, non fourni par l'API.
       </p>
     </section>
   );

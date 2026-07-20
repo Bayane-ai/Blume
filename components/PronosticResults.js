@@ -5,27 +5,20 @@
 //   Carte 1 — "Probabilité de victoire" : UNIQUEMENT le 1X2 (domicile/nul/extérieur).
 //   Les seules valeurs en "%" de tout le bloc — jamais mélangées avec les autres stats.
 //   Carte 2 — "Statistiques du match" :
-//     Total (buts du match entier) — ligne "Plus de X,X" / "Moins de X,X".
+//     Total (buts du match entier) — ligne "Plus de X,X" / "Moins de X,X", avec une
+//     marge (deux lignes voisines) quand l'issue est trop incertaine pour une seule.
 //     Total 1 (équipe à domicile seule).
 //     Total 2 (équipe à l'extérieur seule) — jamais mélangé avec le domicile.
-//     Corners. Cartons. Scores exacts (au moins 3).
+//     Tirs. Scores exacts (3 à 4).
+// Corners et cartons ont leur propre bloc en bas de page (components/CardsAndCorners.js).
 // Les lignes ("X,5") et les probabilités viennent de lib/pronostic.js, calculées à
 // partir des vraies statistiques des deux équipes pour CE match précis — jamais une
 // valeur fixe recopiée d'un match à l'autre.
+import { marketLabel } from "../lib/marketFormat";
+
 function formatPercent(pct) {
   if (pct == null) return "–";
   return `${pct} %`;
-}
-
-function formatLine(line) {
-  // La ligne est toujours un nombre à virgule (ex : 2.5, jamais un entier) — une seule
-  // décimale suffit, avec une virgule française plutôt qu'un point.
-  return String(line).replace(".", ",");
-}
-
-function marketLabel(market) {
-  if (!market) return "–";
-  return `${market.side} de ${formatLine(market.line)}`;
 }
 
 export default function PronosticResults({ pronostic, loading }) {
@@ -68,9 +61,7 @@ export default function PronosticResults({ pronostic, loading }) {
           <div style={st.marketRow} data-testid="market-total">Total : {marketLabel(markets?.totalGoals)}</div>
           <div style={st.marketRow} data-testid="market-total-1">Total 1 : {marketLabel(markets?.totalHome)}</div>
           <div style={st.marketRow} data-testid="market-total-2">Total 2 : {marketLabel(markets?.totalAway)}</div>
-          <div style={st.marketRow} data-testid="market-corners">Corners : {marketLabel(markets?.corners)}</div>
           <div style={st.marketRow} data-testid="market-shots">Tirs : {marketLabel(markets?.shots)}</div>
-          <div style={st.marketRow} data-testid="market-cards">Cartons : {marketLabel(markets?.cards)}</div>
         </div>
 
         {pronostic.correctScores && pronostic.correctScores.length > 0 && (
