@@ -409,3 +409,112 @@ describe("/api/analyze — événements live réels (API-Football), en compléme
     expect(res.body.matchMinute).toBe(20);
   });
 });
+
+describe("/api/analyze — buteurs probables, filtrés sur les vrais joueurs de chaque équipe", () => {
+  const TOKEN = "test-token";
+
+  function mockRes() {
+    const res = {};
+    res.status = jest.fn(() => res);
+    res.json = jest.fn((body) => { res.body = body; return res; });
+    res.setHeader = jest.fn();
+    return res;
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    process.env.FOOTBALL_DATA_TOKEN = TOKEN;
+  });
+
+  const baseQuery = { matchId: "777", competitionCode: "PL", homeTeamId: "10", awayTeamId: "11", homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC" };
+
+  function mockFetchWithScorers(scorers) {
+    return jest.fn((url) => {
+      if (url.includes("head2head")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ aggregates: { numberOfMatches: 0 } }) });
+      }
+      if (url.includes("/matches/777")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: "SCHEDULED", minute: null, score: { fullTime: { home: null, away: null } } }) });
+      }
+      if (url.includes("/standings")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [{ table: [homeRow, awayRow] }] }) });
+      }
+      if (url.includes("/scorers")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ scorers }) });
+      }
+      return Promise.reject(new Error(`URL inattendue : ${url}`));
+    });
+  }
+
+  test("les buteurs probables renvoyés sont bien ceux des deux équipes du match, séparés, avec leurs vrais totaux", async () => {
+    global.fetch = mockFetchWithScorers([
+      { player: { id: 1, name: "Bukayo Saka" }, team: { id: 10 }, goals: 12, assists: 6 },
+      { player: { id: 2, name: "Cole Palmer" }, team: { id: 11 }, goals: 15, assists: 9 },
+      { player: { id: 3, name: "Joueur hors match" }, team: { id: 999 }, goals: 20, assists: 1 },
+    ]);
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    const res = mockRes();
+    await handler({ query: baseQuery }, res);
+
+    expect(res.body.probableScorers.home.scorers).toEqual([{ name: "Bukayo Saka", goals: 12 }]);
+    expect(res.body.probableScorers.away.scorers).toEqual([{ name: "Cole Palmer", goals: 15 }]);
+    // Le joueur d'une équipe hors de ce match n'apparaît nulle part.
+    const allNames = JSON.stringify(res.body.probableScorers);
+    expect(allNames).not.toContain("Joueur hors match");
+  });
+
+  test("interroge le bon endpoint /scorers avec le vrai code de compétition du match", async () => {
+    const fetchMock = mockFetchWithScorers([]);
+    global.fetch = fetchMock;
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    await handler({ query: baseQuery }, mockRes());
+
+    expect(fetchMock.mock.calls.some(([url]) => url.includes("/competitions/PL/scorers"))).toBe(true);
+  });
+
+  test("aucune donnée de buteur disponible (échec de l'API) : listes vides, jamais un joueur inventé, et le reste du pronostic fonctionne quand même", async () => {
+    global.fetch = jest.fn((url) => {
+      if (url.includes("head2head")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ aggregates: { numberOfMatches: 0 } }) });
+      if (url.includes("/matches/777")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: "SCHEDULED", minute: null, score: { fullTime: { home: null, away: null } } }) });
+      if (url.includes("/standings")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [{ table: [homeRow, awayRow] }] }) });
+      if (url.includes("/scorers")) return Promise.resolve({ ok: false, status: 429 });
+      return Promise.reject(new Error(`URL inattendue : ${url}`));
+    });
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    const res = mockRes();
+    await handler({ query: baseQuery }, res);
+
+    expect(res.body.probableScorers).toEqual({
+      home: { scorers: [], assists: [] },
+      away: { scorers: [], assists: [] },
+    });
+    expect(res.body.probabilities).toBeDefined();
+  });
+
+  test("deux matchs différents (compétitions/équipes différentes) ont des buteurs probables différents", async () => {
+    global.fetch = mockFetchWithScorers([
+      { player: { id: 1, name: "Bukayo Saka" }, team: { id: 10 }, goals: 12, assists: 6 },
+      { player: { id: 2, name: "Cole Palmer" }, team: { id: 11 }, goals: 15, assists: 9 },
+    ]);
+    const { default: handler } = await import("../pages/api/analyze.js");
+    const res1 = mockRes();
+    await handler({ query: baseQuery }, res1);
+
+    jest.resetModules();
+    process.env.FOOTBALL_DATA_TOKEN = TOKEN;
+    global.fetch = mockFetchWithScorers([
+      { player: { id: 3, name: "Vinícius Júnior" }, team: { id: 20 }, goals: 18, assists: 5 },
+      { player: { id: 4, name: "Robert Lewandowski" }, team: { id: 21 }, goals: 22, assists: 3 },
+    ]);
+    const { default: handler2 } = await import("../pages/api/analyze.js");
+    const res2 = mockRes();
+    await handler2({
+      query: { matchId: "778", competitionCode: "PD", homeTeamId: "20", awayTeamId: "21", homeTeamName: "Real Madrid", awayTeamName: "Barcelona" },
+    }, res2);
+
+    expect(JSON.stringify(res1.body.probableScorers)).not.toBe(JSON.stringify(res2.body.probableScorers));
+  });
+});

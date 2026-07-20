@@ -4,6 +4,7 @@ import MatchHeaderHero from "../../components/MatchHeaderHero";
 import MatchTimeline from "../../components/MatchTimeline";
 import FormBadges from "../../components/FormBadges";
 import PronosticResults from "../../components/PronosticResults";
+import ProbableScorers from "../../components/ProbableScorers";
 import { useRequireAuth } from "../../lib/useRequireAuth";
 
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
@@ -198,6 +199,7 @@ export default function MatchPage() {
             components/PronosticResults.js) : "Probabilité de victoire" en premier,
             "Statistiques du match" ensuite — chacune sa propre carte visuelle. */}
         {!loading && hasRequested && <PronosticResults pronostic={pronostic} loading={loading} />}
+        {!loading && hasRequested && <ProbableScorers pronostic={pronostic} />}
 
         {!isLiveNow && (
           <section style={st.panel}>
