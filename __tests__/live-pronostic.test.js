@@ -6,6 +6,17 @@
  */
 import { computePronostic, computeLivePronostic } from "../lib/pronostic";
 
+// La sauvegarde/vérification de l'historique (voir describe "historique des
+// pronostics" plus bas) est mockée pour tous les AUTRES tests de ce fichier, qui ne
+// s'y intéressent pas — évite un appel Supabase réel (donc un rejet bruyant du mock
+// fetch strict de chaque test) à chaque match "IN_PLAY"/"PAUSED"/"FINISHED" simulé ici.
+const saveAndVerifyPrediction = jest.fn();
+jest.mock("../lib/pronosticHistory", () => ({ saveAndVerifyPrediction: (...a) => saveAndVerifyPrediction(...a) }));
+
+beforeEach(() => {
+  saveAndVerifyPrediction.mockClear();
+});
+
 const homeRow = { position: 3, points: 55, form: "WWDLW", playedGames: 20, goalsFor: 40, goalsAgainst: 20, team: { id: 10 } };
 const awayRow = { position: 7, points: 44, form: "LWDDW", playedGames: 20, goalsFor: 28, goalsAgainst: 26, team: { id: 11 } };
 
@@ -731,5 +742,88 @@ describe("/api/analyze — joueurs susceptibles de prendre un carton (best-effor
 
     expect(res.body.cardProneness.home).toEqual([{ name: "Declan Rice", yellow: 5, red: 0 }]);
     expect(res.body.cardProneness.away).toEqual([]);
+  });
+});
+
+describe("/api/analyze — sauvegarde/vérification de l'historique des pronostics (boutons Probabilités réussies/échouées)", () => {
+  const TOKEN = "test-token";
+
+  function mockRes() {
+    const res = {};
+    res.status = jest.fn(() => res);
+    res.json = jest.fn((body) => { res.body = body; return res; });
+    res.setHeader = jest.fn();
+    return res;
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    process.env.FOOTBALL_DATA_TOKEN = TOKEN;
+    delete process.env.API_FOOTBALL_KEY;
+  });
+
+  const baseQuery = { matchId: "777", competitionCode: "PL", homeTeamId: "10", awayTeamId: "11", homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC" };
+
+  function mockFetch(matchState) {
+    return jest.fn((url) => {
+      if (url.includes("head2head")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ aggregates: { numberOfMatches: 0 } }) });
+      }
+      if (url.includes("/standings")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [{ table: [homeRow, awayRow] }] }) });
+      }
+      if (url.match(/\/matches\/777$/)) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(matchState) });
+      }
+      return Promise.reject(new Error(`URL inattendue : ${url}`));
+    });
+  }
+
+  test("match en direct : sauvegarde le pronostic avec matchStatus/finalScore réels, pas encore terminé", async () => {
+    global.fetch = mockFetch({ status: "IN_PLAY", minute: 30, utcDate: "2026-01-01T15:00:00Z", score: { fullTime: { home: 1, away: 0 } } });
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    await handler({ query: baseQuery }, mockRes());
+
+    expect(saveAndVerifyPrediction).toHaveBeenCalledTimes(1);
+    expect(saveAndVerifyPrediction.mock.calls[0][0]).toMatchObject({
+      matchId: "777", competitionCode: "PL", homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC",
+      matchDate: "2026-01-01T15:00:00Z", matchStatus: "IN_PLAY", finalScore: { home: 1, away: 0 },
+    });
+    expect(saveAndVerifyPrediction.mock.calls[0][0].prediction).toBeDefined();
+  });
+
+  test("match terminé : matchStatus \"FINISHED\" et le vrai score final sont transmis pour la vérification", async () => {
+    global.fetch = mockFetch({ status: "FINISHED", minute: 90, utcDate: "2026-01-01T15:00:00Z", score: { fullTime: { home: 3, away: 1 } } });
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    await handler({ query: baseQuery }, mockRes());
+
+    expect(saveAndVerifyPrediction).toHaveBeenCalledTimes(1);
+    expect(saveAndVerifyPrediction.mock.calls[0][0]).toMatchObject({
+      matchStatus: "FINISHED", finalScore: { home: 3, away: 1 },
+    });
+  });
+
+  test("match pas encore commencé (SCHEDULED) : sauvegarde quand même le pronostic pré-match, status \"pending\" implicite", async () => {
+    global.fetch = mockFetch({ status: "SCHEDULED", minute: null, utcDate: "2026-01-05T15:00:00Z", score: { fullTime: { home: null, away: null } } });
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    await handler({ query: baseQuery }, mockRes());
+
+    expect(saveAndVerifyPrediction).toHaveBeenCalledTimes(1);
+    expect(saveAndVerifyPrediction.mock.calls[0][0]).toMatchObject({ matchStatus: "SCHEDULED" });
+  });
+
+  test("une erreur dans la sauvegarde de l'historique ne fait jamais planter /api/analyze (le pronostic reste renvoyé)", async () => {
+    global.fetch = mockFetch({ status: "IN_PLAY", minute: 30, utcDate: "2026-01-01T15:00:00Z", score: { fullTime: { home: 1, away: 0 } } });
+    saveAndVerifyPrediction.mockRejectedValueOnce(new Error("boom"));
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    const res = mockRes();
+    await handler({ query: baseQuery }, res);
+
+    expect(res.status).not.toHaveBeenCalledWith(500);
+    expect(res.body.available).toBe(true);
   });
 });

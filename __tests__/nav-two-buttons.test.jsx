@@ -1,9 +1,10 @@
 /**
  * @jest-environment jsdom
  *
- * La navigation du site a exactement trois boutons — « Live », « Matchs à venir » et
- * « News » — chacun menant vers du contenu réel (vraie API/vrais flux), sans lien mort
- * ni page vide, et sans aucun autre bouton de navigation.
+ * La navigation du site a exactement cinq boutons — « Live », « Matchs à venir »,
+ * « News », « Probabilités réussies » et « Probabilités échouées » — chacun menant vers
+ * du contenu réel (vraie API/vraies pages), sans lien mort ni page vide, et sans aucun
+ * autre bouton de navigation.
  */
 import { render, screen, waitFor, within } from "@testing-library/react";
 import Home from "../pages/index";
@@ -86,19 +87,23 @@ beforeEach(() => {
   mockFetchRouter();
 });
 
-test('exactement trois boutons de navigation existent : "Live", "Matchs à venir" et "News", et rien d\'autre', async () => {
+test('exactement cinq boutons de navigation existent : "Live", "Matchs à venir", "News", "Probabilités réussies" et "Probabilités échouées", et rien d\'autre', async () => {
   mockPathname = "/";
   render(<Home />);
 
   const nav = await screen.findByTestId("main-nav");
   const links = within(nav).getAllByRole("link");
-  expect(links).toHaveLength(3);
+  expect(links).toHaveLength(5);
   expect(links[0]).toHaveTextContent("Live");
   expect(links[1]).toHaveTextContent("Matchs à venir");
   expect(links[2]).toHaveTextContent("News");
+  expect(links[3]).toHaveTextContent("Probabilités réussies");
+  expect(links[4]).toHaveTextContent("Probabilités échouées");
   expect(links[0]).toHaveAttribute("href", "/");
   expect(links[1]).toHaveAttribute("href", "/a-venir");
   expect(links[2]).toHaveAttribute("href", "/news");
+  expect(links[3]).toHaveAttribute("href", "/probabilites-reussies");
+  expect(links[4]).toHaveAttribute("href", "/probabilites-echouees");
 
   // Aucun autre bouton de NAVIGATION (ancien onglet "Tous", ancien onglet
   // "Compétitions" isolé, "Analyse IA") — le bouton "Toutes les compétitions" du

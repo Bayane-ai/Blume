@@ -5,6 +5,11 @@
  * de l'équipe, puis sur une estimation moyenne en dernier recours.
  */
 
+// Hors sujet ici (testé dans pronostic-history.test.js / live-pronostic.test.js) —
+// évite un appel Supabase réel (donc un rejet bruyant du mock fetch strict ci-dessous)
+// à chaque test qui simule un match "IN_PLAY"/"PAUSED".
+jest.mock("../lib/pronosticHistory", () => ({ saveAndVerifyPrediction: jest.fn() }));
+
 const TOKEN = "test-token";
 
 function mockRes() {

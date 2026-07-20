@@ -6,6 +6,10 @@
  * et seuls les derniers matchs le montrent. Chaque équipe est calculée séparément à
  * partir de SES PROPRES matchs, jamais mélangés avec ceux de l'adversaire.
  */
+
+// Hors sujet ici (testé dans pronostic-history.test.js / live-pronostic.test.js).
+jest.mock("../lib/pronosticHistory", () => ({ saveAndVerifyPrediction: jest.fn() }));
+
 const TOKEN = "test-token";
 
 function mockRes() {

@@ -37,15 +37,19 @@ test.describe("Écran 1 — Matchs en ligne (accueil)", () => {
     await expect(page.getByText("test@example.com")).toBeVisible();
     await expect(page.getByRole("button", { name: "Déconnexion", exact: true })).toBeVisible();
 
-    // Navigation : exactement trois boutons.
+    // Navigation : exactement cinq boutons.
     const nav = page.getByTestId("main-nav");
-    await expect(nav.getByRole("link")).toHaveCount(3);
+    await expect(nav.getByRole("link")).toHaveCount(5);
     const liveLink = nav.getByRole("link", { name: "Live" });
     await expect(liveLink).toBeVisible();
     // Bouton "Live" marqué visuellement par un point rouge à côté du texte.
     await expect(liveLink.locator("span").first()).toBeVisible();
     await expect(nav.getByRole("link", { name: "Matchs à venir" })).toBeVisible();
     await expect(nav.getByRole("link", { name: "News" })).toBeVisible();
+    await expect(nav.getByRole("link", { name: "Probabilités réussies" })).toBeVisible();
+    await expect(nav.getByRole("link", { name: "Probabilités échouées" })).toBeVisible();
+    await expect(nav.getByRole("link", { name: "Probabilités réussies" })).toHaveAttribute("href", "/probabilites-reussies");
+    await expect(nav.getByRole("link", { name: "Probabilités échouées" })).toHaveAttribute("href", "/probabilites-echouees");
 
     await expect(page.getByRole("heading", { name: /football en direct/i })).toBeVisible();
 
@@ -422,5 +426,41 @@ test.describe("Écran 4 — Page d'une compétition (accessible par lien direct)
     await expect(page.getByText(/classement indisponible/i)).toBeVisible();
 
     expect(errors.consoleErrors, `Erreurs console : ${errors.consoleErrors.join(" | ")}`).toEqual([]);
+  });
+});
+
+test.describe("Écran 5 — Probabilités réussies / échouées", () => {
+  test("\"Probabilités réussies\" : le bouton mène à la page, un match terminé classé succès y apparaît avec le bon badge", async ({ page }) => {
+    const errors = trackErrors(page);
+    await page.goto("/");
+
+    await page.getByTestId("main-nav").getByRole("link", { name: "Probabilités réussies" }).click();
+    await expect(page).toHaveURL(/\/probabilites-reussies/);
+
+    const card = page.getByTestId("pronostic-history-card").first();
+    await expect(card.getByText("Arsenal FC — Chelsea FC")).toBeVisible();
+    await expect(card.getByTestId("history-badge")).toHaveText("Succès");
+    await expect(card.getByTestId("history-final-score")).toHaveText("3 - 0");
+
+    expect(errors.consoleErrors, `Erreurs console : ${errors.consoleErrors.join(" | ")}`).toEqual([]);
+  });
+
+  test("\"Probabilités échouées\" : le bouton mène à la page, un match terminé classé échec y apparaît avec le bon badge", async ({ page }) => {
+    await page.goto("/");
+
+    await page.getByTestId("main-nav").getByRole("link", { name: "Probabilités échouées" }).click();
+    await expect(page).toHaveURL(/\/probabilites-echouees/);
+
+    const card = page.getByTestId("pronostic-history-card").first();
+    await expect(card.getByText("Real Madrid — FC Barcelona")).toBeVisible();
+    await expect(card.getByTestId("history-badge")).toHaveText("Échec");
+    await expect(card.getByTestId("history-final-score")).toHaveText("0 - 3");
+  });
+
+  test("une entrée de plus de 5 jours n'apparaît dans aucune des deux listes (nettoyage automatique)", async ({ page }) => {
+    await page.goto("/probabilites-reussies");
+    // Le mock (e2e/mockApi.js) inclut volontairement un 3e match, vieux de 6 jours,
+    // filtré comme le ferait le vrai nettoyage à 5 jours de lib/pronosticHistory.js.
+    await expect(page.getByTestId("pronostic-history-card")).toHaveCount(1);
   });
 });

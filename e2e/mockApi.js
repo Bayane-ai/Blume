@@ -1,8 +1,59 @@
 const { liveMatches, upcomingByCompetition, finishedMatch, standingsByCompetition } = require("./fixtures");
 const { COMPETITIONS } = require("../lib/competitions");
 const { computePronostic, computeLivePronostic } = require("../lib/pronostic");
+const { classifyOutcome, toPredictionSnapshot } = require("../lib/pronosticHistory");
 const { isBettableCompetitionName } = require("../lib/bettableFilter");
 const { buildProbableScorers } = require("../lib/probableScorers");
+
+// Historique "Probabilités réussies/échouées" : le VRAI classifyOutcome de
+// lib/pronosticHistory.js (pas une donnée recopiée) tranche chaque match ci-dessous —
+// vérifie en conditions réelles (navigateur) que le bon badge atterrit sur le bon
+// match, à partir d'un vrai pronostic calculé (computePronostic) et d'un score final
+// choisi pour chaque scénario.
+function historyFixtureItem({ matchId, homeRow, awayRow, homeTeamName, awayTeamName, matchDate, finalScore }) {
+  const prediction = toPredictionSnapshot(computePronostic({ homeRow, awayRow, homeTeamName, awayTeamName }));
+  const status = classifyOutcome(prediction, finalScore);
+  return {
+    match_id: String(matchId), home_team_name: homeTeamName, away_team_name: awayTeamName,
+    match_date: matchDate, final_score: finalScore, status, prediction,
+  };
+}
+
+function buildHistoryFixture() {
+  const plTable = standingsByCompetition.PL;
+  const arsenal = plTable.find((r) => r.team.id === 10);
+  const chelsea = plTable.find((r) => r.team.id === 11);
+  const pdTable = standingsByCompetition.PD;
+  const realMadrid = pdTable.find((r) => r.team.id === 20);
+  const barcelona = pdTable.find((r) => r.team.id === 21);
+
+  const items = [
+    // Arsenal, net favori du classement (voir standingsByCompetition.PL) : score qui
+    // confirme le favori ET le sens du Total pronostiqué -> classé "success".
+    historyFixtureItem({
+      matchId: 901, homeRow: arsenal, awayRow: chelsea, homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC",
+      matchDate: new Date(Date.now() - 1 * 24 * 3600000).toISOString(), finalScore: { home: 3, away: 0 },
+    }),
+    // Real Madrid vs Barcelone, match plus serré : score qui contredit le favori
+    // attendu -> classé "failure".
+    historyFixtureItem({
+      matchId: 902, homeRow: realMadrid, awayRow: barcelona, homeTeamName: "Real Madrid", awayTeamName: "FC Barcelona",
+      matchDate: new Date(Date.now() - 2 * 24 * 3600000).toISOString(), finalScore: { home: 0, away: 3 },
+    }),
+    // Même affiche Arsenal-Chelsea, mais vieille de 6 jours : sert à vérifier que le
+    // nettoyage à 5 jours (lib/pronosticHistory.js) l'exclut bien des deux listes.
+    historyFixtureItem({
+      matchId: 903, homeRow: arsenal, awayRow: chelsea, homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC",
+      matchDate: new Date(Date.now() - 6 * 24 * 3600000).toISOString(), finalScore: { home: 2, away: 0 },
+    }),
+  ];
+
+  // Reproduit ici le VRAI filtre à 5 jours de lib/pronosticHistory.js (cleanupExpired) :
+  // le mock réseau ne passe jamais par le vrai code serveur, donc cette règle doit être
+  // rejouée à la main pour que la vérification en navigateur ait un sens.
+  const FIVE_DAYS_MS = 5 * 24 * 3600 * 1000;
+  return items.filter((item) => Date.now() - new Date(item.match_date).getTime() <= FIVE_DAYS_MS);
+}
 
 // Vrais buteurs/passeurs (format football-data.org /scorers) pour les équipes des
 // fixtures ci-dessus — sert à vérifier en conditions réelles (navigateur) que
@@ -140,6 +191,12 @@ async function installApiMocks(page) {
       // affiché comme "Indisponible" côté interface (voir components/CardsAndCorners.js).
       result.cardProneness = { home: [], away: [] };
       return route.fulfill({ json: result });
+    }
+
+    if (path === "/api/pronostic-history") {
+      const status = params.get("status") === "failure" ? "failure" : "success";
+      const items = buildHistoryFixture().filter((item) => item.status === status);
+      return route.fulfill({ json: { items } });
     }
 
     return route.fulfill({ status: 404, json: { error: `Route non simulée : ${path}` } });

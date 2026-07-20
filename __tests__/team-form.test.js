@@ -4,6 +4,10 @@
  * pages/api/analyze.js). Vérifie le calcul buts marqués/encaissés ET la chaîne de
  * forme ("WWDLW", du plus ancien au plus récent, comme football-data.org).
  */
+
+// Hors sujet ici (testé dans pronostic-history.test.js / live-pronostic.test.js).
+jest.mock("../lib/pronosticHistory", () => ({ saveAndVerifyPrediction: jest.fn() }));
+
 const TOKEN = "test-token";
 
 beforeEach(() => {

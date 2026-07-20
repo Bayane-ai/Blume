@@ -4,6 +4,7 @@ import { getLiveMatch } from "../../lib/liveMatchCache";
 import { getHeadToHead } from "../../lib/headToHead";
 import { getScorers } from "../../lib/scorersCache";
 import { buildProbableScorers } from "../../lib/probableScorers";
+import { saveAndVerifyPrediction } from "../../lib/pronosticHistory";
 import { computePronostic, computeLivePronostic } from "../../lib/pronostic";
 import {
   getAllLiveFixtures, findLiveFixtureByTeams, getFixtureEvents, mapApiFootballEvents, mapFixtureToLiveState,
@@ -209,6 +210,31 @@ export default async function handler(req, res) {
       } catch (e) {
         console.error("Erreur événements live (API-Football):", e.message);
         // events reste null : jamais de donnée inventée si la source échoue.
+      }
+    }
+
+    // Historique "Probabilités réussies/échouées" (voir lib/pronosticHistory.js) :
+    // sauvegarde le pronostic la première fois que ce match est analysé, et le classe
+    // Succès/Échec dès qu'on constate qu'il est terminé — automatique, sans action de
+    // l'utilisateur au-delà du simple fait d'avoir consulté cette page au moins une
+    // fois. Jamais fatal pour le reste de la réponse (le pronostic doit toujours être
+    // renvoyé), même si cette fonction échouait d'une façon imprévue par son propre
+    // gestionnaire d'erreurs interne — sécurité redondante, comme pour les événements
+    // live ci-dessus.
+    if (liveMatch) {
+      try {
+        await saveAndVerifyPrediction({
+          matchId,
+          competitionCode,
+          homeTeamName,
+          awayTeamName,
+          matchDate: liveMatch.utcDate || null,
+          prediction: result,
+          matchStatus: liveMatch.status,
+          finalScore: liveMatch.score?.fullTime || null,
+        });
+      } catch (e) {
+        console.error("Erreur historique pronostic:", e.message);
       }
     }
 

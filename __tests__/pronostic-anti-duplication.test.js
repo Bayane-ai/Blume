@@ -6,6 +6,10 @@
  * chiffres, et aucune valeur ne doit être codée en dur : changer les données d'entrée
  * doit changer le résultat.
  */
+
+// Hors sujet ici (testé dans pronostic-history.test.js / live-pronostic.test.js).
+jest.mock("../lib/pronosticHistory", () => ({ saveAndVerifyPrediction: jest.fn() }));
+
 const TOKEN = "test-token";
 
 function mockRes() {
