@@ -1,7 +1,7 @@
 /**
- * pages/api/news.js — interroge les vrais flux RSS football (BBC Sport, Sky Sports,
- * ESPN), dédoublonne, trie par importance, met en cache (jamais une erreur 500 :
- * toujours { articles: [...] }, vide au pire des cas).
+ * pages/api/news.js — interroge les vrais flux RSS football en français (L'Équipe,
+ * Foot Mercato, So Foot), dédoublonne, trie par importance, met en cache (jamais une
+ * erreur 500 : toujours { articles: [...] }, vide au pire des cas).
  */
 function makeRes() {
   return {
@@ -30,7 +30,7 @@ beforeEach(() => {
   jest.resetModules();
 });
 
-test("interroge les trois flux configurés (BBC Sport, Sky Sports, ESPN)", async () => {
+test("interroge les trois flux français configurés (L'Équipe, Foot Mercato, So Foot)", async () => {
   const fetchMock = jest.fn(() => Promise.resolve({ ok: true, text: () => Promise.resolve(rssFor([])) }));
   global.fetch = fetchMock;
 
@@ -41,9 +41,9 @@ test("interroge les trois flux configurés (BBC Sport, Sky Sports, ESPN)", async
   const urls = fetchMock.mock.calls.map((c) => c[0]);
   expect(urls).toEqual(
     expect.arrayContaining([
-      "http://feeds.bbci.co.uk/sport/football/rss.xml",
-      "https://www.skysports.com/rss/12040",
-      "https://www.espn.com/espn/rss/soccer/news",
+      "https://www.lequipe.fr/rss/actu_rss_Football.xml",
+      "https://www.footmercato.net/rss",
+      "https://www.sofoot.com/rss.xml",
     ])
   );
   expect(res.statusCode).toBe(200);
@@ -52,13 +52,13 @@ test("interroge les trois flux configurés (BBC Sport, Sky Sports, ESPN)", async
 
 test("fusionne les vrais articles des différents flux et les trie par importance", async () => {
   global.fetch = jest.fn((url) => {
-    if (url.includes("bbci")) {
+    if (url.includes("lequipe")) {
       return Promise.resolve({
         ok: true,
         text: () => Promise.resolve(rssFor([{ title: "Match amical mineur", link: "https://example.com/minor" }])),
       });
     }
-    if (url.includes("skysports")) {
+    if (url.includes("footmercato")) {
       return Promise.resolve({
         ok: true,
         text: () =>
@@ -89,8 +89,8 @@ test("déduplique un même article (même lien) repris par plusieurs flux", asyn
 
 test("un flux qui échoue ne casse pas les autres : les articles des flux valides restent affichés", async () => {
   global.fetch = jest.fn((url) => {
-    if (url.includes("bbci")) return Promise.reject(new Error("Erreur réseau"));
-    if (url.includes("skysports")) {
+    if (url.includes("lequipe")) return Promise.reject(new Error("Erreur réseau"));
+    if (url.includes("footmercato")) {
       return Promise.resolve({
         ok: true,
         text: () => Promise.resolve(rssFor([{ title: "Article valide", link: "https://example.com/valid" }])),
