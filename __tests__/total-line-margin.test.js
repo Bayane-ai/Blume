@@ -66,6 +66,42 @@ test("corners/cartons jaunes/cartons rouges affichent toujours une option sûre 
   }
 });
 
+// Régression : les lignes corners/cartons jaunes étaient dérivées d'un seuil de
+// confiance fixe (recherche sur la loi de Poisson), qui produisait de larges "paliers"
+// — beaucoup de matchs à l'intensité totale proche mais au rapport de force différent
+// retombaient alors sur EXACTEMENT le même couple de lignes. Remplacé par un écart
+// continu (écart-type réel de la distribution, voir riskLines/spreadLine dans
+// lib/pronostic.js) : sur un lot de profils d'équipes assez variés, la grande majorité
+// doivent désormais afficher des lignes distinctes, pas la même poignée de couples
+// recopiée partout.
+test("sur un lot de profils d'équipes variés, corners/cartons jaunes affichent des lignes distinctes dans la grande majorité des cas — jamais un petit nombre de couples recopiés partout", () => {
+  const profiles = [];
+  for (let homeGoalsFor = 15; homeGoalsFor <= 60; homeGoalsFor += 5) {
+    for (let awayGoalsAgainst = 15; awayGoalsAgainst <= 45; awayGoalsAgainst += 15) {
+      profiles.push({ homeGoalsFor, awayGoalsAgainst });
+    }
+  }
+
+  const results = profiles.map(({ homeGoalsFor, awayGoalsAgainst }, i) => {
+    const result = computePronostic({
+      homeRow: row({ id: i * 2, goalsFor: homeGoalsFor, goalsAgainst: 25 }),
+      awayRow: row({ id: i * 2 + 1, goalsFor: 30, goalsAgainst: awayGoalsAgainst }),
+      homeTeamName: "A", awayTeamName: "B",
+    });
+    return result.markets;
+  });
+
+  for (const key of ["corners", "yellowCards"]) {
+    const distinctLines = new Set(results.map((m) => `${m[key].safe.side}${m[key].safe.line}/${m[key].risky.side}${m[key].risky.line}`));
+    // Repère de non-régression : avant le passage à un écart continu, ce lot de
+    // profils (volontairement dense — des équipes très proches y sont attendues, donc
+    // certains couples se recoupent légitimement) ne produisait qu'une poignée de
+    // couples de lignes recopiés partout. Le seuil ci-dessous vérifie que ce n'est
+    // plus le cas, sans exiger l'impossible (zéro coïncidence entre équipes proches).
+    expect(distinctLines.size).toBeGreaterThan(results.length * 0.35);
+  }
+});
+
 test("quand une marge est affichée, la deuxième ligne est adjacente à la première et dans le MÊME sens (jamais Plus et Moins mélangés)", () => {
   let foundMargin = false;
   for (const market of scanTotalMarkets()) {

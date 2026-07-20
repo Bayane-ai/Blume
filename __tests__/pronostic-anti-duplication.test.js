@@ -171,6 +171,15 @@ describe("Anti-duplication : 3 matchs différents ont 3 pronostics différents",
     const cornersLines = [r1, r2, r3].map((r) => `${r.markets.corners.safe.line}/${r.markets.corners.risky.line}`);
     expect(new Set(cornersLines).size).toBeGreaterThan(1);
 
+    // Régression : le total de corners/cartons ne dépendait QUE du total de buts
+    // attendu (une seule dimension) — deux matchs de total proche mais de rapport de
+    // force différent (Arsenal (fort) vs Fulham (faible), très à sens unique, contre
+    // Real Madrid vs Barcelone, plus disputé) tombaient alors sur les mêmes lignes de
+    // cartons jaunes. Voir balanceGap/cardsBalanceFactor/cornersBalanceFactor dans
+    // lib/pronostic.js, qui ajoutent l'écart de forces comme second signal.
+    const yellowLines = [r1, r2, r3].map((r) => `${r.markets.yellowCards.safe.line}/${r.markets.yellowCards.risky.line}`);
+    expect(new Set(yellowLines).size).toBe(3);
+
     const markets = [r1, r2, r3].map((r) => JSON.stringify(r.markets));
     expect(new Set(markets).size).toBe(3);
 
