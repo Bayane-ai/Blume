@@ -2,12 +2,12 @@ import { marketLabel } from "../lib/marketFormat";
 
 // Bloc de statistiques générique — même structure et même logique pour les 4 blocs
 // demandés (Corners / Hors-jeu / Fautes / Touches, voir lib/pronostic.js,
-// buildMatchStats) : "Total match" (recalculé en direct selon le vrai rythme observé
-// du match, quand la donnée existe), "Total 1"/"Total 2" (domicile/extérieur, même
-// principe), puis une ligne "mi-temps" qui bascule automatiquement de "1ère" à "2ème"
-// période une fois la pause atteinte — sans aucune action de l'utilisateur. Format
-// paris sportifs partout ("Plus de X,5" / "Moins de X,5"), jamais une cote ni un
-// pourcentage.
+// buildMatchStats) : "Total match", "Total 1"/"Total 2" (domicile/extérieur) et une
+// ligne "1ère mi-temps" — toutes calculées UNE SEULE FOIS avant le match et figées
+// pour toute sa durée (référence stable pour parier, voir pages/api/analyze.js et
+// lib/pronosticHistory.js), jamais recalculées à partir de ce qui se passe en direct.
+// Format paris sportifs partout ("Plus de X,5" / "Moins de X,5"), jamais une cote ni
+// un pourcentage.
 export default function LiveStatBlock({ testId, title, block, note }) {
   if (!block) return null;
 

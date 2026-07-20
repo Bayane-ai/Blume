@@ -270,7 +270,7 @@ test.describe("Écran 3 — Analyser un match", () => {
     await expect(page.getByTestId("market-red-card")).toContainText(riskFormat);
 
     // Blocs Corners / Hors-jeu / Fautes / Touches (Total match + Total 1 + Total 2 +
-    // mi-temps, recalculé en direct — même structure pour les 4).
+    // mi-temps, figés une seule fois avant le match — même structure pour les 4).
     const lineFormatSingle = /: (Plus|Moins) de \d+,5$/;
     for (const prefix of ["stat-corners", "stat-offsides", "stat-fouls", "stat-throwins"]) {
       await expect(page.getByTestId(`${prefix}-total`)).toHaveText(lineFormatSingle);

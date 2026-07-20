@@ -4,7 +4,7 @@
  * clairement annoncées comme une estimation statistique (pas une donnée mesurée,
  * l'API football-data.org en plan gratuit ne fournit pas ces stats).
  */
-import { computePronostic, computeLivePronostic } from "../lib/pronostic";
+import { computePronostic } from "../lib/pronostic";
 
 const homeRow = { position: 3, points: 55, form: "WWDLW", playedGames: 20, goalsFor: 40, goalsAgainst: 20, team: { id: 10 } };
 const awayRow = { position: 7, points: 44, form: "LWDDW", playedGames: 20, goalsFor: 28, goalsAgainst: 26, team: { id: 11 } };
@@ -34,14 +34,14 @@ describe("Pronostics détaillés — corners, tirs, cartons", () => {
     expect(result.goals.expectedTotal).toBeCloseTo(result.goals.expectedHome + result.goals.expectedAway, 5);
   });
 
-  test("computeLivePronostic renvoie aussi ces stats détaillées", () => {
-    const live = computeLivePronostic({
-      homeRow, awayRow, homeTeamName: "A", awayTeamName: "B", currentHome: 1, currentAway: 0, minute: 40,
-    });
-    expect(live.extraStats).toBeDefined();
-    expect(live.extraStats.corners.total).toBe(live.extraStats.corners.home + live.extraStats.corners.away);
-    expect(live.statsNote).toEqual(expect.stringContaining("estimation"));
-    expect(live.goals.expectedTotal).toBeCloseTo(live.goals.expectedHome + live.goals.expectedAway, 5);
+  // Pronostics figés (correction demandée après coup) : computePronostic ne dépend
+  // plus jamais du score ou de la minute en direct (computeLivePronostic a été
+  // retiré) — deux appels avec les mêmes équipes doivent donc renvoyer EXACTEMENT le
+  // même résultat, quel que soit le moment où on l'appelle pendant le match.
+  test("deux appels avec les mêmes équipes renvoient un pronostic strictement identique (rien ne dépend du score/de la minute en direct)", () => {
+    const first = computePronostic({ homeRow, awayRow, homeTeamName: "A", awayTeamName: "B" });
+    const second = computePronostic({ homeRow, awayRow, homeTeamName: "A", awayTeamName: "B" });
+    expect(second).toEqual(first);
   });
 
   test("une équipe nettement plus offensive obtient une part plus élevée de corners et de tirs", () => {

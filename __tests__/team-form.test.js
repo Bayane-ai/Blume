@@ -6,7 +6,12 @@
  */
 
 // Hors sujet ici (testé dans pronostic-history.test.js / live-pronostic.test.js).
-jest.mock("../lib/pronosticHistory", () => ({ saveAndVerifyPrediction: jest.fn() }));
+jest.mock("../lib/pronosticHistory", () => ({
+  getFrozenPrediction: jest.fn(() => Promise.resolve(null)),
+  saveFrozenPrediction: jest.fn(),
+  verifyFrozenPrediction: jest.fn(),
+  canPersistMatch: jest.fn(() => true),
+}));
 
 const TOKEN = "test-token";
 

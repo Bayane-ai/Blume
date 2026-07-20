@@ -60,7 +60,7 @@ test("match en direct : \"Moments forts\" est épinglé (sticky) juste après l'
   expect(pinned.querySelector('[data-testid="match-timeline"]')).toBeInTheDocument();
 
   // "Moments forts" apparaît avant le panneau des pronostics dans le document.
-  const pronosticHeading = await screen.findByText("Pronostics en direct");
+  const pronosticHeading = await screen.findByText("Pronostics automatiques");
   expect(pinned.compareDocumentPosition(pronosticHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
   // Pas de deuxième "Moments forts" en bas de page pour un match en direct.

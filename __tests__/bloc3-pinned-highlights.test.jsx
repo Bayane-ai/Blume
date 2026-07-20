@@ -87,7 +87,7 @@ test("le panneau \"Moments forts\" est épinglé (position: sticky, top: 0) just
   // Vient tout de suite après l'en-tête (score) dans le document, avant les pronostics.
   const header = screen.getByTestId("live-score").closest("header");
   expect(header.compareDocumentPosition(pinned) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  const pronosticHeading = await screen.findByText("Pronostics en direct");
+  const pronosticHeading = await screen.findByText("Pronostics automatiques");
   expect(pinned.compareDocumentPosition(pronosticHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 

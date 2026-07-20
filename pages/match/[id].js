@@ -95,7 +95,10 @@ export default function MatchPage() {
 
   const currentStatus = liveState?.status || initialStatus;
 
-  // Rafraîchissement automatique (score + probabilités) tant que le match est en direct.
+  // Rafraîchissement automatique tant que le match est en direct — seuls le score, la
+  // minute et la timeline d'événements en profitent réellement : les pronostics sont
+  // figés côté serveur (voir pages/api/analyze.js) et reviennent donc identiques à
+  // chaque appel pendant tout le match.
   useEffect(() => {
     if (!authorized || !LIVE_STATUSES.includes(currentStatus)) return;
     const intervalId = setInterval(() => runAnalysis(true), LIVE_REFRESH_MS);
@@ -188,13 +191,17 @@ export default function MatchPage() {
 
           <div style={st.divider} />
 
-          <h2 style={st.h2}>{pronostic?.live ? "Pronostics en direct" : "Pronostics automatiques"}</h2>
+          <h2 style={st.h2}>Pronostics automatiques</h2>
           {isLiveNow && (
-            <p style={st.liveHint}>Score et probabilités recalculés automatiquement en continu, dès qu'un but est marqué.</p>
+            <p style={st.liveHint}>
+              Le score et les moments forts se mettent à jour automatiquement. Les pronostics ci-dessous ont été
+              calculés une seule fois avant le match et restent identiques jusqu'à la fin — une référence stable
+              pour parier dessus.
+            </p>
           )}
 
           <button style={st.analyzeBtn} onClick={() => runAnalysis(false)} disabled={loading}>
-            {loading ? "Analyse en cours…" : hasRequested ? "Actualiser les pronostics" : "Analyser ce match"}
+            {loading ? "Analyse en cours…" : hasRequested ? "Actualiser" : "Analyser ce match"}
           </button>
         </section>
 
@@ -211,8 +218,8 @@ export default function MatchPage() {
           </section>
         )}
 
-        {/* Corners / Hors-jeu / Fautes / Touches (Total match + mi-temps, recalculé en
-            direct — voir components/LiveStatBlock.js et
+        {/* Corners / Hors-jeu / Fautes / Touches (Total match + mi-temps, figés comme
+            le reste des pronostics — voir components/LiveStatBlock.js et
             lib/pronostic.js:buildMatchStats), puis cartons, puis passes décisives :
             tout en bas de la page, chacun sa propre carte visuelle, même structure et
             même logique pour les 4 premiers blocs. */}

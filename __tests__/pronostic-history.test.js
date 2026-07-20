@@ -1,11 +1,13 @@
 /**
- * lib/pronosticHistory.js — sauvegarde des pronostics analysés par l'app, vérification
+ * lib/pronosticHistory.js — gel du pronostic affiché (calculé une seule fois, relu tel
+ * quel ensuite, jamais recalculé en direct — voir pages/api/analyze.js), vérification
  * automatique à la fin du match (Succès/Échec jugés sur le 1X2 et le Total de buts,
  * contre le VRAI score final), nettoyage des entrées de plus de 5 jours, revérification
  * des matchs encore "pending" à chaque chargement des pages d'historique.
  */
 import {
-  classifyOutcome, toPredictionSnapshot, saveAndVerifyPrediction, listAndMaintainHistory,
+  classifyOutcome, toPredictionSnapshot, getFrozenPrediction, saveFrozenPrediction,
+  verifyFrozenPrediction, canPersistMatch, listAndMaintainHistory,
 } from "../lib/pronosticHistory";
 import { supabase } from "../lib/supabaseClient";
 import { getLiveMatch } from "../lib/liveMatchCache";
@@ -83,21 +85,44 @@ describe("classifyOutcome — jugé sur le 1X2 et le Total de buts, contre le VR
   });
 });
 
+describe("canPersistMatch — un match connu uniquement d'API-Football (\"af-...\") n'est jamais persisté", () => {
+  test("id numérique/texte normal → true", () => {
+    expect(canPersistMatch("101")).toBe(true);
+  });
+
+  test("id préfixé \"af-\" → false", () => {
+    expect(canPersistMatch("af-900")).toBe(false);
+  });
+
+  test("id absent → false", () => {
+    expect(canPersistMatch(null)).toBe(false);
+    expect(canPersistMatch(undefined)).toBe(false);
+  });
+});
+
 describe("toPredictionSnapshot — ne garde que les champs de prédiction, jamais l'état live éphémère", () => {
-  test("exclut events/matchStatus/matchMinute/matchScore/venue/referee, garde le reste", () => {
+  test("exclut events/matchStatus/matchMinute/matchScore/venue/referee/available/live, garde le reste", () => {
     const result = {
+      home: "Arsenal FC", away: "Chelsea FC",
       probabilities: { home: 50 }, goals: { expectedTotal: 2.5 }, correctScores: [{ score: "1-0" }],
-      extraStats: {}, markets: {}, matchStats: {}, probableScorers: {}, note: "n", statsNote: "s", liveStatNote: "l",
+      extraStats: {}, markets: {}, matchStats: {}, probableScorers: {}, cardProneness: { home: [], away: [] },
+      h2hUsed: 3, note: "n", statsNote: "s", liveStatNote: "l",
       events: [{ type: "GOAL" }], matchStatus: "IN_PLAY", matchMinute: 30, matchScore: { home: 1, away: 0 },
-      venue: "Stade", referee: "Arbitre",
+      venue: "Stade", referee: "Arbitre", available: true, live: true,
     };
     const snapshot = toPredictionSnapshot(result);
     expect(snapshot).toEqual({
+      home: "Arsenal FC", away: "Chelsea FC",
       probabilities: { home: 50 }, goals: { expectedTotal: 2.5 }, correctScores: [{ score: "1-0" }],
-      extraStats: {}, markets: {}, matchStats: {}, probableScorers: {}, note: "n", statsNote: "s", liveStatNote: "l",
+      extraStats: {}, markets: {}, matchStats: {}, probableScorers: {}, cardProneness: { home: [], away: [] },
+      h2hUsed: 3, note: "n", statsNote: "s", liveStatNote: "l",
     });
     expect(snapshot.events).toBeUndefined();
     expect(snapshot.matchStatus).toBeUndefined();
+    expect(snapshot.matchMinute).toBeUndefined();
+    expect(snapshot.matchScore).toBeUndefined();
+    expect(snapshot.venue).toBeUndefined();
+    expect(snapshot.referee).toBeUndefined();
   });
 
   test("renvoie null pour un résultat absent", () => {
@@ -105,61 +130,93 @@ describe("toPredictionSnapshot — ne garde que les champs de prédiction, jamai
   });
 });
 
-describe("saveAndVerifyPrediction", () => {
+describe("getFrozenPrediction — relit le pronostic déjà figé pour un match, sans jamais le recalculer", () => {
+  test("match jamais analysé : aucune ligne, renvoie null", async () => {
+    supabase.from = mockSupabaseFrom({ data: null, error: null });
+
+    const result = await getFrozenPrediction("101");
+    expect(result).toBeNull();
+    expect(supabase.from).toHaveBeenCalledWith("pronostic_history");
+  });
+
+  test("match déjà figé : renvoie la ligne complète (prediction, status, final_score) telle quelle", async () => {
+    const row = { prediction: { probabilities: { home: 60 } }, status: "pending", final_score: null };
+    supabase.from = mockSupabaseFrom({ data: row, error: null });
+
+    const result = await getFrozenPrediction("101");
+    expect(result).toEqual(row);
+  });
+
+  test("ignoré pour un match identifié uniquement par API-Football (\"af-...\"), aucun appel Supabase", async () => {
+    supabase.from = jest.fn();
+    const result = await getFrozenPrediction("af-900");
+    expect(result).toBeNull();
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  test("erreur Supabase : journalisée, renvoie null sans lever d'exception", async () => {
+    supabase.from = mockSupabaseFrom({ data: null, error: { message: "boom" } });
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    const result = await getFrozenPrediction("101");
+    expect(result).toBeNull();
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+});
+
+describe("saveFrozenPrediction — fige le pronostic la toute première fois, jamais recalculé ensuite", () => {
   const basePrediction = {
     probabilities: { home: 60, draw: 25, away: 15 },
     markets: { totalGoals: { line: 2.5, side: "Plus" } },
   };
 
-  test("match pas encore terminé : un seul upsert, status \"pending\"", async () => {
-    supabase.from = mockSupabaseFrom({ error: null });
+  test("match pas encore terminé : un seul upsert, status \"pending\", final_score null", async () => {
+    const upsertCall = jest.fn(() => chainable({ error: null }));
+    supabase.from = jest.fn(() => ({ upsert: upsertCall }));
 
-    await saveAndVerifyPrediction({
+    await saveFrozenPrediction({
       matchId: "101", competitionCode: "PL", homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC",
-      matchDate: "2026-01-01T00:00:00Z", prediction: basePrediction, matchStatus: "IN_PLAY", finalScore: null,
+      matchDate: "2026-01-01T00:00:00Z", result: basePrediction, matchStatus: "IN_PLAY", finalScore: null,
     });
 
     expect(supabase.from).toHaveBeenCalledTimes(1);
     expect(supabase.from).toHaveBeenCalledWith("pronostic_history");
+    expect(upsertCall.mock.calls[0][0]).toMatchObject({ match_id: "101", status: "pending", final_score: null });
+    // Une seule écriture par match, jamais un écrasement d'un pronostic déjà figé.
+    expect(upsertCall.mock.calls[0][1]).toEqual({ onConflict: "match_id", ignoreDuplicates: true });
   });
 
-  test("match terminé, jamais sauvegardé avant : upsert direct avec le statut déjà classé, puis vérifie qu'aucun \"pending\" ne subsiste", async () => {
-    // Le upsert (ignoreDuplicates) insère une ligne déjà classée "success" : le SELECT
-    // qui cherche une ligne encore "pending" ne doit donc rien trouver.
-    supabase.from = mockSupabaseFrom({ error: null }, { data: null, error: null });
+  test("match déjà terminé dès la première analyse (page ouverte après coup) : classé directement, jamais laissé \"pending\" pour rien", async () => {
+    const upsertCall = jest.fn(() => chainable({ error: null }));
+    supabase.from = jest.fn(() => ({ upsert: upsertCall }));
 
-    await saveAndVerifyPrediction({
+    await saveFrozenPrediction({
       matchId: "101", competitionCode: "PL", homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC",
-      matchDate: "2026-01-01T00:00:00Z", prediction: basePrediction, matchStatus: "FINISHED",
-      finalScore: { home: 2, away: 0 },
+      matchDate: "2026-01-01T00:00:00Z", result: basePrediction, matchStatus: "FINISHED",
+      finalScore: { home: 3, away: 0 },
     });
 
-    expect(supabase.from).toHaveBeenCalledTimes(2);
-  });
-
-  test("match terminé, déjà sauvegardé \"pending\" (upsert n'écrit rien) : relu puis classé Succès/Échec", async () => {
-    const updateCall = jest.fn(() => chainable({ error: null }));
-    supabase.from = jest.fn()
-      .mockReturnValueOnce(chainable({ error: null })) // upsert (no-op, ligne déjà existante)
-      .mockReturnValueOnce(chainable({ data: { prediction: basePrediction }, error: null })) // select pending
-      .mockImplementationOnce(() => ({ update: updateCall })); // update
-
-    await saveAndVerifyPrediction({
-      matchId: "101", competitionCode: "PL", homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC",
-      matchDate: "2026-01-01T00:00:00Z", prediction: basePrediction, matchStatus: "FINISHED",
-      finalScore: { home: 2, away: 1 },
-    });
-
-    expect(updateCall).toHaveBeenCalledTimes(1);
-    expect(updateCall.mock.calls[0][0]).toMatchObject({ status: "success", final_score: { home: 2, away: 1 } });
+    expect(upsertCall.mock.calls[0][0]).toMatchObject({ status: "success", final_score: { home: 3, away: 0 } });
   });
 
   test("ignoré pour un match identifié uniquement par API-Football (\"af-...\"), aucun appel Supabase", async () => {
     supabase.from = jest.fn();
 
-    await saveAndVerifyPrediction({
+    await saveFrozenPrediction({
       matchId: "af-999", competitionCode: "PL", homeTeamName: "A", awayTeamName: "B",
-      matchDate: "2026-01-01T00:00:00Z", prediction: basePrediction, matchStatus: "FINISHED", finalScore: { home: 1, away: 0 },
+      matchDate: "2026-01-01T00:00:00Z", result: basePrediction, matchStatus: "FINISHED", finalScore: { home: 1, away: 0 },
+    });
+
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  test("noms d'équipes manquants : aucun appel Supabase (rien d'exploitable à figer)", async () => {
+    supabase.from = jest.fn();
+
+    await saveFrozenPrediction({
+      matchId: "101", competitionCode: "PL", homeTeamName: "", awayTeamName: "Chelsea FC",
+      matchDate: "2026-01-01T00:00:00Z", result: basePrediction, matchStatus: "IN_PLAY", finalScore: null,
     });
 
     expect(supabase.from).not.toHaveBeenCalled();
@@ -169,12 +226,54 @@ describe("saveAndVerifyPrediction", () => {
     supabase.from = mockSupabaseFrom({ error: { message: "boom" } });
     const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
 
-    await expect(saveAndVerifyPrediction({
+    await expect(saveFrozenPrediction({
       matchId: "101", competitionCode: "PL", homeTeamName: "A", awayTeamName: "B",
-      matchDate: "2026-01-01T00:00:00Z", prediction: basePrediction, matchStatus: "IN_PLAY", finalScore: null,
+      matchDate: "2026-01-01T00:00:00Z", result: basePrediction, matchStatus: "IN_PLAY", finalScore: null,
     })).resolves.toBeUndefined();
 
     expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+});
+
+describe("verifyFrozenPrediction — compte-rendu de fin de match : compare le pronostic FIGÉ au vrai résultat", () => {
+  const basePrediction = {
+    probabilities: { home: 60, draw: 25, away: 15 },
+    markets: { totalGoals: { line: 2.5, side: "Plus" } },
+  };
+
+  test("match déjà classé (aucun \"pending\" trouvé) : idempotent, aucune mise à jour", async () => {
+    supabase.from = mockSupabaseFrom({ data: null, error: null });
+
+    await verifyFrozenPrediction("101", { home: 2, away: 0 });
+    expect(supabase.from).toHaveBeenCalledTimes(1);
+  });
+
+  test("match encore \"pending\" : relit le pronostic FIGÉ (jamais un nouveau calcul) et le classe Succès/Échec", async () => {
+    const updateCall = jest.fn(() => chainable({ error: null }));
+    supabase.from = jest.fn()
+      .mockReturnValueOnce(chainable({ data: { prediction: basePrediction }, error: null })) // select pending
+      .mockImplementationOnce(() => ({ update: updateCall })); // update
+
+    await verifyFrozenPrediction("101", { home: 2, away: 1 });
+
+    expect(updateCall).toHaveBeenCalledTimes(1);
+    expect(updateCall.mock.calls[0][0]).toMatchObject({ status: "success", final_score: { home: 2, away: 1 } });
+  });
+
+  test("ignoré pour un match identifié uniquement par API-Football (\"af-...\"), aucun appel Supabase", async () => {
+    supabase.from = jest.fn();
+
+    await verifyFrozenPrediction("af-999", { home: 1, away: 0 });
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  test("erreur Supabase à la lecture : journalisée, ne lève jamais d'exception, aucune mise à jour", async () => {
+    supabase.from = mockSupabaseFrom({ data: null, error: { message: "boom" } });
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(verifyFrozenPrediction("101", { home: 2, away: 0 })).resolves.toBeUndefined();
+    expect(supabase.from).toHaveBeenCalledTimes(1);
     errorSpy.mockRestore();
   });
 });

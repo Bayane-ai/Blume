@@ -1,6 +1,6 @@
 const { liveMatches, upcomingByCompetition, finishedMatch, standingsByCompetition } = require("./fixtures");
 const { COMPETITIONS } = require("../lib/competitions");
-const { computePronostic, computeLivePronostic } = require("../lib/pronostic");
+const { computePronostic } = require("../lib/pronostic");
 const { classifyOutcome, toPredictionSnapshot } = require("../lib/pronosticHistory");
 const { isBettableCompetitionName } = require("../lib/bettableFilter");
 const { buildProbableScorers } = require("../lib/probableScorers");
@@ -154,6 +154,11 @@ async function installApiMocks(page) {
       // pages/api/analyze.js en production — plutôt qu'un pronostic générique
       // identique pour tous les matchs : nécessaire pour vérifier en conditions
       // réelles (navigateur) que chaque match a bien SES PROPRES chiffres (PROMPT 5).
+      // Pronostics figés (correction demandée après coup) : computePronostic ne dépend
+      // jamais du score/de la minute en direct, donc l'appeler à chaque requête (sans
+      // persistance côté mock) reproduit déjà fidèlement le comportement figé attendu
+      // — un match donné (mêmes homeRow/awayRow/noms) renvoie toujours EXACTEMENT le
+      // même pronostic, quel que soit le score en direct au moment de l'appel.
       const matchId = Number(params.get("matchId"));
       const live = liveMatches.find((m) => m.id === matchId);
       const competitionCode = params.get("competitionCode");
@@ -166,13 +171,8 @@ async function installApiMocks(page) {
       const homeRow = table.find((r) => String(r.team.id) === homeTeamId) || null;
       const awayRow = table.find((r) => String(r.team.id) === awayTeamId) || null;
 
-      const result = live
-        ? computeLivePronostic({
-            homeRow, awayRow, homeTeamName, awayTeamName,
-            currentHome: live.score.fullTime.home, currentAway: live.score.fullTime.away, minute: live.minute,
-            status: live.status,
-          })
-        : computePronostic({ homeRow, awayRow, homeTeamName, awayTeamName });
+      const result = computePronostic({ homeRow, awayRow, homeTeamName, awayTeamName });
+      result.live = Boolean(live && (live.status === "IN_PLAY" || live.status === "PAUSED"));
 
       if (live) {
         result.matchStatus = live.status;

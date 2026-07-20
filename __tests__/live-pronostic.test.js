@@ -1,62 +1,45 @@
 /**
- * Vérifie que les pronostics d'un match EN COURS sont recalculés à partir du score
- * réel et de la minute de jeu (pas seulement les probabilités pré-match figées), et
- * que /api/analyze relit systématiquement l'état du match depuis l'API (jamais de
- * valeur mise en cache ou transmise par le client sans vérification).
+ * Vérifie que /api/analyze relit systématiquement le score/la minute/le statut du
+ * match EN COURS depuis l'API (jamais de valeur mise en cache côté client sans
+ * vérification), MAIS que les lignes de pronostics elles-mêmes (probabilités, buts
+ * attendus, corners/hors-jeu/fautes/touches, etc.) restent strictement figées pendant
+ * toute la durée du match — voir lib/pronosticHistory.js (mécanisme de gel) et
+ * lib/pronostic.js (computeLivePronostic, qui recalculait ces lignes à partir du
+ * score/de la minute en direct, a été retiré à la demande explicite de l'utilisateur).
  */
-import { computePronostic, computeLivePronostic } from "../lib/pronostic";
+import { computePronostic } from "../lib/pronostic";
 
-// La sauvegarde/vérification de l'historique (voir describe "historique des
-// pronostics" plus bas) est mockée pour tous les AUTRES tests de ce fichier, qui ne
-// s'y intéressent pas — évite un appel Supabase réel (donc un rejet bruyant du mock
-// fetch strict de chaque test) à chaque match "IN_PLAY"/"PAUSED"/"FINISHED" simulé ici.
-const saveAndVerifyPrediction = jest.fn();
-jest.mock("../lib/pronosticHistory", () => ({ saveAndVerifyPrediction: (...a) => saveAndVerifyPrediction(...a) }));
+// La sauvegarde/relecture/vérification du pronostic figé (voir describe "pronostics
+// figés" plus bas) est mockée pour tous les AUTRES tests de ce fichier, qui ne s'y
+// intéressent pas — évite un appel Supabase réel à chaque match "IN_PLAY"/"PAUSED"/
+// "FINISHED" simulé ici. Les mocks délèguent à des jest.fn() déclarés hors de la
+// factory : jest.resetModules() (utilisé abondamment ci-dessous pour simuler un
+// nouveau cycle d'actualisation) recharge le module mocké, mais ces jest.fn()
+// externes, eux, survivent — ce qui permet de simuler la persistance d'un pronostic
+// figé d'un appel à l'autre.
+const getFrozenPrediction = jest.fn(() => Promise.resolve(null));
+const saveFrozenPrediction = jest.fn(() => Promise.resolve());
+const verifyFrozenPrediction = jest.fn(() => Promise.resolve());
+const canPersistMatch = jest.fn(() => true);
+
+jest.mock("../lib/pronosticHistory", () => ({
+  getFrozenPrediction: (...a) => getFrozenPrediction(...a),
+  saveFrozenPrediction: (...a) => saveFrozenPrediction(...a),
+  verifyFrozenPrediction: (...a) => verifyFrozenPrediction(...a),
+  canPersistMatch: (...a) => canPersistMatch(...a),
+}));
 
 beforeEach(() => {
-  saveAndVerifyPrediction.mockClear();
+  getFrozenPrediction.mockReset().mockResolvedValue(null);
+  saveFrozenPrediction.mockReset().mockResolvedValue();
+  verifyFrozenPrediction.mockReset().mockResolvedValue();
+  canPersistMatch.mockReset().mockReturnValue(true);
 });
 
 const homeRow = { position: 3, points: 55, form: "WWDLW", playedGames: 20, goalsFor: 40, goalsAgainst: 20, team: { id: 10 } };
 const awayRow = { position: 7, points: 44, form: "LWDDW", playedGames: 20, goalsFor: 28, goalsAgainst: 26, team: { id: 11 } };
 
-describe("computeLivePronostic — les probabilités suivent le score réel", () => {
-  test("à 0-0 en début de match, les probabilités restent proches du pronostic pré-match", () => {
-    const prematch = computePronostic({ homeRow, awayRow, homeTeamName: "A", awayTeamName: "B" });
-    const live = computeLivePronostic({ homeRow, awayRow, homeTeamName: "A", awayTeamName: "B", currentHome: 0, currentAway: 0, minute: 1 });
-    expect(live.available).toBe(true);
-    expect(live.live).toBe(true);
-    expect(Math.abs(live.probabilities.home - prematch.probabilities.home)).toBeLessThan(5);
-  });
-
-  test("l'équipe qui mène largement voit sa probabilité de victoire nettement augmenter", () => {
-    const level = computeLivePronostic({ homeRow, awayRow, homeTeamName: "A", awayTeamName: "B", currentHome: 0, currentAway: 0, minute: 60 });
-    const leading = computeLivePronostic({ homeRow, awayRow, homeTeamName: "A", awayTeamName: "B", currentHome: 3, currentAway: 0, minute: 60 });
-    expect(leading.probabilities.home).toBeGreaterThan(level.probabilities.home);
-    expect(leading.probabilities.away).toBeLessThan(level.probabilities.away);
-  });
-
-  test("changer le score change bien les probabilités (jamais figées au pré-match)", () => {
-    const scoreA = computeLivePronostic({ homeRow, awayRow, homeTeamName: "A", awayTeamName: "B", currentHome: 1, currentAway: 0, minute: 70 });
-    const scoreB = computeLivePronostic({ homeRow, awayRow, homeTeamName: "A", awayTeamName: "B", currentHome: 1, currentAway: 2, minute: 70 });
-    expect(scoreA.probabilities.home).not.toBeCloseTo(scoreB.probabilities.home, 1);
-    expect(scoreA.probabilities.away).not.toBeCloseTo(scoreB.probabilities.away, 1);
-  });
-
-  test("en fin de match, le score actuel détermine quasi entièrement le résultat (plus de temps pour changer)", () => {
-    const live = computeLivePronostic({ homeRow, awayRow, homeTeamName: "A", awayTeamName: "B", currentHome: 2, currentAway: 0, minute: 90 });
-    expect(live.probabilities.home).toBeGreaterThan(90);
-    expect(live.correctScores[0].score).toBe("2-0");
-  });
-
-  test("les buts attendus (score final estimé) intègrent le score déjà marqué", () => {
-    const live = computeLivePronostic({ homeRow, awayRow, homeTeamName: "A", awayTeamName: "B", currentHome: 2, currentAway: 1, minute: 80 });
-    expect(live.goals.expectedHome).toBeGreaterThanOrEqual(2);
-    expect(live.goals.expectedAway).toBeGreaterThanOrEqual(1);
-  });
-});
-
-describe("/api/analyze — relit toujours l'état du match depuis l'API pour un match en direct", () => {
+describe("/api/analyze — relit toujours le score/la minute/le statut depuis l'API pour un match en direct", () => {
   const TOKEN = "test-token";
 
   function mockRes() {
@@ -93,7 +76,7 @@ describe("/api/analyze — relit toujours l'état du match depuis l'API pour un 
     });
   }
 
-  test("un match IN_PLAY renvoie un pronostic live basé sur le score/minute lus à l'instant de la requête", async () => {
+  test("un match IN_PLAY renvoie bien le score/la minute lus à l'instant de la requête", async () => {
     global.fetch = mockFetchFor({ status: "IN_PLAY", minute: 63, score: { fullTime: { home: 2, away: 0 } } });
 
     const { default: handler } = await import("../pages/api/analyze.js");
@@ -112,7 +95,11 @@ describe("/api/analyze — relit toujours l'état du match depuis l'API pour un 
     expect(res.setHeader).toHaveBeenCalledWith("Cache-Control", expect.stringContaining("s-maxage"));
   });
 
-  test("deux requêtes avec un score différent (avant/après un but) donnent des probabilités différentes", async () => {
+  // Correction demandée après coup : les probabilités (et toutes les autres lignes de
+  // pronostics) ne dépendent plus jamais du score en direct — un but marqué entre deux
+  // sondages du même match ne doit RIEN changer aux pronostics déjà figés, seulement
+  // au score affiché.
+  test("un but marqué entre deux sondages change le score affiché mais jamais les probabilités déjà figées", async () => {
     global.fetch = mockFetchFor({ status: "IN_PLAY", minute: 50, score: { fullTime: { home: 0, away: 0 } } });
     const { default: handlerBefore } = await import("../pages/api/analyze.js");
     const resBefore = mockRes();
@@ -120,6 +107,12 @@ describe("/api/analyze — relit toujours l'état du match depuis l'API pour un 
       { query: { matchId: "777", competitionCode: "PL", homeTeamId: "10", awayTeamId: "11", homeTeamName: "A", awayTeamName: "B" } },
       resBefore
     );
+
+    // Premier sondage : aucun pronostic figé pour ce match, donc calculé et sauvegardé.
+    expect(saveFrozenPrediction).toHaveBeenCalledTimes(1);
+    const frozenResult = saveFrozenPrediction.mock.calls[0][0].result;
+    // Simule la relecture, au sondage suivant, du pronostic entre-temps figé en base.
+    getFrozenPrediction.mockResolvedValueOnce({ prediction: frozenResult, status: "pending", final_score: null });
 
     // Simule un nouveau cycle d'actualisation une fois le cache court (partagé entre
     // visiteurs) expiré : on repart d'un module frais, donc un nouvel appel en amont.
@@ -133,8 +126,12 @@ describe("/api/analyze — relit toujours l'état du match depuis l'API pour un 
       resAfter
     );
 
-    expect(resAfter.body.probabilities.home).toBeGreaterThan(resBefore.body.probabilities.home);
     expect(resAfter.body.matchScore).toEqual({ home: 1, away: 0 });
+    expect(resAfter.body.matchMinute).toBe(51);
+    // Le score a changé, mais pas les pronostics : ils servent de référence stable.
+    expect(resAfter.body.probabilities).toEqual(resBefore.body.probabilities);
+    expect(resAfter.body.goals).toEqual(resBefore.body.goals);
+    expect(resAfter.body.correctScores).toEqual(resBefore.body.correctScores);
   });
 
   test("deux requêtes rapprochées (dans la fenêtre de cache partagé) réutilisent le même appel en amont", async () => {
@@ -427,9 +424,8 @@ describe("/api/analyze — événements live réels (API-Football), en compléme
   });
 });
 
-describe("/api/analyze — corners/hors-jeu/fautes en direct (API-Football, best-effort)", () => {
+describe("/api/analyze — corners/hors-jeu/fautes/touches : jamais recalculés en direct (pronostics figés)", () => {
   const TOKEN = "test-token";
-  const AF_KEY = "test-api-football-key";
 
   function mockRes() {
     const res = {};
@@ -442,17 +438,61 @@ describe("/api/analyze — corners/hors-jeu/fautes en direct (API-Football, best
   beforeEach(() => {
     jest.resetModules();
     process.env.FOOTBALL_DATA_TOKEN = TOKEN;
-    process.env.API_FOOTBALL_KEY = AF_KEY;
-  });
-
-  afterEach(() => {
-    delete process.env.API_FOOTBALL_KEY;
   });
 
   const baseQuery = { matchId: "777", competitionCode: "PL", homeTeamId: "10", awayTeamId: "11", homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC" };
 
-  function mockFetchWithStats({ apiFootballStatistics }) {
+  function mockFetch(matchState) {
     return jest.fn((url) => {
+      if (url.includes("head2head")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ aggregates: { numberOfMatches: 0 } }) });
+      }
+      if (url.includes("/matches/777")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(matchState) });
+      }
+      if (url.includes("/standings")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [{ table: [homeRow, awayRow] }] }) });
+      }
+      return Promise.reject(new Error(`URL inattendue : ${url}`));
+    });
+  }
+
+  test("les blocs corners/hors-jeu/fautes/touches restent identiques entre deux sondages du même match, même après un but", async () => {
+    global.fetch = mockFetch({ status: "IN_PLAY", minute: 60, score: { fullTime: { home: 1, away: 0 } } });
+    const { default: handlerBefore } = await import("../pages/api/analyze.js");
+    const resBefore = mockRes();
+    await handlerBefore({ query: baseQuery }, resBefore);
+
+    const frozenResult = saveFrozenPrediction.mock.calls[0][0].result;
+    getFrozenPrediction.mockResolvedValueOnce({ prediction: frozenResult, status: "pending", final_score: null });
+
+    jest.resetModules();
+    process.env.FOOTBALL_DATA_TOKEN = TOKEN;
+    global.fetch = mockFetch({ status: "IN_PLAY", minute: 75, score: { fullTime: { home: 2, away: 0 } } });
+    const { default: handlerAfter } = await import("../pages/api/analyze.js");
+    const resAfter = mockRes();
+    await handlerAfter({ query: baseQuery }, resAfter);
+
+    expect(resAfter.body.matchStats).toEqual(resBefore.body.matchStats);
+  });
+
+  test("la ligne mi-temps affiche toujours \"1ère mi-temps\", y compris une fois la pause passée (elle ne bascule plus jamais)", async () => {
+    global.fetch = mockFetch({ status: "PAUSED", minute: 45, score: { fullTime: { home: 1, away: 0 } } });
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    const res = mockRes();
+    await handler({ query: baseQuery }, res);
+
+    expect(res.body.matchStats.corners.half.label).toBe("1ère mi-temps");
+    expect(res.body.matchStats.offsides.half.label).toBe("1ère mi-temps");
+    expect(res.body.matchStats.fouls.half.label).toBe("1ère mi-temps");
+    expect(res.body.matchStats.throwIns.half.label).toBe("1ère mi-temps");
+  });
+
+  test("l'API-Football fixtures/statistics n'est jamais interrogée : ces lignes ne dépendent plus d'un décompte en direct", async () => {
+    const AF_KEY = "test-api-football-key";
+    process.env.API_FOOTBALL_KEY = AF_KEY;
+    const fetchMock = jest.fn((url) => {
       if (url.includes("head2head")) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ aggregates: { numberOfMatches: 0 } }) });
       }
@@ -462,73 +502,20 @@ describe("/api/analyze — corners/hors-jeu/fautes en direct (API-Football, best
       if (url.includes("/standings")) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [{ table: [homeRow, awayRow] }] }) });
       }
-      if (url.includes("fixtures?live=all")) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ response: [{ fixture: { id: 555 }, teams: { home: { id: 100, name: "Arsenal" }, away: { id: 101, name: "Chelsea" } } }] }),
-        });
-      }
-      if (url.includes("fixtures/statistics")) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: apiFootballStatistics }) });
-      }
-      if (url.includes("fixtures/events")) {
+      if (url.includes("fixtures?live=all") || url.includes("fixtures/events")) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) });
       }
       return Promise.reject(new Error(`URL inattendue : ${url}`));
     });
-  }
-
-  test("un vrai décompte de corners/hors-jeu/fautes (API-Football) est bien pris en compte dans matchStats, avec l'id football-data.org de l'équipe", async () => {
-    global.fetch = mockFetchWithStats({
-      apiFootballStatistics: [
-        { team: { id: 100 }, statistics: [{ type: "Corner Kicks", value: 9 }, { type: "Offsides", value: 3 }, { type: "Fouls", value: 8 }] },
-        { team: { id: 101 }, statistics: [{ type: "Corner Kicks", value: 4 }, { type: "Offsides", value: 1 }, { type: "Fouls", value: 6 }] },
-      ],
-    });
+    global.fetch = fetchMock;
 
     const { default: handler } = await import("../pages/api/analyze.js");
     const res = mockRes();
     await handler({ query: baseQuery }, res);
 
+    delete process.env.API_FOOTBALL_KEY;
     expect(res.body.matchStats).toBeDefined();
-    // 13 corners réels déjà observés à la 60e minute : le total projeté doit rester
-    // au moins aussi élevé que ce vrai décompte (jamais moins que ce qui a déjà eu lieu).
-    expect(res.body.matchStats.corners.total.line).toBeGreaterThanOrEqual(12.5);
-  });
-
-  test("statistiques API-Football indisponibles (réponse vide) : matchStats retombe honnêtement sur l'estimation pré-match, sans planter", async () => {
-    global.fetch = mockFetchWithStats({ apiFootballStatistics: [] });
-
-    const { default: handler } = await import("../pages/api/analyze.js");
-    const res = mockRes();
-    await handler({ query: baseQuery }, res);
-
-    expect(res.body.matchStats).toBeDefined();
-    expect(res.body.matchStats.corners.total.side).toMatch(/^Plus|Moins$/);
-  });
-
-  test("la ligne mi-temps bascule sur \"2ème mi-temps\" une fois la 1ère mi-temps terminée (statut PAUSED)", async () => {
-    global.fetch = jest.fn((url) => {
-      if (url.includes("head2head")) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ aggregates: { numberOfMatches: 0 } }) });
-      }
-      if (url.includes("/matches/777")) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: "PAUSED", minute: 45, score: { fullTime: { home: 1, away: 0 } } }) });
-      }
-      if (url.includes("/standings")) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [{ table: [homeRow, awayRow] }] }) });
-      }
-      if (url.includes("fixtures?live=all") || url.includes("fixtures/statistics") || url.includes("fixtures/events")) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) });
-      }
-      return Promise.reject(new Error(`URL inattendue : ${url}`));
-    });
-
-    const { default: handler } = await import("../pages/api/analyze.js");
-    const res = mockRes();
-    await handler({ query: baseQuery }, res);
-
-    expect(res.body.matchStats.corners.half.label).toBe("2ème mi-temps");
+    expect(fetchMock.mock.calls.some(([url]) => url.includes("fixtures/statistics"))).toBe(false);
   });
 });
 
@@ -745,7 +732,7 @@ describe("/api/analyze — joueurs susceptibles de prendre un carton (best-effor
   });
 });
 
-describe("/api/analyze — sauvegarde/vérification de l'historique des pronostics (boutons Probabilités réussies/échouées)", () => {
+describe("/api/analyze — pronostics figés : sauvegarde au premier calcul, relecture ensuite, compte-rendu à FINISHED", () => {
   const TOKEN = "test-token";
 
   function mockRes() {
@@ -779,51 +766,63 @@ describe("/api/analyze — sauvegarde/vérification de l'historique des pronosti
     });
   }
 
-  test("match en direct : sauvegarde le pronostic avec matchStatus/finalScore réels, pas encore terminé", async () => {
+  test("aucun pronostic figé pour ce match : le calcule une seule fois et le sauvegarde, avec matchStatus/finalScore réels", async () => {
     global.fetch = mockFetch({ status: "IN_PLAY", minute: 30, utcDate: "2026-01-01T15:00:00Z", score: { fullTime: { home: 1, away: 0 } } });
 
     const { default: handler } = await import("../pages/api/analyze.js");
     await handler({ query: baseQuery }, mockRes());
 
-    expect(saveAndVerifyPrediction).toHaveBeenCalledTimes(1);
-    expect(saveAndVerifyPrediction.mock.calls[0][0]).toMatchObject({
+    expect(getFrozenPrediction).toHaveBeenCalledWith("777");
+    expect(saveFrozenPrediction).toHaveBeenCalledTimes(1);
+    expect(saveFrozenPrediction.mock.calls[0][0]).toMatchObject({
       matchId: "777", competitionCode: "PL", homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC",
       matchDate: "2026-01-01T15:00:00Z", matchStatus: "IN_PLAY", finalScore: { home: 1, away: 0 },
     });
-    expect(saveAndVerifyPrediction.mock.calls[0][0].prediction).toBeDefined();
+    expect(saveFrozenPrediction.mock.calls[0][0].result).toBeDefined();
   });
 
-  test("match terminé : matchStatus \"FINISHED\" et le vrai score final sont transmis pour la vérification", async () => {
-    global.fetch = mockFetch({ status: "FINISHED", minute: 90, utcDate: "2026-01-01T15:00:00Z", score: { fullTime: { home: 3, away: 1 } } });
-
-    const { default: handler } = await import("../pages/api/analyze.js");
-    await handler({ query: baseQuery }, mockRes());
-
-    expect(saveAndVerifyPrediction).toHaveBeenCalledTimes(1);
-    expect(saveAndVerifyPrediction.mock.calls[0][0]).toMatchObject({
-      matchStatus: "FINISHED", finalScore: { home: 3, away: 1 },
-    });
-  });
-
-  test("match pas encore commencé (SCHEDULED) : sauvegarde quand même le pronostic pré-match, status \"pending\" implicite", async () => {
-    global.fetch = mockFetch({ status: "SCHEDULED", minute: null, utcDate: "2026-01-05T15:00:00Z", score: { fullTime: { home: null, away: null } } });
-
-    const { default: handler } = await import("../pages/api/analyze.js");
-    await handler({ query: baseQuery }, mockRes());
-
-    expect(saveAndVerifyPrediction).toHaveBeenCalledTimes(1);
-    expect(saveAndVerifyPrediction.mock.calls[0][0]).toMatchObject({ matchStatus: "SCHEDULED" });
-  });
-
-  test("une erreur dans la sauvegarde de l'historique ne fait jamais planter /api/analyze (le pronostic reste renvoyé)", async () => {
-    global.fetch = mockFetch({ status: "IN_PLAY", minute: 30, utcDate: "2026-01-01T15:00:00Z", score: { fullTime: { home: 1, away: 0 } } });
-    saveAndVerifyPrediction.mockRejectedValueOnce(new Error("boom"));
+  test("un pronostic déjà figé pour ce match : relu tel quel, jamais recalculé ni resauvegardé, même si le score a bougé", async () => {
+    const frozenPrediction = { probabilities: { home: 77, draw: 15, away: 8 }, goals: { expectedTotal: 2.4 } };
+    getFrozenPrediction.mockResolvedValueOnce({ prediction: frozenPrediction, status: "pending", final_score: null });
+    global.fetch = mockFetch({ status: "IN_PLAY", minute: 60, utcDate: "2026-01-01T15:00:00Z", score: { fullTime: { home: 2, away: 0 } } });
 
     const { default: handler } = await import("../pages/api/analyze.js");
     const res = mockRes();
     await handler({ query: baseQuery }, res);
 
-    expect(res.status).not.toHaveBeenCalledWith(500);
-    expect(res.body.available).toBe(true);
+    expect(res.body.probabilities).toEqual(frozenPrediction.probabilities);
+    expect(res.body.goals).toEqual(frozenPrediction.goals);
+    expect(saveFrozenPrediction).not.toHaveBeenCalled();
+    // Le score/la minute, eux, restent bien lus en direct même si le pronostic est figé.
+    expect(res.body.matchScore).toEqual({ home: 2, away: 0 });
+    expect(res.body.matchMinute).toBe(60);
+  });
+
+  test("match terminé : le compte-rendu de fin de match compare le pronostic figé au vrai score final", async () => {
+    global.fetch = mockFetch({ status: "FINISHED", minute: 90, utcDate: "2026-01-01T15:00:00Z", score: { fullTime: { home: 3, away: 1 } } });
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    await handler({ query: baseQuery }, mockRes());
+
+    expect(verifyFrozenPrediction).toHaveBeenCalledWith("777", { home: 3, away: 1 });
+  });
+
+  test("match pas encore terminé : jamais de compte-rendu de fin de match", async () => {
+    global.fetch = mockFetch({ status: "IN_PLAY", minute: 30, utcDate: "2026-01-01T15:00:00Z", score: { fullTime: { home: 1, away: 0 } } });
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    await handler({ query: baseQuery }, mockRes());
+
+    expect(verifyFrozenPrediction).not.toHaveBeenCalled();
+  });
+
+  test("match pas encore commencé (SCHEDULED) : sauvegarde quand même le pronostic pré-match dès la première consultation", async () => {
+    global.fetch = mockFetch({ status: "SCHEDULED", minute: null, utcDate: "2026-01-05T15:00:00Z", score: { fullTime: { home: null, away: null } } });
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    await handler({ query: baseQuery }, mockRes());
+
+    expect(saveFrozenPrediction).toHaveBeenCalledTimes(1);
+    expect(saveFrozenPrediction.mock.calls[0][0]).toMatchObject({ matchStatus: "SCHEDULED" });
   });
 });

@@ -4,11 +4,11 @@ import { getLiveMatch } from "../../lib/liveMatchCache";
 import { getHeadToHead } from "../../lib/headToHead";
 import { getScorers } from "../../lib/scorersCache";
 import { buildProbableScorers } from "../../lib/probableScorers";
-import { saveAndVerifyPrediction } from "../../lib/pronosticHistory";
-import { computePronostic, computeLivePronostic } from "../../lib/pronostic";
+import { getFrozenPrediction, saveFrozenPrediction, verifyFrozenPrediction, canPersistMatch } from "../../lib/pronosticHistory";
+import { computePronostic } from "../../lib/pronostic";
 import {
   getAllLiveFixtures, findLiveFixtureByTeams, getFixtureEvents, mapApiFootballEvents, mapFixtureToLiveState,
-  findApiFootballTeamId, getTeamCardProneness, getFixtureStatistics, mapFixtureStatistics,
+  findApiFootballTeamId, getTeamCardProneness,
 } from "../../lib/apiFootball";
 
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
@@ -55,6 +55,57 @@ async function resolveCardProneness(teamName, key) {
   return getTeamCardProneness(teamId, key);
 }
 
+// Calcule le pronostic COMPLET une seule fois — jamais à partir du score ou de la
+// minute en direct (voir lib/pronostic.js, computePronostic) — pour un match qui n'a
+// pas encore de pronostic figé. Fait tout le travail coûteux (classement, forme
+// récente, confrontations directes, buteurs probables, joueurs susceptibles de
+// prendre un carton) que le chemin "déjà figé" évite complètement.
+async function computeFreshPrediction({ matchId, competitionCode, homeTeamId, awayTeamId, homeTeamName, awayTeamName, token, apiFootballKey }) {
+  const isApiFootballOnlyId = typeof matchId === "string" && matchId.startsWith("af-");
+  const table = isApiFootballOnlyId ? null : await getStandingsTable(competitionCode, token);
+
+  // Le classement (`table`) sert de repli et de contexte d'affichage (position,
+  // points) — resolveTeamStats calcule d'abord chaque équipe à partir de SES
+  // propres derniers matchs joués (voir lib/teamForm.js), jamais mélangés entre
+  // les deux équipes. Une équipe absente du classement (phase à élimination
+  // directe, coupe sans tableau, etc.) reste donc analysable normalement.
+  // Les vraies confrontations directes entre CES deux équipes (lib/headToHead.js)
+  // affinent ensuite le résultat quand l'API en fournit assez (voir lib/pronostic.js).
+  const homeStandingsRow = table?.find((r) => String(r.team.id) === String(homeTeamId));
+  const awayStandingsRow = table?.find((r) => String(r.team.id) === String(awayTeamId));
+  const [homeResolved, awayResolved, h2h, scorers, homeCardProneness, awayCardProneness] = await Promise.all([
+    resolveTeamStats(homeTeamId, homeStandingsRow, token),
+    resolveTeamStats(awayTeamId, awayStandingsRow, token),
+    matchId && !isApiFootballOnlyId ? getHeadToHead(matchId, token) : Promise.resolve(null),
+    // "Buteurs probables" (voir lib/probableScorers.js) : indisponible pour un match
+    // connu uniquement d'API-Football (hors compétitions football-data.org).
+    isApiFootballOnlyId ? Promise.resolve(null) : getScorers(competitionCode, token),
+    resolveCardProneness(homeTeamName, apiFootballKey),
+    resolveCardProneness(awayTeamName, apiFootballKey),
+  ]);
+
+  const result = computePronostic({
+    homeRow: homeResolved.stats,
+    awayRow: awayResolved.stats,
+    homeTeamName,
+    awayTeamName,
+    homeSource: homeResolved.source,
+    awaySource: awayResolved.source,
+    h2h,
+  });
+
+  // "Buteurs probables" : filtré sur les vrais joueurs de CHAQUE équipe (jamais
+  // mélangés), à partir du classement des buteurs/passeurs réels de la compétition —
+  // voir lib/probableScorers.js pour la logique et son honnêteté sur ce que la donnée
+  // représente réellement (total saison, pas match par match).
+  result.probableScorers = buildProbableScorers(scorers, homeTeamId, awayTeamId);
+  // Best-effort (API-Football) : voir lib/apiFootball.js — jamais un joueur inventé,
+  // liste vide et honnête ("Indisponible" côté interface) si la source ne répond pas.
+  result.cardProneness = { home: homeCardProneness, away: awayCardProneness };
+
+  return result;
+}
+
 export default async function handler(req, res) {
   const token = process.env.FOOTBALL_DATA_TOKEN;
   const { matchId, competitionCode, homeTeamId, awayTeamId, homeTeamName, awayTeamName } = req.query;
@@ -71,12 +122,12 @@ export default async function handler(req, res) {
     // numérotés indépendamment et pourraient par coïncidence désigner un tout autre match.
     const isApiFootballOnlyId = typeof matchId === "string" && matchId.startsWith("af-");
 
-    // Le score/la minute viennent toujours de l'API, jamais d'une valeur transmise par
-    // le client. Le cache de quelques secondes ici n'est pas "figé" : il sert seulement
-    // à mutualiser les appels entre plusieurs visiteurs qui suivent le même match en
-    // même temps, pour pouvoir actualiser souvent sans dépasser le quota de l'API
-    // (sinon les requêtes échouent et le pronostic retombe silencieusement sur
-    // l'estimation pré-match au lieu de suivre le score réel).
+    // Le score/la minute/le statut viennent toujours de l'API, jamais d'une valeur
+    // transmise par le client — CE SONT LES SEULES CHOSES qui restent réellement en
+    // direct sur cette page (avec le chronomètre et la timeline d'événements) : les
+    // lignes de pronostics, elles, sont figées (voir plus bas). Le cache de quelques
+    // secondes ici n'est pas "figé" : il sert seulement à mutualiser les appels entre
+    // plusieurs visiteurs qui suivent le même match en même temps.
     let liveMatch = matchId && !isApiFootballOnlyId ? await getLiveMatch(matchId, token) : null;
 
     // football-data.org ne connaît pas ce match (hors de ses compétitions couvertes, ou
@@ -89,87 +140,37 @@ export default async function handler(req, res) {
       if (apiFootballFixture) liveMatch = mapFixtureToLiveState(apiFootballFixture);
     }
 
-    const table = isApiFootballOnlyId ? null : await getStandingsTable(competitionCode, token);
-
-    // Le classement (`table`) sert de repli et de contexte d'affichage (position,
-    // points) — resolveTeamStats calcule d'abord chaque équipe à partir de SES
-    // propres derniers matchs joués (voir lib/teamForm.js), jamais mélangés entre
-    // les deux équipes. Une équipe absente du classement (phase à élimination
-    // directe, coupe sans tableau, etc.) reste donc analysable normalement.
-    // Les vraies confrontations directes entre CES deux équipes (lib/headToHead.js)
-    // affinent ensuite le résultat quand l'API en fournit assez (voir lib/pronostic.js).
-    const homeStandingsRow = table?.find((r) => String(r.team.id) === String(homeTeamId));
-    const awayStandingsRow = table?.find((r) => String(r.team.id) === String(awayTeamId));
-    const [homeResolved, awayResolved, h2h, scorers, homeCardProneness, awayCardProneness] = await Promise.all([
-      resolveTeamStats(homeTeamId, homeStandingsRow, token),
-      resolveTeamStats(awayTeamId, awayStandingsRow, token),
-      matchId && !isApiFootballOnlyId ? getHeadToHead(matchId, token) : Promise.resolve(null),
-      // "Buteurs probables" (voir lib/probableScorers.js) : indisponible pour un match
-      // connu uniquement d'API-Football (hors compétitions football-data.org).
-      isApiFootballOnlyId ? Promise.resolve(null) : getScorers(competitionCode, token),
-      resolveCardProneness(homeTeamName, apiFootballKey),
-      resolveCardProneness(awayTeamName, apiFootballKey),
-    ]);
-
     const isLive = liveMatch && LIVE_STATUSES.includes(liveMatch.status);
 
-    // Corners/hors-jeu/fautes en direct (blocs dédiés, voir lib/pronostic.js —
-    // buildMatchStats) : résolu AVANT le calcul du pronostic pour pouvoir lui passer le
-    // vrai décompte observé depuis le début du match, quand la donnée existe. Réutilisé
-    // plus bas pour les événements (buts/cartons/remplacements), qui ont besoin du même
-    // fixture API-Football — jamais une deuxième recherche identique.
-    let liveRealStats = null;
-    if (isLive && apiFootballKey) {
-      try {
-        if (!apiFootballFixture) {
-          const liveFixtures = await getAllLiveFixtures(apiFootballKey);
-          apiFootballFixture = findLiveFixtureByTeams(liveFixtures, homeTeamName, awayTeamName);
-        }
-        if (apiFootballFixture?.fixture?.id) {
-          const rawStats = await getFixtureStatistics(apiFootballFixture.fixture.id, apiFootballKey);
-          if (rawStats) liveRealStats = mapFixtureStatistics(rawStats, apiFootballFixture.teams?.home?.id);
-        }
-      } catch (e) {
-        console.error("Erreur statistiques live (API-Football):", e.message);
-        // liveRealStats reste null : repli honnête sur l'estimation pré-match (voir
-        // buildMatchStats), jamais un plantage de toute la page pour cette seule donnée.
+    // PRONOSTICS FIGÉS (correction demandée après coup) : calculés une seule fois à la
+    // première analyse de CE match, jamais recalculés ensuite — voir
+    // lib/pronosticHistory.js. Un pronostic déjà figé est relu tel quel ; il ne dépend
+    // ni du score ni de la minute en direct, donc s'affiche à l'identique du début à
+    // la fin du match, comme demandé ("ces lignes servent de référence au parieur").
+    let result;
+    const frozen = await getFrozenPrediction(matchId);
+    if (frozen) {
+      result = { available: true, ...frozen.prediction };
+    } else {
+      result = await computeFreshPrediction({
+        matchId, competitionCode, homeTeamId, awayTeamId, homeTeamName, awayTeamName, token, apiFootballKey,
+      });
+      if (canPersistMatch(matchId)) {
+        await saveFrozenPrediction({
+          matchId,
+          competitionCode,
+          homeTeamName,
+          awayTeamName,
+          matchDate: liveMatch?.utcDate || null,
+          result,
+          matchStatus: liveMatch?.status || null,
+          finalScore: liveMatch?.score?.fullTime || null,
+        });
       }
     }
 
-    const result = isLive
-      ? computeLivePronostic({
-          homeRow: homeResolved.stats,
-          awayRow: awayResolved.stats,
-          homeTeamName,
-          awayTeamName,
-          homeSource: homeResolved.source,
-          awaySource: awayResolved.source,
-          currentHome: liveMatch.score?.fullTime?.home,
-          currentAway: liveMatch.score?.fullTime?.away,
-          minute: liveMatch.minute,
-          status: liveMatch.status,
-          liveRealStats,
-          h2h,
-        })
-      : computePronostic({
-          homeRow: homeResolved.stats,
-          awayRow: awayResolved.stats,
-          homeTeamName,
-          awayTeamName,
-          homeSource: homeResolved.source,
-          awaySource: awayResolved.source,
-          h2h,
-        });
-
-    // "Buteurs probables" : filtré sur les vrais joueurs de CHAQUE équipe (jamais
-    // mélangés), à partir du classement des buteurs/passeurs réels de la compétition —
-    // voir lib/probableScorers.js pour la logique et son honnêteté sur ce que la donnée
-    // représente réellement (total saison, pas match par match).
-    result.probableScorers = buildProbableScorers(scorers, homeTeamId, awayTeamId);
-    // Best-effort (API-Football) : voir lib/apiFootball.js — jamais un joueur inventé,
-    // liste vide et honnête ("Indisponible" côté interface) si la source ne répond pas.
-    result.cardProneness = { home: homeCardProneness, away: awayCardProneness };
-
+    // Ce qui reste en direct : score, minute, statut, stade, arbitre — jamais les
+    // pronostics eux-mêmes (voir ci-dessus).
     if (liveMatch) {
       result.matchStatus = liveMatch.status;
       result.matchMinute = liveMatch.minute;
@@ -179,6 +180,7 @@ export default async function handler(req, res) {
       result.venue = liveMatch.venue || null;
       result.referee = liveMatch.referees?.[0]?.name || null;
     }
+    result.live = Boolean(isLive);
 
     // La ressource "match" de football-data.org (plan utilisé ici) ne fournit pas de
     // fil d'événements minute par minute (buts/cartons/remplacements) — seulement le
@@ -188,6 +190,7 @@ export default async function handler(req, res) {
     // API-Football, ou erreur de la source) — jamais de donnée inventée pour remplir la
     // timeline (components/MatchTimeline.js), qui distingue "indisponible" (null)
     // d'"aucun événement pour l'instant" (tableau vide, mais source bien connectée).
+    // Contrairement aux pronostics, la timeline reste réellement en direct.
     result.events = null;
     if (isLive && apiFootballKey) {
       try {
@@ -213,28 +216,16 @@ export default async function handler(req, res) {
       }
     }
 
-    // Historique "Probabilités réussies/échouées" (voir lib/pronosticHistory.js) :
-    // sauvegarde le pronostic la première fois que ce match est analysé, et le classe
-    // Succès/Échec dès qu'on constate qu'il est terminé — automatique, sans action de
-    // l'utilisateur au-delà du simple fait d'avoir consulté cette page au moins une
-    // fois. Jamais fatal pour le reste de la réponse (le pronostic doit toujours être
-    // renvoyé), même si cette fonction échouait d'une façon imprévue par son propre
-    // gestionnaire d'erreurs interne — sécurité redondante, comme pour les événements
-    // live ci-dessus.
-    if (liveMatch) {
+    // Compte-rendu de fin de match (voir PROMPT) : dès que le match est constaté
+    // "FINISHED", compare le pronostic FIGÉ (jamais un nouveau calcul) au vrai
+    // résultat pour classer Succès/Échec — automatique, sans action de l'utilisateur
+    // au-delà du simple fait d'avoir consulté cette page au moins une fois. Jamais
+    // fatal pour le reste de la réponse si Supabase échoue.
+    if (liveMatch?.status === "FINISHED" && canPersistMatch(matchId)) {
       try {
-        await saveAndVerifyPrediction({
-          matchId,
-          competitionCode,
-          homeTeamName,
-          awayTeamName,
-          matchDate: liveMatch.utcDate || null,
-          prediction: result,
-          matchStatus: liveMatch.status,
-          finalScore: liveMatch.score?.fullTime || null,
-        });
+        await verifyFrozenPrediction(matchId, liveMatch.score?.fullTime || null);
       } catch (e) {
-        console.error("Erreur historique pronostic:", e.message);
+        console.error("Erreur compte-rendu de fin de match:", e.message);
       }
     }
 
