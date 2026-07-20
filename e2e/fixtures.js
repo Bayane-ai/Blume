@@ -86,6 +86,12 @@ const upcomingByCompetition = {
   // Coupe du Monde : pas de champ `matchday` exploitable (phase à élimination directe) —
   // sert à vérifier qu'aucun carrousel de journées vide ne s'affiche pour cette compétition.
   WC: [upcomingMatch(203, "WC", "Coupe du Monde", { id: 40, name: "France" }, { id: 41, name: "Brazil" }, 50, undefined)],
+  // Compétition volontairement ABSENTE de lib/competitions.js (ni grande ligue
+  // européenne, ni dans la liste des compétitions majeures connues) : sert à vérifier
+  // que "Matchs à venir" affiche bien TOUTE compétition réelle renvoyée par l'API,
+  // fédérations sud-américaines et catégories jeunes comprises, sans filtre ni exception.
+  CLI: [upcomingMatch(205, "CLI", "Copa Libertadores", { id: 60, name: "Boca Juniors" }, { id: 61, name: "River Plate" }, 10, undefined)],
+  U20WC: [upcomingMatch(206, "U20WC", "Coupe du Monde U20", { id: 70, name: "Argentine U20" }, { id: 71, name: "Nigeria U20" }, 30, undefined)],
 };
 
 const finishedMatch = {

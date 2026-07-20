@@ -17,7 +17,23 @@ async function installApiMocks(page) {
     }
 
     if (path === "/api/matches") {
-      const competitions = COMPETITIONS.map((c) => ({ ...c, matches: upcomingByCompetition[c.code] || [] }));
+      // Reflète pages/api/matches.js : toute compétition réellement présente dans les
+      // matchs apparaît (pas seulement celles de lib/competitions.js) — les
+      // compétitions majeures connues d'abord, dans leur ordre habituel, les autres
+      // ensuite, triées alphabétiquement.
+      const priorityCodes = COMPETITIONS.map((c) => c.code);
+      const codes = Object.keys(upcomingByCompetition).filter((code) => (upcomingByCompetition[code] || []).length > 0);
+      const orderedCodes = [
+        ...priorityCodes.filter((code) => codes.includes(code)),
+        ...codes
+          .filter((code) => !priorityCodes.includes(code))
+          .sort((a, b) => upcomingByCompetition[a][0].competition.name.localeCompare(upcomingByCompetition[b][0].competition.name)),
+      ];
+      const competitions = orderedCodes.map((code) => {
+        const known = COMPETITIONS.find((c) => c.code === code);
+        const matches = upcomingByCompetition[code];
+        return { code, name: known?.name || matches[0].competition.name, area: known?.area || "", matches };
+      });
       return route.fulfill({ json: { competitions } });
     }
 

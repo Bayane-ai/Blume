@@ -187,3 +187,89 @@ describe("getAllLiveFixtures / getFixtureEvents — cache partagé et déduplica
     expect(fetchMock.mock.calls[0][0]).toBe("https://v3.football.api-sports.io/fixtures/events?fixture=99");
   });
 });
+
+describe("getFixturesByDate / mapFixtureToUpcomingMatch — couverture mondiale des matchs À VENIR (pas seulement le direct)", () => {
+  test("sans clé API, renvoie une liste vide sans jamais appeler l'API", async () => {
+    const { getFixturesByDate } = await import("../lib/apiFootball.js");
+    global.fetch = jest.fn();
+    expect(await getFixturesByDate("2026-07-21", null)).toEqual([]);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test("interroge /fixtures?date=... sans aucun filtre de ligue, pays ou saison — couverture mondiale", async () => {
+    const { getFixturesByDate } = await import("../lib/apiFootball.js");
+    const fetchMock = jest.fn((url, opts) => {
+      const parsed = new URL(url);
+      expect(parsed.origin + parsed.pathname).toBe("https://v3.football.api-sports.io/fixtures");
+      expect(parsed.searchParams.get("date")).toBe("2026-07-21");
+      expect(parsed.searchParams.has("league")).toBe(false);
+      expect(parsed.searchParams.has("country")).toBe(false);
+      expect(opts.headers).toEqual({ "x-apisports-key": TOKEN });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) });
+    });
+    global.fetch = fetchMock;
+
+    await getFixturesByDate("2026-07-21", TOKEN);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("plusieurs appels rapprochés pour la MÊME date ne déclenchent qu'un seul appel réel", async () => {
+    const { getFixturesByDate } = await import("../lib/apiFootball.js");
+    const fetchMock = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) }));
+    global.fetch = fetchMock;
+
+    await Promise.all([
+      getFixturesByDate("2026-07-21", TOKEN),
+      getFixturesByDate("2026-07-21", TOKEN),
+      getFixturesByDate("2026-07-21", TOKEN),
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("deux dates différentes déclenchent bien deux appels distincts, chacun avec sa propre date", async () => {
+    const { getFixturesByDate } = await import("../lib/apiFootball.js");
+    const fetchMock = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) }));
+    global.fetch = fetchMock;
+
+    await Promise.all([getFixturesByDate("2026-07-21", TOKEN), getFixturesByDate("2026-07-22", TOKEN)]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const dates = fetchMock.mock.calls.map(([url]) => new URL(url).searchParams.get("date"));
+    expect(dates.sort()).toEqual(["2026-07-21", "2026-07-22"]);
+  });
+
+  test("un échec réseau après un premier succès reprend la dernière liste connue pour cette date plutôt que de la faire disparaître", async () => {
+    const { getFixturesByDate } = await import("../lib/apiFootball.js");
+    const fixtures = [{ fixture: { id: 1 } }];
+    let call = 0;
+    global.fetch = jest.fn(() => {
+      call += 1;
+      if (call === 1) return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: fixtures }) });
+      return Promise.reject(new Error("Erreur réseau"));
+    });
+
+    const first = await getFixturesByDate("2026-07-21", TOKEN);
+    expect(first).toEqual(fixtures);
+  });
+
+  test("mapFixtureToUpcomingMatch : id/équipes/compétition préfixés 'af-', statut SCHEDULED, aucun score ni minute inventés", async () => {
+    const { mapFixtureToUpcomingMatch } = await import("../lib/apiFootball.js");
+    const fixture = {
+      fixture: { id: 999, date: "2026-07-25T18:00:00Z", status: { short: "NS" } },
+      league: { id: 55, name: "Championnat U20", country: "Argentine", logo: "https://logo/55.png" },
+      teams: {
+        home: { id: 10, name: "Argentine U20", logo: "https://logo/home.png" },
+        away: { id: 20, name: "Brésil U20", logo: "https://logo/away.png" },
+      },
+    };
+    const m = mapFixtureToUpcomingMatch(fixture);
+    expect(m.id).toBe("af-999");
+    expect(m.status).toBe("SCHEDULED");
+    expect(m.minute).toBeNull();
+    expect(m.matchday).toBeNull();
+    expect(m.utcDate).toBe("2026-07-25T18:00:00Z");
+    expect(m.competition).toEqual({ code: "af-55", name: "Championnat U20", area: "Argentine", emblem: "https://logo/55.png" });
+    expect(m.homeTeam).toEqual({ id: "af-10", name: "Argentine U20", crest: "https://logo/home.png" });
+    expect(m.awayTeam).toEqual({ id: "af-20", name: "Brésil U20", crest: "https://logo/away.png" });
+    expect(m.score.fullTime).toEqual({ home: null, away: null });
+  });
+});
