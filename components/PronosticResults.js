@@ -69,6 +69,7 @@ export default function PronosticResults({ pronostic, loading }) {
           <div style={st.marketRow} data-testid="market-total-1">Total 1 : {marketLabel(markets?.totalHome)}</div>
           <div style={st.marketRow} data-testid="market-total-2">Total 2 : {marketLabel(markets?.totalAway)}</div>
           <div style={st.marketRow} data-testid="market-corners">Corners : {marketLabel(markets?.corners)}</div>
+          <div style={st.marketRow} data-testid="market-shots">Tirs : {marketLabel(markets?.shots)}</div>
           <div style={st.marketRow} data-testid="market-cards">Cartons : {marketLabel(markets?.cards)}</div>
         </div>
 

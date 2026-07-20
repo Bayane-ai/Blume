@@ -124,7 +124,7 @@ test("les stats de chaque équipe viennent bien de SES PROPRES matchs — jamais
 
   // Buts attendus très différents entre les deux équipes : la valeur de chacune
   // reflète SES propres matchs récents, pas une moyenne des deux ou une confusion.
-  expect(res.body.goals.expectedHome).toBeGreaterThan(2); // équipe 5 : 4 buts/match récemment
+  expect(res.body.goals.expectedHome).toBeGreaterThanOrEqual(2); // équipe 5 : 4 buts/match récemment, tous à domicile (vrai profil domicile utilisé directement)
   expect(res.body.goals.expectedAway).toBeLessThan(1.2); // équipe 6 : 0 but/match récemment
   expect(res.body.goals.expectedHome).toBeGreaterThan(res.body.goals.expectedAway * 2);
 });

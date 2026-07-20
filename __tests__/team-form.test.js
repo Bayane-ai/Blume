@@ -44,6 +44,16 @@ test("calcule buts marqués/encaissés à domicile ET à l'extérieur, et une ch
   expect(stats.goalsFor).toBe(2 + 1 + 0 + 2 + 1);
   expect(stats.goalsAgainst).toBe(0 + 1 + 3 + 1 + 0);
   expect(stats.form).toBe("WDLWW");
+
+  // Répartition domicile/extérieur (lib/pronostic.js s'en sert pour la vraie moyenne
+  // par lieu) : 3 matchs à domicile (2-0, 0-3, 1-0) et 2 à l'extérieur (1-1, 2-1),
+  // jamais mélangés.
+  expect(stats.homePlayedGames).toBe(3);
+  expect(stats.homeGoalsFor).toBe(2 + 0 + 1);
+  expect(stats.homeGoalsAgainst).toBe(0 + 3 + 0);
+  expect(stats.awayPlayedGames).toBe(2);
+  expect(stats.awayGoalsFor).toBe(1 + 2);
+  expect(stats.awayGoalsAgainst).toBe(1 + 1);
 });
 
 test("ne garde que les 5 derniers résultats dans la chaîne de forme, même si plus de matchs sont fournis", async () => {

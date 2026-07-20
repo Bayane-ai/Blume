@@ -9,8 +9,9 @@
  * 3) Total 1 (domicile seul).
  * 4) Total 2 (extérieur seul) — jamais mélangé avec le domicile.
  * 5) Corners.
- * 6) Cartons.
- * 7) Scores exacts (au moins 3, différents par match).
+ * 6) Tirs.
+ * 7) Cartons.
+ * 8) Scores exacts (au moins 3, différents par match).
  */
 import { render, screen, within } from "@testing-library/react";
 import PronosticResults from "../components/PronosticResults";
@@ -36,20 +37,21 @@ test("structure exacte du bloc, dans l'ordre demandé, sans aucune cote affiché
   const sum = pronostic.probabilities.home + pronostic.probabilities.draw + pronostic.probabilities.away;
   expect(Math.round(sum * 10) / 10).toBe(100);
 
-  // 2-6) Lignes de marché au format exact demandé ("Total : Plus de X,X"), avec une
+  // 2-7) Lignes de marché au format exact demandé ("Total : Plus de X,X"), avec une
   // virgule française et jamais un nombre entier (toujours X,5).
-  const lineFormat = /^(Total|Total 1|Total 2|Corners|Cartons) : (Plus|Moins) de \d+,5$/;
+  const lineFormat = /^(Total|Total 1|Total 2|Corners|Tirs|Cartons) : (Plus|Moins) de \d+,5$/;
   expect(screen.getByTestId("market-total")).toHaveTextContent(lineFormat);
   expect(screen.getByTestId("market-total-1")).toHaveTextContent(lineFormat);
   expect(screen.getByTestId("market-total-2")).toHaveTextContent(lineFormat);
   expect(screen.getByTestId("market-corners")).toHaveTextContent(lineFormat);
+  expect(screen.getByTestId("market-shots")).toHaveTextContent(lineFormat);
   expect(screen.getByTestId("market-cards")).toHaveTextContent(lineFormat);
 
   // Ordre exact dans le document : 1X2 (3 lignes) puis Total, Total 1, Total 2,
-  // Corners, Cartons, puis Scores exacts — jamais un autre ordre.
+  // Corners, Tirs, Cartons, puis Scores exacts — jamais un autre ordre.
   const orderedTestIds = [
     "prob-home", "prob-draw", "prob-away",
-    "market-total", "market-total-1", "market-total-2", "market-corners", "market-cards",
+    "market-total", "market-total-1", "market-total-2", "market-corners", "market-shots", "market-cards",
   ];
   const nodes = orderedTestIds.map((id) => screen.getByTestId(id));
   for (let i = 1; i < nodes.length; i++) {
