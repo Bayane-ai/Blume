@@ -9,7 +9,9 @@
 //     marge (deux lignes voisines) quand l'issue est trop incertaine pour une seule.
 //     Total 1 (équipe à domicile seule).
 //     Total 2 (équipe à l'extérieur seule) — jamais mélangé avec le domicile.
-//     Tirs. Scores exacts (3 à 4).
+//     Tirs. Scores exacts (3 à 4), suivis d'un conseil de mise (miser petit sur
+//     chaque score, encore moins quand les cotes sont élevées) — jamais de cote
+//     chiffrée affichée, juste ce conseil de prudence.
 // Corners et cartons ont leur propre bloc en bas de page (components/CardsAndCorners.js).
 // Les lignes ("X,5") et les probabilités viennent de lib/pronostic.js, calculées à
 // partir des vraies statistiques des deux équipes pour CE match précis — jamais une
@@ -75,6 +77,9 @@ export default function PronosticResults({ pronostic, loading }) {
                 </div>
               ))}
             </div>
+            <p style={st.bettingTip} data-testid="correct-scores-tip">
+              (Conseil : misez de petites sommes sur chaque score exact pour limiter le risque de perte, et misez encore moins quand les cotes sont élevées.)
+            </p>
           </>
         )}
       </section>
@@ -114,4 +119,5 @@ const st = {
   probLabel: { display: "block", fontSize: 9.5, color: "#5C7A6A", textTransform: "uppercase" },
   probValue: { fontSize: 15, fontWeight: 700 },
   noteText: { fontSize: 10.5, color: "#3F6151", fontStyle: "italic", margin: "8px 0 0" },
+  bettingTip: { fontSize: 10.5, color: "#5C7A6A", fontStyle: "italic", margin: "8px 0 0" },
 };

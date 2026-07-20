@@ -79,6 +79,24 @@ test("structure exacte du bloc, dans l'ordre demandé, sans aucune cote affiché
   expect(percentCount).toBe(3);
 });
 
+test("un conseil de mise prudent (petites sommes, encore moins si les cotes sont élevées) apparaît sous les scores exacts, jamais une cote chiffrée", () => {
+  const pronostic = computePronostic({
+    homeRow: rowFor({ goalsFor: 45, goalsAgainst: 20, id: 1 }),
+    awayRow: rowFor({ goalsFor: 30, goalsAgainst: 28, id: 2 }),
+    homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC",
+  });
+
+  render(<PronosticResults pronostic={pronostic} loading={false} />);
+
+  const tip = screen.getByTestId("correct-scores-tip");
+  expect(tip).toHaveTextContent(/petites sommes/i);
+  expect(tip).toHaveTextContent(/cotes/i);
+  expect(tip.textContent).not.toMatch(/\b\d\.\d{2}\b/); // jamais une cote chiffrée (ex : 1.85)
+  // Le conseil suit bien les scores exacts dans le document, pas avant.
+  const correctScoresBlock = screen.getByTestId("correct-scores");
+  expect(correctScoresBlock.compareDocumentPosition(tip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
 test("Total 1 et Total 2 ne sont jamais mélangés : chaque équipe a sa propre ligne, dérivée de ses propres buts attendus", () => {
   // Profils délibérément opposés : domicile très offensif, extérieur très défensif.
   const pronostic = computePronostic({
