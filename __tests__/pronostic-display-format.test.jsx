@@ -86,6 +86,80 @@ test("Total 1 et Total 2 ne sont jamais mélangés : chaque équipe a sa propre 
   expect(totalAwayText).not.toBe(totalHomeText.replace("Total 1", "Total 2"));
 });
 
+test('"Probabilité de victoire" est une carte à part, avec son propre titre, séparée du bloc des statistiques — pas une ligne mélangée dedans', () => {
+  const pronostic = computePronostic({
+    homeRow: rowFor({ goalsFor: 45, goalsAgainst: 20, id: 1 }),
+    awayRow: rowFor({ goalsFor: 30, goalsAgainst: 28, id: 2 }),
+    homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC",
+  });
+
+  render(<PronosticResults pronostic={pronostic} loading={false} />);
+
+  const winCard = screen.getByTestId("win-probability-card");
+  const statsCard = screen.getByTestId("match-stats-card");
+
+  // Deux <section> bien distinctes, pas un seul bloc commun.
+  expect(winCard).not.toBe(statsCard);
+  expect(winCard.tagName).toBe("SECTION");
+  expect(statsCard.tagName).toBe("SECTION");
+
+  // Titre propre, visible, avant le contenu.
+  expect(within(winCard).getByRole("heading", { name: "Probabilité de victoire" })).toBeInTheDocument();
+
+  // La carte "Probabilité de victoire" apparaît en premier dans le document.
+  expect(winCard.compareDocumentPosition(statsCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+  // Le 1X2 est bien DANS sa propre carte, et rien des statistiques (Total, Corners,
+  // Cartons, scores exacts) n'y apparaît.
+  expect(within(winCard).getByTestId("prob-home")).toBeInTheDocument();
+  expect(within(winCard).getByTestId("prob-draw")).toBeInTheDocument();
+  expect(within(winCard).getByTestId("prob-away")).toBeInTheDocument();
+  expect(within(winCard).queryByTestId("market-total")).not.toBeInTheDocument();
+  expect(within(winCard).queryByTestId("correct-scores")).not.toBeInTheDocument();
+
+  // Et inversement, aucune probabilité de victoire dans la carte des statistiques.
+  expect(within(statsCard).queryByTestId("prob-home")).not.toBeInTheDocument();
+  expect(within(statsCard).getByTestId("market-total")).toBeInTheDocument();
+  expect(within(statsCard).getByTestId("correct-scores")).toBeInTheDocument();
+
+  // Les deux cartes sont visuellement séparées (fond + bordure propres), pas un
+  // simple <div> transparent au milieu d'un autre bloc.
+  expect(winCard).toHaveStyle({ background: "#12291E", border: "1px solid #1E3D2C" });
+  expect(statsCard).toHaveStyle({ background: "#12291E", border: "1px solid #1E3D2C" });
+});
+
+test("chaque match a ses propres valeurs dans la carte \"Probabilité de victoire\" — jamais les mêmes pourcentages recopiés d'un match à l'autre", () => {
+  const matchA = computePronostic({
+    homeRow: rowFor({ goalsFor: 55, goalsAgainst: 15, id: 1, position: 2, points: 60 }),
+    awayRow: rowFor({ goalsFor: 18, goalsAgainst: 50, id: 2, position: 18, points: 20 }),
+    homeTeamName: "Arsenal FC", awayTeamName: "Fulham FC",
+  });
+  const matchB = computePronostic({
+    homeRow: rowFor({ goalsFor: 62, goalsAgainst: 18, id: 3, position: 1, points: 68 }),
+    awayRow: rowFor({ goalsFor: 58, goalsAgainst: 20, id: 4, position: 2, points: 64 }),
+    homeTeamName: "Real Madrid", awayTeamName: "Barcelona",
+  });
+
+  const { unmount } = render(<PronosticResults pronostic={matchA} loading={false} />);
+  const a = {
+    home: screen.getByTestId("prob-home").textContent,
+    draw: screen.getByTestId("prob-draw").textContent,
+    away: screen.getByTestId("prob-away").textContent,
+  };
+  unmount();
+
+  render(<PronosticResults pronostic={matchB} loading={false} />);
+  const b = {
+    home: screen.getByTestId("prob-home").textContent,
+    draw: screen.getByTestId("prob-draw").textContent,
+    away: screen.getByTestId("prob-away").textContent,
+  };
+
+  expect(a.home).not.toBe(b.home);
+  expect(a.draw).not.toBe(b.draw);
+  expect(a.away).not.toBe(b.away);
+});
+
 test("l'ordre des scores exacts va du plus probable au moins probable, sans aucun pourcentage affiché", () => {
   const pronostic = computePronostic({
     homeRow: rowFor({ goalsFor: 60, goalsAgainst: 15, id: 1 }),

@@ -192,9 +192,12 @@ export default function MatchPage() {
           <button style={st.analyzeBtn} onClick={() => runAnalysis(false)} disabled={loading}>
             {loading ? "Analyse en cours…" : hasRequested ? "Actualiser les pronostics" : "Analyser ce match"}
           </button>
-
-          {!loading && hasRequested && <PronosticResults pronostic={pronostic} loading={loading} />}
         </section>
+
+        {/* Cartes de pronostics séparées de la section ci-dessus (voir
+            components/PronosticResults.js) : "Probabilité de victoire" en premier,
+            "Statistiques du match" ensuite — chacune sa propre carte visuelle. */}
+        {!loading && hasRequested && <PronosticResults pronostic={pronostic} loading={loading} />}
 
         {!isLiveNow && (
           <section style={st.panel}>
