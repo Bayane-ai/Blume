@@ -1,11 +1,29 @@
-import { marketLabel } from "../lib/marketFormat";
+import { riskLabels } from "../lib/marketFormat";
 
-// Bloc "Corners et cartons", en bas de la page de pronostics : corners et cartons
-// jaunes en ligne "Plus/Moins de X,5" comme les autres marchés (voir lib/pronostic.js
-// — estimations statistiques, pas une mesure réelle du match) ; le carton rouge, rare
-// et binaire, en probabilité plutôt qu'en ligne (voir statsNote). Complété par les
-// vrais joueurs les plus sujets aux cartons cette saison (API-Football, best-effort —
-// jamais un joueur inventé, "Indisponible" si la source ne répond pas).
+// Bloc "Corners et cartons", en bas de la page de pronostics : pour chacune des trois
+// métriques (corners, cartons jaunes, cartons rouges), deux options "Plus/Moins de
+// X,5" calculées à partir de la même estimation réelle de CE match (voir
+// lib/pronostic.js, riskLines) — une option sûre (forte probabilité réelle) et une
+// option risquée (ligne plus poussée, moins certaine). Complété par les vrais joueurs
+// les plus sujets aux cartons cette saison (API-Football, best-effort — jamais un
+// joueur inventé, "Indisponible" si la source ne répond pas).
+function RiskMarketRow({ testId, label, market }) {
+  const { safe, risky } = riskLabels(market);
+  return (
+    <div style={st.marketGroup} data-testid={testId}>
+      <span style={st.marketGroupLabel}>{label}</span>
+      <div style={st.marketOptions}>
+        <span style={st.marketOption}>
+          <span style={st.marketOptionTag}>Sûr</span> {safe}
+        </span>
+        <span style={st.marketOption}>
+          <span style={st.marketOptionTag}>Risqué</span> {risky}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function CardProneTeam({ testId, teamName, players }) {
   return (
     <div style={st.col} data-testid={testId}>
@@ -27,10 +45,9 @@ function CardProneTeam({ testId, teamName, players }) {
 }
 
 export default function CardsAndCorners({ pronostic }) {
-  if (!pronostic?.available || !pronostic?.markets || !pronostic?.extraStats) return null;
+  if (!pronostic?.available || !pronostic?.markets) return null;
 
   const markets = pronostic.markets;
-  const cards = pronostic.extraStats.cards;
   const homeName = pronostic.home?.name || "Domicile";
   const awayName = pronostic.away?.name || "Extérieur";
   const homeProne = pronostic.cardProneness?.home || [];
@@ -41,11 +58,9 @@ export default function CardsAndCorners({ pronostic }) {
     <section style={st.card} data-testid="cards-corners-card">
       <h3 style={st.cardTitle}>Corners et cartons</h3>
       <div style={st.marketList} data-testid="cards-corners-markets">
-        <div style={st.marketRow} data-testid="market-corners">Corners : {marketLabel(markets.corners)}</div>
-        <div style={st.marketRow} data-testid="market-yellow-cards">Cartons jaunes : {marketLabel(markets.yellowCards)}</div>
-        <div style={st.marketRow} data-testid="market-red-card">
-          Cartons rouges : {cards?.redProbability != null ? `${cards.redProbability} % de risque` : "–"}
-        </div>
+        <RiskMarketRow testId="market-corners" label="Corners" market={markets.corners} />
+        <RiskMarketRow testId="market-yellow-cards" label="Cartons jaunes" market={markets.yellowCards} />
+        <RiskMarketRow testId="market-red-card" label="Cartons rouges" market={markets.redCards} />
       </div>
 
       <p style={st.sectionLabel}>Joueurs susceptibles de prendre un carton</p>
@@ -65,9 +80,14 @@ export default function CardsAndCorners({ pronostic }) {
 const st = {
   card: { background: "#FFFFFF", border: "1px solid #D8E6DE", borderRadius: 14, padding: 18 },
   cardTitle: { fontSize: 15, fontWeight: 800, margin: "0 0 12px", color: "#13291D" },
-  marketList: { display: "flex", flexDirection: "column", gap: 6, marginBottom: 4 },
-  marketRow: {
-    background: "#EEF5F0", borderRadius: 8, padding: "10px 12px", fontSize: 13, fontWeight: 700,
+  marketList: { display: "flex", flexDirection: "column", gap: 8, marginBottom: 4 },
+  marketGroup: { background: "#EEF5F0", borderRadius: 8, padding: "10px 12px" },
+  marketGroupLabel: { display: "block", fontSize: 13, fontWeight: 800, marginBottom: 6 },
+  marketOptions: { display: "flex", gap: 16, flexWrap: "wrap" },
+  marketOption: { fontSize: 13, fontWeight: 700 },
+  marketOptionTag: {
+    fontSize: 9.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.4,
+    color: "#3F6151", marginRight: 5,
   },
   sectionLabel: { fontSize: 10, color: "#3F6151", textTransform: "uppercase", margin: "14px 0 6px", letterSpacing: 0.4 },
   columns: { display: "flex", gap: 12 },

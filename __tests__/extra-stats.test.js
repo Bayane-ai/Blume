@@ -19,14 +19,16 @@ describe("Pronostics détaillés — corners, tirs, cartons", () => {
       expect(stat.home).toBeGreaterThanOrEqual(0);
       expect(stat.away).toBeGreaterThanOrEqual(0);
     }
-    // Cartons jaunes (majorité, ligne Plus/Moins) et rouges (rares, probabilité) —
-    // jamais un total combiné qui masquerait cette distinction.
+    // Cartons jaunes (majorité, ligne Plus/Moins) et rouges (rares, propre ligne
+    // sûre/risquée — voir riskLines) — jamais un total combiné qui masquerait cette
+    // distinction.
     const yellow = result.extraStats.cards.yellow;
     expect(yellow.total).toBe(yellow.home + yellow.away);
     expect(yellow.home).toBeGreaterThanOrEqual(0);
     expect(yellow.away).toBeGreaterThanOrEqual(0);
-    expect(result.extraStats.cards.redProbability).toBeGreaterThanOrEqual(0);
-    expect(result.extraStats.cards.redProbability).toBeLessThanOrEqual(100);
+    expect(result.extraStats.raw.redCardExpected).toBeGreaterThanOrEqual(0);
+    expect(result.markets.redCards.safe.side).toMatch(/^Plus|Moins$/);
+    expect(result.markets.redCards.risky.side).toMatch(/^Plus|Moins$/);
 
     expect(result.statsNote).toEqual(expect.stringContaining("estimation"));
     expect(result.goals.expectedTotal).toBeCloseTo(result.goals.expectedHome + result.goals.expectedAway, 5);

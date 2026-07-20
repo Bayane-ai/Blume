@@ -258,11 +258,13 @@ test.describe("Écran 3 — Analyser un match", () => {
     expect(scoreCount).toBeGreaterThanOrEqual(3);
     expect(scoreCount).toBeLessThanOrEqual(4);
 
-    // Bloc "Corners et cartons" (en bas de page) : corners/cartons jaunes en ligne,
-    // carton rouge en probabilité (rare, événement binaire).
-    await expect(page.getByTestId("market-corners")).toContainText(lineFormat);
-    await expect(page.getByTestId("market-yellow-cards")).toContainText(lineFormat);
-    await expect(page.getByTestId("market-red-card")).toContainText(/^Cartons rouges : \d+(\.\d+)? % de risque$/);
+    // Bloc "Corners et cartons" (en bas de page) : pour chaque métrique (corners,
+    // cartons jaunes, cartons rouges), une option "Sûr" et une option "Risqué", toutes
+    // deux en ligne "Plus/Moins de X,5" (jamais une cote).
+    const riskFormat = /Sûr (Plus|Moins) de \d+,5.*Risqué (Plus|Moins) de \d+,5/s;
+    await expect(page.getByTestId("market-corners")).toContainText(riskFormat);
+    await expect(page.getByTestId("market-yellow-cards")).toContainText(riskFormat);
+    await expect(page.getByTestId("market-red-card")).toContainText(riskFormat);
 
     // Aucune cote affichée nulle part (ex : 1.85, 2.40).
     const bodyText = await page.locator("body").innerText();

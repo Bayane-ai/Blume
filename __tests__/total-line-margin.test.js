@@ -2,8 +2,10 @@
  * lib/pronostic.js — le bloc Total (buts) affiche une seule ligne quand le modèle est
  * confiant, et une marge de deux lignes voisines (ex. "Plus de 2,5 (ou 3,5)") quand
  * l'issue réelle (probabilité calculée sur la vraie distribution de Poisson) est trop
- * proche de 50 % pour un seul chiffre — jamais pour les autres marchés (corners/tirs/
- * cartons), qui n'ont pas de distribution dédiée pour évaluer cette confiance.
+ * proche de 50 % pour un seul chiffre. Les tirs (seul marché sans double option sûre/
+ * risquée) restent toujours sur une seule ligne. Corners/cartons jaunes/cartons rouges
+ * ont leur propre mécanisme à deux lignes (sûre + risquée, voir riskLines) — testé dans
+ * cards-and-corners.test.jsx.
  */
 import { computePronostic } from "../lib/pronostic";
 import { marketLabel } from "../lib/marketFormat";
@@ -35,16 +37,32 @@ test("le Total affiche à la fois des cas confiants (une seule ligne) et des cas
   expect(markets.some((m) => m.lines.length === 2)).toBe(true);
 });
 
-test("les marchés sans distribution dédiée (corners/tirs/cartons jaunes) n'ont jamais de marge, même quand le Total en a une", () => {
+test("le marché sans double option (tirs) n'a jamais de marge, même quand le Total en a une", () => {
   for (let goalsFor = 14; goalsFor <= 60; goalsFor += 4) {
     const result = computePronostic({
       homeRow: row({ id: 1, goalsFor, goalsAgainst: 30 }),
       awayRow: row({ id: 2, goalsFor: 30, goalsAgainst: goalsFor }),
       homeTeamName: "A", awayTeamName: "B",
     });
-    expect(result.markets.corners.lines).toHaveLength(1);
     expect(result.markets.shots.lines).toHaveLength(1);
-    expect(result.markets.yellowCards.lines).toHaveLength(1);
+  }
+});
+
+test("corners/cartons jaunes/cartons rouges affichent toujours une option sûre ET une option risquée, distinctes l'une de l'autre", () => {
+  for (let goalsFor = 14; goalsFor <= 60; goalsFor += 4) {
+    const result = computePronostic({
+      homeRow: row({ id: 1, goalsFor, goalsAgainst: 30 }),
+      awayRow: row({ id: 2, goalsFor: 30, goalsAgainst: goalsFor }),
+      homeTeamName: "A", awayTeamName: "B",
+    });
+    for (const key of ["corners", "yellowCards", "redCards"]) {
+      const market = result.markets[key];
+      expect(market.safe.side).toMatch(/^Plus|Moins$/);
+      expect(market.risky.side).toMatch(/^Plus|Moins$/);
+      expect(market.safe.line % 1).toBeCloseTo(0.5, 5);
+      expect(market.risky.line % 1).toBeCloseTo(0.5, 5);
+      expect(`${market.safe.side}${market.safe.line}`).not.toBe(`${market.risky.side}${market.risky.line}`);
+    }
   }
 });
 

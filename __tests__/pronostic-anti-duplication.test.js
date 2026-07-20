@@ -124,7 +124,6 @@ describe("Anti-duplication : 3 matchs différents ont 3 pronostics différents",
       expect(r.extraStats.corners.total).toBeGreaterThan(0);
       expect(r.extraStats.shots.total).toBeGreaterThan(0);
       expect(r.extraStats.cards.yellow.total).toBeGreaterThan(0);
-      expect(r.extraStats.cards.redProbability).toBeGreaterThanOrEqual(0);
       expect(r.extraStats.possession.home + r.extraStats.possession.away).toBe(100);
     }
   });
@@ -139,16 +138,16 @@ describe("Anti-duplication : 3 matchs différents ont 3 pronostics différents",
   });
 
   // Bloc statistiques (refonte "app de paris sportifs") : les lignes de marché
-  // (Total, Total 1, Total 2, Corners, Cartons jaunes) doivent elles aussi être
-  // propres à chaque match — jamais la même ligne/le même sens recopiés sur 3 matchs
-  // différents.
-  test("les lignes de marché (Total, Total 1, Total 2, Corners, Cartons jaunes) diffèrent selon le match", async () => {
+  // (Total, Total 1, Total 2, Corners, Cartons jaunes, Cartons rouges) doivent elles
+  // aussi être propres à chaque match — jamais la même ligne/le même sens recopiés sur
+  // 3 matchs différents.
+  test("les lignes de marché (Total, Total 1, Total 2, Corners, Cartons jaunes, Cartons rouges) diffèrent selon le match", async () => {
     const r1 = await analyzeMatch(MATCH_1);
     const r2 = await analyzeMatch(MATCH_2);
     const r3 = await analyzeMatch(MATCH_3);
 
     for (const r of [r1, r2, r3]) {
-      for (const key of ["totalGoals", "totalHome", "totalAway", "corners", "yellowCards"]) {
+      for (const key of ["totalGoals", "totalHome", "totalAway"]) {
         expect(r.markets[key].side).toMatch(/^Plus|Moins$/);
         expect(r.markets[key].line % 1).toBeCloseTo(0.5, 5); // toujours une ligne X,5
         for (const l of r.markets[key].lines) {
@@ -156,7 +155,21 @@ describe("Anti-duplication : 3 matchs différents ont 3 pronostics différents",
           expect(l.line % 1).toBeCloseTo(0.5, 5);
         }
       }
+      // Corners/cartons jaunes/cartons rouges : deux options (sûre + risquée), jamais
+      // une seule ligne ni une cote (voir riskLines).
+      for (const key of ["corners", "yellowCards", "redCards"]) {
+        for (const option of [r.markets[key].safe, r.markets[key].risky]) {
+          expect(option.side).toMatch(/^Plus|Moins$/);
+          expect(option.line % 1).toBeCloseTo(0.5, 5);
+        }
+      }
     }
+
+    // Au moins un des matchs (fermé, Juventus-Salernitana) et un des matchs (net
+    // écart offensif, Arsenal-Fulham) doivent afficher un couple de lignes corners
+    // différent — sinon le calcul recopierait la même ligne partout.
+    const cornersLines = [r1, r2, r3].map((r) => `${r.markets.corners.safe.line}/${r.markets.corners.risky.line}`);
+    expect(new Set(cornersLines).size).toBeGreaterThan(1);
 
     const markets = [r1, r2, r3].map((r) => JSON.stringify(r.markets));
     expect(new Set(markets).size).toBe(3);
