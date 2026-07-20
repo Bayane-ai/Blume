@@ -1,7 +1,7 @@
 /**
- * pages/api/news.js — interroge les vrais flux RSS football en français (L'Équipe,
- * Foot Mercato, So Foot), dédoublonne, trie par importance, met en cache (jamais une
- * erreur 500 : toujours { articles: [...] }, vide au pire des cas).
+ * pages/api/news.js — interroge les vrais flux RSS football (BBC Sport, Sky Sports,
+ * ESPN), dédoublonne, trie par importance, traduit les textes en français, met en
+ * cache (jamais une erreur 500 : toujours { articles: [...] }, vide au pire des cas).
  */
 function makeRes() {
   return {
@@ -26,11 +26,18 @@ function rssFor(items) {
     .join("")}</channel></rss>`;
 }
 
+// Les appels de traduction (api.mymemory.translated.net) ne sont, par défaut, pas
+// interceptés spécifiquement dans ces tests : ils tombent sur le même mock générique
+// que les flux RSS (un objet sans .json() exploitable), donc lib/translate.js échoue
+// silencieusement et garde le texte d'origine — comportement attendu (jamais un
+// plantage), suffisant pour les tests qui ne portent pas spécifiquement sur la
+// traduction elle-même.
+
 beforeEach(() => {
   jest.resetModules();
 });
 
-test("interroge les trois flux français configurés (L'Équipe, Foot Mercato, So Foot)", async () => {
+test("interroge les trois flux configurés (BBC Sport, Sky Sports, ESPN)", async () => {
   const fetchMock = jest.fn(() => Promise.resolve({ ok: true, text: () => Promise.resolve(rssFor([])) }));
   global.fetch = fetchMock;
 
@@ -41,9 +48,9 @@ test("interroge les trois flux français configurés (L'Équipe, Foot Mercato, S
   const urls = fetchMock.mock.calls.map((c) => c[0]);
   expect(urls).toEqual(
     expect.arrayContaining([
-      "https://www.lequipe.fr/rss/actu_rss_Football.xml",
-      "https://www.footmercato.net/rss",
-      "https://www.sofoot.com/rss.xml",
+      "http://feeds.bbci.co.uk/sport/football/rss.xml",
+      "https://www.skysports.com/rss/12040",
+      "https://www.espn.com/espn/rss/soccer/news",
     ])
   );
   expect(res.statusCode).toBe(200);
@@ -52,13 +59,13 @@ test("interroge les trois flux français configurés (L'Équipe, Foot Mercato, S
 
 test("fusionne les vrais articles des différents flux et les trie par importance", async () => {
   global.fetch = jest.fn((url) => {
-    if (url.includes("lequipe")) {
+    if (url.includes("bbci")) {
       return Promise.resolve({
         ok: true,
         text: () => Promise.resolve(rssFor([{ title: "Match amical mineur", link: "https://example.com/minor" }])),
       });
     }
-    if (url.includes("footmercato")) {
+    if (url.includes("skysports")) {
       return Promise.resolve({
         ok: true,
         text: () =>
@@ -89,8 +96,8 @@ test("déduplique un même article (même lien) repris par plusieurs flux", asyn
 
 test("un flux qui échoue ne casse pas les autres : les articles des flux valides restent affichés", async () => {
   global.fetch = jest.fn((url) => {
-    if (url.includes("lequipe")) return Promise.reject(new Error("Erreur réseau"));
-    if (url.includes("footmercato")) {
+    if (url.includes("bbci")) return Promise.reject(new Error("Erreur réseau"));
+    if (url.includes("skysports")) {
       return Promise.resolve({
         ok: true,
         text: () => Promise.resolve(rssFor([{ title: "Article valide", link: "https://example.com/valid" }])),
@@ -137,4 +144,62 @@ test("deux requêtes concurrentes ne déclenchent qu'un seul lot d'appels résea
   const handler = (await import("../pages/api/news.js")).default;
   await Promise.all([handler({}, makeRes()), handler({}, makeRes())]);
   expect(fetchMock.mock.calls.length).toBe(3); // un seul lot des 3 flux, pas deux
+});
+
+test("chaque article renvoyé a bien été traduit en français (titre et résumé), la source restant inchangée", async () => {
+  global.fetch = jest.fn((url) => {
+    if (url.includes("bbci")) {
+      return Promise.resolve({
+        ok: true,
+        text: () =>
+          Promise.resolve(
+            `<?xml version="1.0"?><rss><channel><item><title>Real Madrid sign a new striker</title><link>https://example.com/en</link><description>A record transfer shakes up the market.</description></item></channel></rss>`
+          ),
+      });
+    }
+    if (url.includes("api.mymemory.translated.net")) {
+      const q = new URL(url).searchParams.get("q");
+      const translations = {
+        "Real Madrid sign a new striker": "Le Real Madrid recrute un nouvel attaquant",
+        "A record transfer shakes up the market.": "Un transfert record bouscule le marché.",
+      };
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ responseData: { translatedText: translations[q] || q } }),
+      });
+    }
+    return Promise.resolve({ ok: true, text: () => Promise.resolve(rssFor([])) });
+  });
+
+  const handler = (await import("../pages/api/news.js")).default;
+  const res = makeRes();
+  await handler({}, res);
+
+  const article = res.body.articles.find((a) => a.link === "https://example.com/en");
+  expect(article.title).toBe("Le Real Madrid recrute un nouvel attaquant");
+  expect(article.summary).toBe("Un transfert record bouscule le marché.");
+  expect(article.source).toBe("BBC Sport"); // le nom du média n'est jamais traduit
+});
+
+test("si la traduction échoue, le texte original (anglais) reste affiché plutôt qu'un texte cassé", async () => {
+  global.fetch = jest.fn((url) => {
+    if (url.includes("bbci")) {
+      return Promise.resolve({
+        ok: true,
+        text: () =>
+          Promise.resolve(
+            `<?xml version="1.0"?><rss><channel><item><title>Untranslated headline</title><link>https://example.com/fail</link></item></channel></rss>`
+          ),
+      });
+    }
+    if (url.includes("api.mymemory.translated.net")) return Promise.reject(new Error("Erreur réseau"));
+    return Promise.resolve({ ok: true, text: () => Promise.resolve(rssFor([])) });
+  });
+
+  const handler = (await import("../pages/api/news.js")).default;
+  const res = makeRes();
+  await handler({}, res);
+
+  const article = res.body.articles.find((a) => a.link === "https://example.com/fail");
+  expect(article.title).toBe("Untranslated headline");
 });

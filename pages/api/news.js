@@ -1,18 +1,19 @@
 import { parseRssFeed } from "../../lib/rssParser";
 import { sortByImportance } from "../../lib/newsScoring";
+import { translateToFrench } from "../../lib/translate";
 
-// Flux RSS 2.0 publics, gratuits, sans clé API — uniquement du football, et en
-// français (le site étant en français, les actualités elles-mêmes doivent l'être,
-// pas seulement l'interface). On évite volontairement une API d'actualités payante/à
-// clé (voir API_FOOTBALL_KEY plus tôt dans le projet, jamais activée sur Vercel) pour
-// ne pas bloquer sur une étape manuelle supplémentaire côté utilisateur.
+// Flux RSS 2.0 publics, gratuits, sans clé API — uniquement du football. Ces sources
+// publient en anglais : le texte de chaque article (titre + résumé) est traduit
+// automatiquement en français avant d'être renvoyé (voir lib/translate.js), le site
+// étant en français — la source (nom du média) reste, elle, inchangée.
 const FEEDS = [
-  { url: "https://www.lequipe.fr/rss/actu_rss_Football.xml", source: "L'Équipe" },
-  { url: "https://www.footmercato.net/rss", source: "Foot Mercato" },
-  { url: "https://www.sofoot.com/rss.xml", source: "So Foot" },
+  { url: "http://feeds.bbci.co.uk/sport/football/rss.xml", source: "BBC Sport" },
+  { url: "https://www.skysports.com/rss/12040", source: "Sky Sports" },
+  { url: "https://www.espn.com/espn/rss/soccer/news", source: "ESPN" },
 ];
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes : "se rafraîchit automatiquement" sans marteler les flux.
+const MAX_ARTICLES = 30; // borne le nombre de traductions par cycle de rafraîchissement.
 
 let cache = null; // { articles, fetchedAt }
 let inFlight = null;
@@ -42,10 +43,23 @@ function dedupeByLink(articles) {
   return result;
 }
 
+async function translateArticle(article) {
+  const [title, summary] = await Promise.all([
+    translateToFrench(article.title),
+    translateToFrench(article.summary),
+  ]);
+  return { ...article, title, summary };
+}
+
 async function fetchAllNews() {
   const perFeed = await Promise.all(FEEDS.map(fetchFeed));
   const merged = dedupeByLink(perFeed.flat());
-  return sortByImportance(merged);
+  // Le tri par importance se base sur les mots-clés (noms de clubs/compétitions,
+  // identiques en anglais et en français) : pas besoin d'attendre la traduction pour
+  // trier correctement, et ça évite de traduire des articles qui seront de toute façon
+  // coupés par la limite ci-dessous.
+  const sorted = sortByImportance(merged).slice(0, MAX_ARTICLES);
+  return Promise.all(sorted.map(translateArticle));
 }
 
 export default async function handler(req, res) {
