@@ -42,11 +42,11 @@ export default function App({ Component, pageProps }) {
 const s = {
   page: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 },
   card: {
-    width: "100%", maxWidth: 360, background: "#12291E", border: "1px solid #1E3D2C",
+    width: "100%", maxWidth: 360, background: "#FFFFFF", border: "1px solid #D8E6DE",
     borderRadius: 16, padding: 24, textAlign: "center",
   },
   h1: { fontSize: 18, margin: "0 0 8px" },
-  text: { fontSize: 13, color: "#7EA694", margin: "0 0 16px" },
+  text: { fontSize: 13, color: "#5C7A6A", margin: "0 0 16px" },
   btn: {
     display: "inline-block", background: "#39B577", border: "none", color: "#06121F", fontWeight: 700,
     borderRadius: 999, padding: "10px 20px", fontSize: 13, textDecoration: "none",

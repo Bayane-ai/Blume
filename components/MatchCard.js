@@ -46,7 +46,7 @@ export default function MatchCard({ m, comp }) {
 
 const st = {
   card: {
-    background: "#12291E", border: "1px solid #1E3D2C", borderRadius: "14px 14px 0 0",
+    background: "#FFFFFF", border: "1px solid #D8E6DE", borderRadius: "14px 14px 0 0",
     padding: 16, borderBottom: "none",
   },
   analyzeBtn: {

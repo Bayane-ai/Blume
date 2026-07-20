@@ -1,8 +1,8 @@
 * { box-sizing: border-box; }
 html, body { padding: 0; margin: 0; }
 body {
-  background: #0B1F16;
-  color: #E9F1EC;
+  background: #EEF5F0;
+  color: #13291D;
   font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
 }
 input, select, button { font-family: inherit; }

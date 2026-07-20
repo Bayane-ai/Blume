@@ -124,8 +124,8 @@ test('"Probabilité de victoire" est une carte à part, avec son propre titre, s
 
   // Les deux cartes sont visuellement séparées (fond + bordure propres), pas un
   // simple <div> transparent au milieu d'un autre bloc.
-  expect(winCard).toHaveStyle({ background: "#12291E", border: "1px solid #1E3D2C" });
-  expect(statsCard).toHaveStyle({ background: "#12291E", border: "1px solid #1E3D2C" });
+  expect(winCard).toHaveStyle({ background: "#FFFFFF", border: "1px solid #D8E6DE" });
+  expect(statsCard).toHaveStyle({ background: "#FFFFFF", border: "1px solid #D8E6DE" });
 });
 
 test("chaque match a ses propres valeurs dans la carte \"Probabilité de victoire\" — jamais les mêmes pourcentages recopiés d'un match à l'autre", () => {

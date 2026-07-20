@@ -68,19 +68,19 @@ export default function ProbableScorers({ pronostic }) {
 }
 
 const st = {
-  card: { background: "#12291E", border: "1px solid #1E3D2C", borderRadius: 14, padding: 18 },
-  cardTitle: { fontSize: 15, fontWeight: 800, margin: "0 0 12px", color: "#E9F1EC" },
+  card: { background: "#FFFFFF", border: "1px solid #D8E6DE", borderRadius: 14, padding: 18 },
+  cardTitle: { fontSize: 15, fontWeight: 800, margin: "0 0 12px", color: "#13291D" },
   columns: { display: "flex", gap: 12 },
   col: { flex: 1, minWidth: 0 },
   colHeader: {
-    display: "block", fontSize: 12, fontWeight: 800, color: "#E9F1EC", marginBottom: 4,
+    display: "block", fontSize: 12, fontWeight: 800, color: "#13291D", marginBottom: 4,
     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
   },
-  subLabel: { fontSize: 9.5, color: "#7EA694", textTransform: "uppercase", margin: "10px 0 6px" },
-  line: { background: "#0B1F16", borderRadius: 8, padding: "8px 10px", marginBottom: 6 },
+  subLabel: { fontSize: 9.5, color: "#5C7A6A", textTransform: "uppercase", margin: "10px 0 6px" },
+  line: { background: "#EEF5F0", borderRadius: 8, padding: "8px 10px", marginBottom: 6 },
   lineName: { display: "block", fontSize: 12, fontWeight: 700, overflowWrap: "break-word" },
-  lineStat: { display: "block", fontSize: 10, color: "#7EA694", marginTop: 2 },
-  emptyHint: { fontSize: 11, color: "#7EA694", margin: 0 },
-  hint: { fontSize: 12.5, color: "#7EA694", marginTop: 10 },
-  noteText: { fontSize: 10.5, color: "#5C8A73", fontStyle: "italic", margin: "12px 0 0" },
+  lineStat: { display: "block", fontSize: 10, color: "#5C7A6A", marginTop: 2 },
+  emptyHint: { fontSize: 11, color: "#5C7A6A", margin: 0 },
+  hint: { fontSize: 12.5, color: "#5C7A6A", marginTop: 10 },
+  noteText: { fontSize: 10.5, color: "#3F6151", fontStyle: "italic", margin: "12px 0 0" },
 };

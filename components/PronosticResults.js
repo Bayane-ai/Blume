@@ -109,17 +109,17 @@ const st = {
   // Même style que les autres cartes de la page (voir pages/match/[id].js — st.panel) :
   // chaque bloc de pronostic est sa propre section visuellement distincte, pas une
   // simple ligne au milieu d'un autre bloc.
-  card: { background: "#12291E", border: "1px solid #1E3D2C", borderRadius: 14, padding: 18 },
-  cardTitle: { fontSize: 15, fontWeight: 800, margin: "0 0 12px", color: "#E9F1EC" },
-  hint: { fontSize: 12.5, color: "#7EA694", marginTop: 14 },
-  sectionLabel: { fontSize: 10, color: "#5C8A73", textTransform: "uppercase", margin: "14px 0 6px", letterSpacing: 0.4 },
+  card: { background: "#FFFFFF", border: "1px solid #D8E6DE", borderRadius: 14, padding: 18 },
+  cardTitle: { fontSize: 15, fontWeight: 800, margin: "0 0 12px", color: "#13291D" },
+  hint: { fontSize: 12.5, color: "#5C7A6A", marginTop: 14 },
+  sectionLabel: { fontSize: 10, color: "#3F6151", textTransform: "uppercase", margin: "14px 0 6px", letterSpacing: 0.4 },
   marketList: { display: "flex", flexDirection: "column", gap: 6, marginBottom: 4 },
   marketRow: {
-    background: "#0B1F16", borderRadius: 8, padding: "10px 12px", fontSize: 13, fontWeight: 700,
+    background: "#EEF5F0", borderRadius: 8, padding: "10px 12px", fontSize: 13, fontWeight: 700,
   },
   scoresRow: { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 4 },
-  scoreCell: { flex: "1 1 calc(33.333% - 6px)", minWidth: 72, textAlign: "center", background: "#0B1F16", borderRadius: 8, padding: "10px 4px" },
-  probLabel: { display: "block", fontSize: 9.5, color: "#7EA694", textTransform: "uppercase" },
+  scoreCell: { flex: "1 1 calc(33.333% - 6px)", minWidth: 72, textAlign: "center", background: "#EEF5F0", borderRadius: 8, padding: "10px 4px" },
+  probLabel: { display: "block", fontSize: 9.5, color: "#5C7A6A", textTransform: "uppercase" },
   probValue: { fontSize: 15, fontWeight: 700 },
-  noteText: { fontSize: 10.5, color: "#5C8A73", fontStyle: "italic", margin: "8px 0 0" },
+  noteText: { fontSize: 10.5, color: "#3F6151", fontStyle: "italic", margin: "8px 0 0" },
 };

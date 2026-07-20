@@ -34,7 +34,7 @@ const st = {
     WebkitOverflowScrolling: "touch", scrollbarWidth: "thin",
   },
   chip: {
-    flex: "0 0 auto", background: "#12291E", border: "1px solid #1E3D2C", color: "#7EA694",
+    flex: "0 0 auto", background: "#FFFFFF", border: "1px solid #D8E6DE", color: "#5C7A6A",
     borderRadius: 999, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer",
     whiteSpace: "nowrap",
   },

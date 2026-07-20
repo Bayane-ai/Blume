@@ -79,11 +79,11 @@ const st = {
   compLeft: { display: "flex", alignItems: "center", gap: 8, minWidth: 0 },
   compEmblem: { width: 18, height: 18, objectFit: "contain", flexShrink: 0 },
   compName: {
-    fontSize: 11, color: "#7EA694", textTransform: "uppercase", letterSpacing: 0.3,
+    fontSize: 11, color: "#5C7A6A", textTransform: "uppercase", letterSpacing: 0.3,
     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
   },
-  liveTag: { fontSize: 11, color: "#D8685E", fontWeight: 800, flexShrink: 0, letterSpacing: 0.3 },
-  finishedTag: { fontSize: 11, color: "#7EA694", fontWeight: 600, flexShrink: 0 },
+  liveTag: { fontSize: 11, color: "#C0392B", fontWeight: 800, flexShrink: 0, letterSpacing: 0.3 },
+  finishedTag: { fontSize: 11, color: "#5C7A6A", fontWeight: 600, flexShrink: 0 },
   teamRow: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, fontSize: 14 },
   teamBlock: { flex: 1, display: "flex", alignItems: "center", gap: 10, minWidth: 0 },
   teamBlockAway: { justifyContent: "flex-end" },
@@ -100,6 +100,6 @@ const st = {
   },
   teamNameAway: { textAlign: "right" },
   centerRow: { display: "flex", alignItems: "baseline", justifyContent: "center", gap: 8, marginTop: 10 },
-  centerSlot: { fontWeight: 800, color: "#39B577", fontSize: 20, textAlign: "center" },
-  cardMinute: { fontWeight: 800, color: "#D8685E", fontSize: 12.5, letterSpacing: 0.3 },
+  centerSlot: { fontWeight: 800, color: "#1A7F4F", fontSize: 20, textAlign: "center" },
+  cardMinute: { fontWeight: 800, color: "#C0392B", fontSize: 12.5, letterSpacing: 0.3 },
 };

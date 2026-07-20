@@ -54,17 +54,17 @@ export default function SiteHeader({ session }) {
 const st = {
   header: { maxWidth: 640, margin: "0 auto 16px", display: "flex", flexDirection: "column", gap: 12 },
   top: { display: "flex", justifyContent: "space-between", alignItems: "center" },
-  logo: { fontSize: 20, fontWeight: 800, color: "#39B577", letterSpacing: 0.3 },
+  logo: { fontSize: 20, fontWeight: 800, color: "#1A7F4F", letterSpacing: 0.3 },
   headerRight: { display: "flex", alignItems: "center", gap: 10 },
-  userEmail: { fontSize: 11.5, color: "#7EA694", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  userEmail: { fontSize: 11.5, color: "#5C7A6A", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   smallBtn: {
-    background: "transparent", border: "1px solid #1E3D2C", color: "#E9F1EC",
+    background: "transparent", border: "1px solid #D8E6DE", color: "#13291D",
     borderRadius: 999, padding: "6px 12px", fontSize: 12, textDecoration: "none", cursor: "pointer",
   },
   nav: { display: "flex", gap: 8 },
   navBtn: {
-    flex: "1 1 auto", textAlign: "center", background: "#12291E", border: "1px solid #1E3D2C",
-    color: "#7EA694", borderRadius: 999, padding: "10px 8px", fontSize: 13, fontWeight: 700,
+    flex: "1 1 auto", textAlign: "center", background: "#FFFFFF", border: "1px solid #D8E6DE",
+    color: "#5C7A6A", borderRadius: 999, padding: "10px 8px", fontSize: 13, fontWeight: 700,
     cursor: "pointer", textDecoration: "none",
   },
   liveDot: {

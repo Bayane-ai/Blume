@@ -172,26 +172,26 @@ export default function Login() {
 const styles = {
   page: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 },
   card: {
-    width: "100%", maxWidth: 360, background: "#12291E", border: "1px solid #1E3D2C",
+    width: "100%", maxWidth: 360, background: "#FFFFFF", border: "1px solid #D8E6DE",
     borderRadius: 16, padding: 16, display: "flex", flexDirection: "column", gap: 16,
   },
   tabs: { display: "flex", gap: 8 },
   tabBtn: {
-    flex: 1, background: "#0B1F16", border: "1px solid #1E3D2C", color: "#7EA694",
+    flex: 1, background: "#EEF5F0", border: "1px solid #D8E6DE", color: "#5C7A6A",
     borderRadius: 999, padding: "10px 8px", fontSize: 12.5, fontWeight: 700, cursor: "pointer",
   },
   tabBtnActive: { background: "#39B577", border: "1px solid #39B577", color: "#06121F" },
   form: { display: "flex", flexDirection: "column", gap: 12, padding: "8px 8px 0" },
   h1: { fontSize: 20, margin: "0 0 8px", textAlign: "center" },
   input: {
-    background: "#0B1F16", border: "1px solid #1E3D2C", color: "#E9F1EC",
+    background: "#EEF5F0", border: "1px solid #D8E6DE", color: "#13291D",
     borderRadius: 9, padding: "11px 12px", fontSize: 14,
   },
   btn: {
     background: "#39B577", border: "none", color: "#06121F", fontWeight: 700,
     borderRadius: 999, padding: "11px 0", fontSize: 14, cursor: "pointer", marginTop: 6,
   },
-  switchBtn: { background: "transparent", border: "none", color: "#7EA694", fontSize: 12.5, cursor: "pointer" },
-  error: { color: "#D8685E", fontSize: 12.5, margin: 0 },
-  info: { color: "#39B577", fontSize: 12.5, margin: 0 },
+  switchBtn: { background: "transparent", border: "none", color: "#5C7A6A", fontSize: 12.5, cursor: "pointer" },
+  error: { color: "#C0392B", fontSize: 12.5, margin: 0 },
+  info: { color: "#1A7F4F", fontSize: 12.5, margin: 0 },
 };

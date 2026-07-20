@@ -191,11 +191,11 @@ const st = {
   main: { maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 },
   hero: { textAlign: "center", padding: "8px 4px" },
   heroTitle: { fontSize: 21, fontWeight: 800, margin: "0 0 8px", lineHeight: 1.25 },
-  heroSubtitle: { fontSize: 12, color: "#7EA694", margin: 0, lineHeight: 1.5 },
-  hint: { fontSize: 12.5, color: "#7EA694" },
+  heroSubtitle: { fontSize: 12, color: "#5C7A6A", margin: 0, lineHeight: 1.5 },
+  hint: { fontSize: 12.5, color: "#5C7A6A" },
   searchRow: { display: "flex", gap: 8 },
   searchInput: {
-    flex: 1, background: "#12291E", border: "1px solid #1E3D2C", color: "#E9F1EC",
+    flex: 1, background: "#FFFFFF", border: "1px solid #D8E6DE", color: "#13291D",
     borderRadius: 999, padding: "10px 16px", fontSize: 13,
   },
   searchBtn: {
