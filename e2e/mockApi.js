@@ -119,6 +119,7 @@ async function installApiMocks(page) {
         ? computeLivePronostic({
             homeRow, awayRow, homeTeamName, awayTeamName,
             currentHome: live.score.fullTime.home, currentAway: live.score.fullTime.away, minute: live.minute,
+            status: live.status,
           })
         : computePronostic({ homeRow, awayRow, homeTeamName, awayTeamName });
 

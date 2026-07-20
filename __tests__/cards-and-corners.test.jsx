@@ -1,11 +1,11 @@
 /**
  * @jest-environment jsdom
  *
- * components/CardsAndCorners.js — bloc "Corners et cartons", en bas de la page de
- * pronostics : pour corners, cartons jaunes et cartons rouges, deux options "Plus/
- * Moins de X,5" (une sûre, une risquée — voir lib/pronostic.js, riskLines), et les
- * vrais joueurs les plus sujets aux cartons cette saison (best-effort, API-Football)
- * — jamais un joueur inventé.
+ * components/CardsAndCorners.js — bloc "Cartons", en bas de la page de pronostics :
+ * pour cartons jaunes et cartons rouges, deux options "Plus/Moins de X,5" (une sûre,
+ * une risquée — voir lib/pronostic.js, riskLines), et les vrais joueurs les plus
+ * sujets aux cartons cette saison (best-effort, API-Football) — jamais un joueur
+ * inventé. Les corners ont leur propre bloc dédié, voir live-stat-block.test.jsx.
  */
 import { render, screen, within } from "@testing-library/react";
 import CardsAndCorners from "../components/CardsAndCorners";
@@ -26,9 +26,8 @@ function basePronostic(overrides = {}) {
 
 const OPTION_PATTERN = /Sûr (Plus|Moins) de \d+,5.*Risqué (Plus|Moins) de \d+,5/s;
 
-test("corners et cartons jaunes affichent chacun une option sûre et une option risquée, en Plus/Moins de X,5, jamais une cote", () => {
+test("cartons jaunes affichent une option sûre et une option risquée, en Plus/Moins de X,5, jamais une cote", () => {
   render(<CardsAndCorners pronostic={basePronostic()} />);
-  expect(screen.getByTestId("market-corners")).toHaveTextContent(OPTION_PATTERN);
   expect(screen.getByTestId("market-yellow-cards")).toHaveTextContent(OPTION_PATTERN);
 });
 
@@ -37,11 +36,16 @@ test("le carton rouge suit le même format sûr/risqué en Plus/Moins de X,5 (pa
   expect(screen.getByTestId("market-red-card")).toHaveTextContent(OPTION_PATTERN);
 });
 
+test("il n'y a plus de ligne Corners dans ce bloc (déplacée dans son propre bloc dédié)", () => {
+  render(<CardsAndCorners pronostic={basePronostic()} />);
+  expect(screen.queryByTestId("market-corners")).not.toBeInTheDocument();
+});
+
 test("pour chaque métrique, l'option sûre et l'option risquée sont deux lignes distinctes, jamais la même valeur répétée", () => {
   const pronostic = basePronostic();
   render(<CardsAndCorners pronostic={pronostic} />);
-  for (const testId of ["market-corners", "market-yellow-cards", "market-red-card"]) {
-    const { safe, risky } = pronostic.markets[testId === "market-corners" ? "corners" : testId === "market-yellow-cards" ? "yellowCards" : "redCards"];
+  for (const testId of ["market-yellow-cards", "market-red-card"]) {
+    const { safe, risky } = pronostic.markets[testId === "market-yellow-cards" ? "yellowCards" : "redCards"];
     expect(`${safe.side}${safe.line}`).not.toBe(`${risky.side}${risky.line}`);
   }
 });
@@ -76,7 +80,7 @@ test("ne s'affiche pas quand le pronostic n'est pas disponible (pas de carte vid
   expect(container).toBeEmptyDOMElement();
 });
 
-test("deux matchs différents affichent des lignes de corners/cartons différentes — jamais recopiées d'un match à l'autre", () => {
+test("deux matchs différents affichent des lignes de cartons différentes — jamais recopiées d'un match à l'autre", () => {
   const { unmount } = render(<CardsAndCorners pronostic={basePronostic()} />);
   const match1 = screen.getByTestId("cards-corners-markets").textContent;
   unmount();

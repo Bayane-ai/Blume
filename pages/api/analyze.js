@@ -7,7 +7,7 @@ import { buildProbableScorers } from "../../lib/probableScorers";
 import { computePronostic, computeLivePronostic } from "../../lib/pronostic";
 import {
   getAllLiveFixtures, findLiveFixtureByTeams, getFixtureEvents, mapApiFootballEvents, mapFixtureToLiveState,
-  findApiFootballTeamId, getTeamCardProneness,
+  findApiFootballTeamId, getTeamCardProneness, getFixtureStatistics, mapFixtureStatistics,
 } from "../../lib/apiFootball";
 
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
@@ -111,6 +111,30 @@ export default async function handler(req, res) {
     ]);
 
     const isLive = liveMatch && LIVE_STATUSES.includes(liveMatch.status);
+
+    // Corners/hors-jeu/fautes en direct (blocs dédiés, voir lib/pronostic.js —
+    // buildMatchStats) : résolu AVANT le calcul du pronostic pour pouvoir lui passer le
+    // vrai décompte observé depuis le début du match, quand la donnée existe. Réutilisé
+    // plus bas pour les événements (buts/cartons/remplacements), qui ont besoin du même
+    // fixture API-Football — jamais une deuxième recherche identique.
+    let liveRealStats = null;
+    if (isLive && apiFootballKey) {
+      try {
+        if (!apiFootballFixture) {
+          const liveFixtures = await getAllLiveFixtures(apiFootballKey);
+          apiFootballFixture = findLiveFixtureByTeams(liveFixtures, homeTeamName, awayTeamName);
+        }
+        if (apiFootballFixture?.fixture?.id) {
+          const rawStats = await getFixtureStatistics(apiFootballFixture.fixture.id, apiFootballKey);
+          if (rawStats) liveRealStats = mapFixtureStatistics(rawStats, apiFootballFixture.teams?.home?.id);
+        }
+      } catch (e) {
+        console.error("Erreur statistiques live (API-Football):", e.message);
+        // liveRealStats reste null : repli honnête sur l'estimation pré-match (voir
+        // buildMatchStats), jamais un plantage de toute la page pour cette seule donnée.
+      }
+    }
+
     const result = isLive
       ? computeLivePronostic({
           homeRow: homeResolved.stats,
@@ -122,6 +146,8 @@ export default async function handler(req, res) {
           currentHome: liveMatch.score?.fullTime?.home,
           currentAway: liveMatch.score?.fullTime?.away,
           minute: liveMatch.minute,
+          status: liveMatch.status,
+          liveRealStats,
           h2h,
         })
       : computePronostic({

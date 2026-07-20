@@ -138,10 +138,11 @@ describe("Anti-duplication : 3 matchs différents ont 3 pronostics différents",
   });
 
   // Bloc statistiques (refonte "app de paris sportifs") : les lignes de marché
-  // (Total, Total 1, Total 2, Corners, Cartons jaunes, Cartons rouges) doivent elles
-  // aussi être propres à chaque match — jamais la même ligne/le même sens recopiés sur
-  // 3 matchs différents.
-  test("les lignes de marché (Total, Total 1, Total 2, Corners, Cartons jaunes, Cartons rouges) diffèrent selon le match", async () => {
+  // (Total, Total 1, Total 2, Cartons jaunes, Cartons rouges) doivent elles aussi être
+  // propres à chaque match — jamais la même ligne/le même sens recopiés sur 3 matchs
+  // différents. Les corners ont leur propre bloc dédié (Total match + mi-temps,
+  // recalculé en direct) — voir live-stat-block.test.js.
+  test("les lignes de marché (Total, Total 1, Total 2, Cartons jaunes, Cartons rouges) diffèrent selon le match", async () => {
     const r1 = await analyzeMatch(MATCH_1);
     const r2 = await analyzeMatch(MATCH_2);
     const r3 = await analyzeMatch(MATCH_3);
@@ -155,9 +156,9 @@ describe("Anti-duplication : 3 matchs différents ont 3 pronostics différents",
           expect(l.line % 1).toBeCloseTo(0.5, 5);
         }
       }
-      // Corners/cartons jaunes/cartons rouges : deux options (sûre + risquée), jamais
-      // une seule ligne ni une cote (voir riskLines).
-      for (const key of ["corners", "yellowCards", "redCards"]) {
+      // Cartons jaunes/cartons rouges : deux options (sûre + risquée), jamais une
+      // seule ligne ni une cote (voir riskLines).
+      for (const key of ["yellowCards", "redCards"]) {
         for (const option of [r.markets[key].safe, r.markets[key].risky]) {
           expect(option.side).toMatch(/^Plus|Moins$/);
           expect(option.line % 1).toBeCloseTo(0.5, 5);
@@ -166,9 +167,10 @@ describe("Anti-duplication : 3 matchs différents ont 3 pronostics différents",
     }
 
     // Au moins un des matchs (fermé, Juventus-Salernitana) et un des matchs (net
-    // écart offensif, Arsenal-Fulham) doivent afficher un couple de lignes corners
-    // différent — sinon le calcul recopierait la même ligne partout.
-    const cornersLines = [r1, r2, r3].map((r) => `${r.markets.corners.safe.line}/${r.markets.corners.risky.line}`);
+    // écart offensif, Arsenal-Fulham) doivent afficher un couple de lignes de corners
+    // (bloc dédié, voir matchStats) différent — sinon le calcul recopierait la même
+    // ligne partout.
+    const cornersLines = [r1, r2, r3].map((r) => `${r.matchStats.corners.total.side}${r.matchStats.corners.total.line}`);
     expect(new Set(cornersLines).size).toBeGreaterThan(1);
 
     // Régression : le total de corners/cartons ne dépendait QUE du total de buts

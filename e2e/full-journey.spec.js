@@ -258,13 +258,22 @@ test.describe("Écran 3 — Analyser un match", () => {
     expect(scoreCount).toBeGreaterThanOrEqual(3);
     expect(scoreCount).toBeLessThanOrEqual(4);
 
-    // Bloc "Corners et cartons" (en bas de page) : pour chaque métrique (corners,
-    // cartons jaunes, cartons rouges), une option "Sûr" et une option "Risqué", toutes
-    // deux en ligne "Plus/Moins de X,5" (jamais une cote).
+    // Bloc "Cartons" (en bas de page) : pour cartons jaunes et cartons rouges, une
+    // option "Sûr" et une option "Risqué", toutes deux en ligne "Plus/Moins de X,5"
+    // (jamais une cote).
     const riskFormat = /Sûr (Plus|Moins) de \d+,5.*Risqué (Plus|Moins) de \d+,5/s;
-    await expect(page.getByTestId("market-corners")).toContainText(riskFormat);
     await expect(page.getByTestId("market-yellow-cards")).toContainText(riskFormat);
     await expect(page.getByTestId("market-red-card")).toContainText(riskFormat);
+
+    // Blocs Corners / Hors-jeu / Fautes / Touches (Total match + Total 1 + Total 2 +
+    // mi-temps, recalculé en direct — même structure pour les 4).
+    const lineFormatSingle = /: (Plus|Moins) de \d+,5$/;
+    for (const prefix of ["stat-corners", "stat-offsides", "stat-fouls", "stat-throwins"]) {
+      await expect(page.getByTestId(`${prefix}-total`)).toHaveText(lineFormatSingle);
+      await expect(page.getByTestId(`${prefix}-home`)).toHaveText(lineFormatSingle);
+      await expect(page.getByTestId(`${prefix}-away`)).toHaveText(lineFormatSingle);
+      await expect(page.getByTestId(`${prefix}-half`)).toHaveText(lineFormatSingle);
+    }
 
     // Aucune cote affichée nulle part (ex : 1.85, 2.40).
     const bodyText = await page.locator("body").innerText();
@@ -292,7 +301,7 @@ test.describe("Écran 3 — Analyser un match", () => {
       return {
         home: await page.getByTestId("prob-home").textContent(),
         total: await page.getByTestId("market-total").textContent(),
-        corners: await page.getByTestId("market-corners").textContent(),
+        corners: await page.getByTestId("stat-corners-total").textContent(),
       };
     }
 

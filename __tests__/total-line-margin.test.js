@@ -3,9 +3,10 @@
  * confiant, et une marge de deux lignes voisines (ex. "Plus de 2,5 (ou 3,5)") quand
  * l'issue réelle (probabilité calculée sur la vraie distribution de Poisson) est trop
  * proche de 50 % pour un seul chiffre. Les tirs (seul marché sans double option sûre/
- * risquée) restent toujours sur une seule ligne. Corners/cartons jaunes/cartons rouges
- * ont leur propre mécanisme à deux lignes (sûre + risquée, voir riskLines) — testé dans
- * cards-and-corners.test.jsx.
+ * risquée) restent toujours sur une seule ligne. Cartons jaunes/cartons rouges ont leur
+ * propre mécanisme à deux lignes (sûre + risquée, voir riskLines) — testé dans
+ * cards-and-corners.test.jsx. Les corners ont leur propre bloc dédié (Total match +
+ * mi-temps, recalculé en direct) — voir live-stat-block.test.js.
  */
 import { computePronostic } from "../lib/pronostic";
 import { marketLabel } from "../lib/marketFormat";
@@ -48,14 +49,14 @@ test("le marché sans double option (tirs) n'a jamais de marge, même quand le T
   }
 });
 
-test("corners/cartons jaunes/cartons rouges affichent toujours une option sûre ET une option risquée, distinctes l'une de l'autre", () => {
+test("cartons jaunes/cartons rouges affichent toujours une option sûre ET une option risquée, distinctes l'une de l'autre", () => {
   for (let goalsFor = 14; goalsFor <= 60; goalsFor += 4) {
     const result = computePronostic({
       homeRow: row({ id: 1, goalsFor, goalsAgainst: 30 }),
       awayRow: row({ id: 2, goalsFor: 30, goalsAgainst: goalsFor }),
       homeTeamName: "A", awayTeamName: "B",
     });
-    for (const key of ["corners", "yellowCards", "redCards"]) {
+    for (const key of ["yellowCards", "redCards"]) {
       const market = result.markets[key];
       expect(market.safe.side).toMatch(/^Plus|Moins$/);
       expect(market.risky.side).toMatch(/^Plus|Moins$/);
@@ -66,15 +67,14 @@ test("corners/cartons jaunes/cartons rouges affichent toujours une option sûre 
   }
 });
 
-// Régression : les lignes corners/cartons jaunes étaient dérivées d'un seuil de
-// confiance fixe (recherche sur la loi de Poisson), qui produisait de larges "paliers"
-// — beaucoup de matchs à l'intensité totale proche mais au rapport de force différent
-// retombaient alors sur EXACTEMENT le même couple de lignes. Remplacé par un écart
-// continu (écart-type réel de la distribution, voir riskLines/spreadLine dans
-// lib/pronostic.js) : sur un lot de profils d'équipes assez variés, la grande majorité
-// doivent désormais afficher des lignes distinctes, pas la même poignée de couples
-// recopiée partout.
-test("sur un lot de profils d'équipes variés, corners/cartons jaunes affichent des lignes distinctes dans la grande majorité des cas — jamais un petit nombre de couples recopiés partout", () => {
+// Régression : les lignes de cartons jaunes étaient dérivées d'un seuil de confiance
+// fixe (recherche sur la loi de Poisson), qui produisait de larges "paliers" — beaucoup
+// de matchs à l'intensité totale proche mais au rapport de force différent retombaient
+// alors sur EXACTEMENT le même couple de lignes. Remplacé par un écart continu (écart-
+// type réel de la distribution, voir riskLines/spreadLine dans lib/pronostic.js) : sur
+// un lot de profils d'équipes assez variés, la grande majorité doivent désormais
+// afficher des lignes distinctes, pas la même poignée de couples recopiée partout.
+test("sur un lot de profils d'équipes variés, les cartons jaunes affichent des lignes distinctes dans la grande majorité des cas — jamais un petit nombre de couples recopiés partout", () => {
   const profiles = [];
   for (let homeGoalsFor = 15; homeGoalsFor <= 60; homeGoalsFor += 5) {
     for (let awayGoalsAgainst = 15; awayGoalsAgainst <= 45; awayGoalsAgainst += 15) {
@@ -91,7 +91,7 @@ test("sur un lot de profils d'équipes variés, corners/cartons jaunes affichent
     return result.markets;
   });
 
-  for (const key of ["corners", "yellowCards"]) {
+  for (const key of ["yellowCards"]) {
     const distinctLines = new Set(results.map((m) => `${m[key].safe.side}${m[key].safe.line}/${m[key].risky.side}${m[key].risky.line}`));
     // Repère de non-régression : avant le passage à un écart continu, ce lot de
     // profils (volontairement dense — des équipes très proches y sont attendues, donc

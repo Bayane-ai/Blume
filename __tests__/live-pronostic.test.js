@@ -416,6 +416,111 @@ describe("/api/analyze — événements live réels (API-Football), en compléme
   });
 });
 
+describe("/api/analyze — corners/hors-jeu/fautes en direct (API-Football, best-effort)", () => {
+  const TOKEN = "test-token";
+  const AF_KEY = "test-api-football-key";
+
+  function mockRes() {
+    const res = {};
+    res.status = jest.fn(() => res);
+    res.json = jest.fn((body) => { res.body = body; return res; });
+    res.setHeader = jest.fn();
+    return res;
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    process.env.FOOTBALL_DATA_TOKEN = TOKEN;
+    process.env.API_FOOTBALL_KEY = AF_KEY;
+  });
+
+  afterEach(() => {
+    delete process.env.API_FOOTBALL_KEY;
+  });
+
+  const baseQuery = { matchId: "777", competitionCode: "PL", homeTeamId: "10", awayTeamId: "11", homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC" };
+
+  function mockFetchWithStats({ apiFootballStatistics }) {
+    return jest.fn((url) => {
+      if (url.includes("head2head")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ aggregates: { numberOfMatches: 0 } }) });
+      }
+      if (url.includes("/matches/777")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: "IN_PLAY", minute: 60, score: { fullTime: { home: 1, away: 0 } } }) });
+      }
+      if (url.includes("/standings")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [{ table: [homeRow, awayRow] }] }) });
+      }
+      if (url.includes("fixtures?live=all")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ response: [{ fixture: { id: 555 }, teams: { home: { id: 100, name: "Arsenal" }, away: { id: 101, name: "Chelsea" } } }] }),
+        });
+      }
+      if (url.includes("fixtures/statistics")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: apiFootballStatistics }) });
+      }
+      if (url.includes("fixtures/events")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) });
+      }
+      return Promise.reject(new Error(`URL inattendue : ${url}`));
+    });
+  }
+
+  test("un vrai décompte de corners/hors-jeu/fautes (API-Football) est bien pris en compte dans matchStats, avec l'id football-data.org de l'équipe", async () => {
+    global.fetch = mockFetchWithStats({
+      apiFootballStatistics: [
+        { team: { id: 100 }, statistics: [{ type: "Corner Kicks", value: 9 }, { type: "Offsides", value: 3 }, { type: "Fouls", value: 8 }] },
+        { team: { id: 101 }, statistics: [{ type: "Corner Kicks", value: 4 }, { type: "Offsides", value: 1 }, { type: "Fouls", value: 6 }] },
+      ],
+    });
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    const res = mockRes();
+    await handler({ query: baseQuery }, res);
+
+    expect(res.body.matchStats).toBeDefined();
+    // 13 corners réels déjà observés à la 60e minute : le total projeté doit rester
+    // au moins aussi élevé que ce vrai décompte (jamais moins que ce qui a déjà eu lieu).
+    expect(res.body.matchStats.corners.total.line).toBeGreaterThanOrEqual(12.5);
+  });
+
+  test("statistiques API-Football indisponibles (réponse vide) : matchStats retombe honnêtement sur l'estimation pré-match, sans planter", async () => {
+    global.fetch = mockFetchWithStats({ apiFootballStatistics: [] });
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    const res = mockRes();
+    await handler({ query: baseQuery }, res);
+
+    expect(res.body.matchStats).toBeDefined();
+    expect(res.body.matchStats.corners.total.side).toMatch(/^Plus|Moins$/);
+  });
+
+  test("la ligne mi-temps bascule sur \"2ème mi-temps\" une fois la 1ère mi-temps terminée (statut PAUSED)", async () => {
+    global.fetch = jest.fn((url) => {
+      if (url.includes("head2head")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ aggregates: { numberOfMatches: 0 } }) });
+      }
+      if (url.includes("/matches/777")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: "PAUSED", minute: 45, score: { fullTime: { home: 1, away: 0 } } }) });
+      }
+      if (url.includes("/standings")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [{ table: [homeRow, awayRow] }] }) });
+      }
+      if (url.includes("fixtures?live=all") || url.includes("fixtures/statistics") || url.includes("fixtures/events")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) });
+      }
+      return Promise.reject(new Error(`URL inattendue : ${url}`));
+    });
+
+    const { default: handler } = await import("../pages/api/analyze.js");
+    const res = mockRes();
+    await handler({ query: baseQuery }, res);
+
+    expect(res.body.matchStats.corners.half.label).toBe("2ème mi-temps");
+  });
+});
+
 describe("/api/analyze — buteurs probables, filtrés sur les vrais joueurs de chaque équipe", () => {
   const TOKEN = "test-token";
 

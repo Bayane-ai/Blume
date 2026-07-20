@@ -188,6 +188,68 @@ describe("getAllLiveFixtures / getFixtureEvents — cache partagé et déduplica
   });
 });
 
+describe("getFixtureStatistics / mapFixtureStatistics — corners/hors-jeu/fautes réels en direct (blocs Corners/Hors-jeu/Fautes)", () => {
+  test("sans clé ou sans id de match, renvoie null sans jamais appeler l'API", async () => {
+    const { getFixtureStatistics } = await import("../lib/apiFootball.js");
+    global.fetch = jest.fn();
+    expect(await getFixtureStatistics(42, null)).toBeNull();
+    expect(await getFixtureStatistics(null, TOKEN)).toBeNull();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test("renvoie null (pas un objet à moitié rempli) en cas d'échec réel de l'API", async () => {
+    const { getFixtureStatistics } = await import("../lib/apiFootball.js");
+    global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 429 }));
+    expect(await getFixtureStatistics(42, TOKEN)).toBeNull();
+  });
+
+  test("plusieurs visiteurs suivant le même match ne déclenchent qu'un seul appel réel pour ses statistiques", async () => {
+    const { getFixtureStatistics } = await import("../lib/apiFootball.js");
+    const fetchMock = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) }));
+    global.fetch = fetchMock;
+
+    await Promise.all([getFixtureStatistics(99, TOKEN), getFixtureStatistics(99, TOKEN), getFixtureStatistics(99, TOKEN)]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe("https://v3.football.api-sports.io/fixtures/statistics?fixture=99");
+  });
+
+  test("mapFixtureStatistics traduit la réponse brute (2 équipes) vers corners/hors-jeu/fautes home/away, en identifiant l'équipe à domicile par son id API-Football", async () => {
+    const { mapFixtureStatistics } = await import("../lib/apiFootball.js");
+    const raw = [
+      {
+        team: { id: 200 },
+        statistics: [
+          { type: "Shots on Goal", value: 5 },
+          { type: "Corner Kicks", value: "7" },
+          { type: "Offsides", value: 2 },
+          { type: "Fouls", value: 9 },
+        ],
+      },
+      {
+        team: { id: 201 },
+        statistics: [
+          { type: "Corner Kicks", value: 3 },
+          { type: "Offsides", value: null },
+          { type: "Fouls", value: "11" },
+        ],
+      },
+    ];
+    const mapped = mapFixtureStatistics(raw, 200);
+    expect(mapped).toEqual({
+      corners: { home: 7, away: 3 },
+      offsides: { home: 2, away: 0 },
+      fouls: { home: 9, away: 11 },
+    });
+  });
+
+  test("mapFixtureStatistics renvoie null si la réponse n'a pas la forme attendue (moins de 2 équipes)", async () => {
+    const { mapFixtureStatistics } = await import("../lib/apiFootball.js");
+    expect(mapFixtureStatistics([], 200)).toBeNull();
+    expect(mapFixtureStatistics([{ team: { id: 200 }, statistics: [] }], 200)).toBeNull();
+    expect(mapFixtureStatistics(null, 200)).toBeNull();
+  });
+});
+
 describe("getFixturesByDate / mapFixtureToUpcomingMatch — couverture mondiale des matchs À VENIR (pas seulement le direct)", () => {
   test("sans clé API, renvoie une liste vide sans jamais appeler l'API", async () => {
     const { getFixturesByDate } = await import("../lib/apiFootball.js");

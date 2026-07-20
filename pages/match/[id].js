@@ -7,6 +7,7 @@ import PronosticResults from "../../components/PronosticResults";
 import ProbableScorers from "../../components/ProbableScorers";
 import CardsAndCorners from "../../components/CardsAndCorners";
 import AssistsProbables from "../../components/AssistsProbables";
+import LiveStatBlock from "../../components/LiveStatBlock";
 import { useRequireAuth } from "../../lib/useRequireAuth";
 
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
@@ -210,9 +211,28 @@ export default function MatchPage() {
           </section>
         )}
 
-        {/* Corners/cartons puis passes décisives : tout en bas de la page, comme
-            demandé — chacune sa propre carte visuelle (voir components/CardsAndCorners.js
-            et components/AssistsProbables.js). */}
+        {/* Corners / Hors-jeu / Fautes / Touches (Total match + mi-temps, recalculé en
+            direct — voir components/LiveStatBlock.js et
+            lib/pronostic.js:buildMatchStats), puis cartons, puis passes décisives :
+            tout en bas de la page, chacun sa propre carte visuelle, même structure et
+            même logique pour les 4 premiers blocs. */}
+        {!loading && hasRequested && (
+          <LiveStatBlock
+            testId="stat-corners"
+            title="Corners"
+            block={pronostic?.matchStats?.corners}
+            note={pronostic?.liveStatNote}
+          />
+        )}
+        {!loading && hasRequested && (
+          <LiveStatBlock testId="stat-offsides" title="Hors-jeu" block={pronostic?.matchStats?.offsides} />
+        )}
+        {!loading && hasRequested && (
+          <LiveStatBlock testId="stat-fouls" title="Fautes" block={pronostic?.matchStats?.fouls} />
+        )}
+        {!loading && hasRequested && (
+          <LiveStatBlock testId="stat-throwins" title="Touches" block={pronostic?.matchStats?.throwIns} />
+        )}
         {!loading && hasRequested && <CardsAndCorners pronostic={pronostic} />}
         {!loading && hasRequested && <AssistsProbables pronostic={pronostic} />}
       </main>
