@@ -3,10 +3,10 @@
    consomment ces variables via var(--...)) en dérive : jamais une nouvelle couleur
    de fond/texte/accent codée en dur ailleurs dans le site. */
 :root {
-  --bg: #1A1B16;              /* fond de l'application */
-  --card-bg: #24261E;         /* fond des cartes/blocs */
-  --accent: #8FD62E;          /* accent : barres, ligne retenue, indicateur positif */
-  --accent-rgb: 143, 214, 46;
+  --bg: #1A1B16;              /* fond de l'application — reste sombre */
+  --card-bg: #2A2C22;         /* fond des cartes/blocs — un cran plus clair que le fond */
+  --accent: #A6F520;          /* accent : plus vif/éclatant, barres, ligne retenue, indicateur positif */
+  --accent-rgb: 166, 245, 32;
   --text-primary: #E6DFD0;    /* texte principal */
   --text-secondary: #9AA0A0;  /* texte secondaire / libellés */
   --negative: #E5484D;        /* indicateur négatif / échec */
