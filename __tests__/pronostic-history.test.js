@@ -287,6 +287,46 @@ describe("saveFrozenPrediction — fige le pronostic la toute première fois, ja
     expect(verifyPredictionLines).not.toHaveBeenCalled();
     expect(upsertCall.mock.calls[0][0].prediction).toEqual(basePrediction);
   });
+
+  // Bloc 4 (parcours vidéo) : quand un visiteur ouvre un match déjà terminé pour la
+  // toute première fois (aucun pronostic figé n'existait encore), la réponse de
+  // /api/analyze doit pouvoir afficher le compte-rendu (✓/✗) IMMÉDIATEMENT, sans
+  // attendre un second chargement — saveFrozenPrediction doit donc renvoyer le
+  // {status, prediction} qu'elle vient de calculer et sauvegarder, pas seulement
+  // l'écrire en base silencieusement.
+  test("match déjà terminé dès la première analyse : renvoie {status, prediction} (avec verification) pour un affichage immédiat, sans attendre un second chargement", async () => {
+    const verification = { totalGoals: true };
+    verifyPredictionLines.mockReturnValue(verification);
+    supabase.from = jest.fn(() => ({ upsert: () => chainable({ error: null }) }));
+
+    const returned = await saveFrozenPrediction({
+      matchId: "101", competitionCode: "PL", homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC",
+      matchDate: "2026-01-01T00:00:00Z", result: basePrediction, matchStatus: "FINISHED",
+      finalScore: { home: 3, away: 0 },
+    });
+
+    expect(returned).toEqual({ status: "success", prediction: { ...basePrediction, verification } });
+  });
+
+  test("match pas encore terminé : ne renvoie rien (pas de compte-rendu à afficher, le match n'est pas fini)", async () => {
+    supabase.from = jest.fn(() => ({ upsert: () => chainable({ error: null }) }));
+
+    const returned = await saveFrozenPrediction({
+      matchId: "101", competitionCode: "PL", homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC",
+      matchDate: "2026-01-01T00:00:00Z", result: basePrediction, matchStatus: "IN_PLAY", finalScore: null,
+    });
+
+    expect(returned).toBeUndefined();
+  });
+
+  test("ignoré (\"af-...\") : ne renvoie rien", async () => {
+    supabase.from = jest.fn();
+    const returned = await saveFrozenPrediction({
+      matchId: "af-999", competitionCode: "PL", homeTeamName: "A", awayTeamName: "B",
+      matchDate: "2026-01-01T00:00:00Z", result: basePrediction, matchStatus: "FINISHED", finalScore: { home: 1, away: 0 },
+    });
+    expect(returned).toBeUndefined();
+  });
 });
 
 describe("verifyFrozenPrediction — compte-rendu de fin de match : compare le pronostic FIGÉ au vrai résultat", () => {
@@ -339,6 +379,29 @@ describe("verifyFrozenPrediction — compte-rendu de fin de match : compare le p
 
     await verifyFrozenPrediction("af-999", { home: 1, away: 0 });
     expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  // Bloc 4 (parcours vidéo) : quand /api/analyze constate qu'un match vient tout
+  // juste de passer à "FINISHED" (dans CETTE requête précise), la réponse doit
+  // pouvoir afficher le compte-rendu (✓/✗) immédiatement — verifyFrozenPrediction
+  // doit donc renvoyer le {status, prediction} qu'elle vient de calculer, pas
+  // seulement l'écrire en base silencieusement.
+  test("match encore \"pending\" : renvoie {status, prediction} (avec verification) pour un affichage immédiat, sans attendre un second chargement", async () => {
+    const verification = { totalGoals: true };
+    verifyPredictionLines.mockReturnValue(verification);
+    supabase.from = jest.fn()
+      .mockReturnValueOnce(chainable({ data: { prediction: basePrediction }, error: null }))
+      .mockImplementationOnce(() => ({ update: () => chainable({ error: null }) }));
+
+    const returned = await verifyFrozenPrediction("101", { home: 2, away: 1 });
+
+    expect(returned).toEqual({ status: "success", prediction: { ...basePrediction, verification } });
+  });
+
+  test("match déjà classé (idempotent) : ne renvoie rien (déjà affiché depuis le pronostic figé relu normalement)", async () => {
+    supabase.from = mockSupabaseFrom({ data: null, error: null });
+    const returned = await verifyFrozenPrediction("101", { home: 2, away: 0 });
+    expect(returned).toBeUndefined();
   });
 
   test("erreur Supabase à la lecture : journalisée, ne lève jamais d'exception, aucune mise à jour", async () => {

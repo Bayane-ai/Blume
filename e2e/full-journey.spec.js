@@ -415,6 +415,20 @@ test.describe("BLOC — En-tête et timeline d'un match en direct", () => {
     await expect(page.getByRole("heading", { name: "Moments forts" })).toBeVisible();
     await expect(page.getByTestId("timeline-empty")).toHaveText("Événements non disponibles pour ce match.");
   });
+
+  test("Bloc 4 — appuyer sur un match déjà terminé (depuis \"Résultats\") affiche le compte-rendu : Réussi/Échec de la probabilité de victoire, et chaque autre ligne avec son ✓/✗", async ({ page }) => {
+    await page.goto("/competition/PL");
+    await page.getByRole("button", { name: "Résultats", exact: true }).click();
+    // Directement sur le corps de la carte (Bloc 1), pas le bouton ANALYSER.
+    await page.getByTestId("match-card-body").first().click();
+
+    const recap = page.getByTestId("match-outcome-recap");
+    await expect(recap).toBeVisible();
+    await expect(recap.getByTestId("recap-win-probability")).toHaveText(/Probabilité de victoire : (Réussi|Échec)/);
+    const successIcons = await recap.getByTestId("line-icon-success").count();
+    const failureIcons = await recap.getByTestId("line-icon-failure").count();
+    expect(successIcons + failureIcons).toBeGreaterThan(0);
+  });
 });
 
 test.describe("Écran 4 — Page d'une compétition (accessible par lien direct)", () => {

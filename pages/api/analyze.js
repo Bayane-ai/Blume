@@ -147,16 +147,26 @@ export default async function handler(req, res) {
     // s'affiche ainsi à l'identique du début à la fin du match, comme référence stable
     // pour le parieur — SAUF probabilités/scores exacts/totaux de buts, qui suivent
     // bien l'évolution réelle du match (voir le recalcul plus bas, jamais persisté).
+    //
+    // Bloc 4 (compte-rendu affiché directement sur la page d'un match déjà terminé) :
+    // `result.historyStatus` ("success"/"failure") et `result.verification` (✓/✗ ligne
+    // par ligne) ne sont exposés QUE si ce match a déjà été classé — voir
+    // components/MatchOutcomeRecap.js côté client. Si CETTE requête précise est celle
+    // qui vient de constater la fin du match (saveFrozenPrediction/
+    // verifyFrozenPrediction ci-dessous renvoient alors le résultat fraîchement
+    // calculé), on le fusionne immédiatement dans la réponse — jamais besoin d'un
+    // second chargement pour voir apparaître le compte-rendu.
     let result;
     const frozen = await getFrozenPrediction(matchId);
     if (frozen) {
       result = { available: true, ...frozen.prediction };
+      if (frozen.status === "success" || frozen.status === "failure") result.historyStatus = frozen.status;
     } else {
       result = await computeFreshPrediction({
         matchId, competitionCode, homeTeamId, awayTeamId, homeTeamName, awayTeamName, token, apiFootballKey,
       });
       if (canPersistMatch(matchId)) {
-        await saveFrozenPrediction({
+        const justClassified = await saveFrozenPrediction({
           matchId,
           competitionCode,
           homeTeamName,
@@ -167,6 +177,9 @@ export default async function handler(req, res) {
           finalScore: liveMatch?.score?.fullTime || null,
           apiFootballKey,
         });
+        if (justClassified) {
+          result = { ...result, ...justClassified.prediction, historyStatus: justClassified.status };
+        }
       }
     }
 
@@ -250,7 +263,10 @@ export default async function handler(req, res) {
     // si Supabase échoue.
     if (liveMatch?.status === "FINISHED" && canPersistMatch(matchId)) {
       try {
-        await verifyFrozenPrediction(matchId, liveMatch.score?.fullTime || null, apiFootballKey);
+        const justVerified = await verifyFrozenPrediction(matchId, liveMatch.score?.fullTime || null, apiFootballKey);
+        if (justVerified) {
+          result = { ...result, ...justVerified.prediction, historyStatus: justVerified.status };
+        }
       } catch (e) {
         console.error("Erreur compte-rendu de fin de match:", e.message);
       }

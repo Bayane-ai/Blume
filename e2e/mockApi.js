@@ -169,6 +169,12 @@ async function installApiMocks(page) {
       // même pronostic, quel que soit le score en direct au moment de l'appel.
       const matchId = Number(params.get("matchId"));
       const live = liveMatches.find((m) => m.id === matchId);
+      // Bloc 4 (parcours vidéo) : "quand on appuie sur un match déjà terminé" —
+      // reproduit ici, pour finishedMatch (voir e2e/fixtures.js), le VRAI calcul de
+      // pages/api/analyze.js (classifyOutcome + verifyPredictionLines) pour que le
+      // compte-rendu (components/MatchOutcomeRecap.js) soit vérifiable en conditions
+      // réelles (navigateur), pas seulement en test unitaire.
+      const finished = !live && finishedMatch.id === matchId ? finishedMatch : null;
       const competitionCode = params.get("competitionCode");
       const homeTeamId = params.get("homeTeamId");
       const awayTeamId = params.get("awayTeamId");
@@ -187,6 +193,12 @@ async function installApiMocks(page) {
         result.matchStatus = live.status;
         result.matchMinute = live.minute;
         result.matchScore = live.score.fullTime;
+      } else if (finished) {
+        result.matchStatus = finished.status;
+        result.matchMinute = finished.minute;
+        result.matchScore = finished.score.fullTime;
+        result.historyStatus = classifyOutcome(result, finished.score.fullTime);
+        result.verification = verifyPredictionLines({ prediction: result, finalScore: finished.score.fullTime, realStats: null });
       }
       // Retour en arrière partiel (demande explicite de l'utilisateur) : reproduit ici
       // le même recalcul que pages/api/analyze.js — probabilités/scores exacts/totaux

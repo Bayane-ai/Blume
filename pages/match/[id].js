@@ -8,6 +8,7 @@ import ProbableScorers from "../../components/ProbableScorers";
 import CardsAndCorners from "../../components/CardsAndCorners";
 import AssistsProbables from "../../components/AssistsProbables";
 import LiveStatBlock from "../../components/LiveStatBlock";
+import MatchOutcomeRecap from "../../components/MatchOutcomeRecap";
 import { useRequireAuth } from "../../lib/useRequireAuth";
 
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
@@ -108,6 +109,9 @@ export default function MatchPage() {
   }, [authorized, currentStatus, runAnalysis]);
 
   const isLiveNow = LIVE_STATUSES.includes(currentStatus);
+  // Bloc 4 (parcours vidéo) : "quand on appuie sur un match déjà terminé" — le statut
+  // vient toujours de l'API (currentStatus), jamais d'une valeur supposée.
+  const isFinishedNow = currentStatus === "FINISHED";
 
   const matchForBlock = {
     id: matchId || "current",
@@ -207,6 +211,14 @@ export default function MatchPage() {
             {loading ? "Analyse en cours…" : hasRequested ? "Actualiser" : "Analyser ce match"}
           </button>
         </section>
+
+        {/* Bloc 4 : sur un match déjà terminé, le compte-rendu (crochet vert/croix
+            rouge par ligne de pronostic, y compris Réussi/Échec de la probabilité de
+            victoire) apparaît en tout premier, avant les cartes de pronostics
+            elles-mêmes — voir components/MatchOutcomeRecap.js. `pronostic.verification`
+            n'existe que pour un match déjà classé (voir pages/api/analyze.js) ; le
+            composant ne s'affiche donc de lui-même que si cette donnée est là. */}
+        {!loading && hasRequested && isFinishedNow && <MatchOutcomeRecap pronostic={pronostic} />}
 
         {/* Cartes de pronostics séparées de la section ci-dessus (voir
             components/PronosticResults.js) : "Probabilité de victoire" en premier,

@@ -915,4 +915,66 @@ describe("/api/analyze — pronostics figés : sauvegarde au premier calcul, rel
     expect(saveFrozenPrediction).toHaveBeenCalledTimes(1);
     expect(saveFrozenPrediction.mock.calls[0][0]).toMatchObject({ matchStatus: "SCHEDULED" });
   });
+
+  // Bloc 4 (parcours vidéo) : quand on appuie sur un match déjà terminé, le
+  // compte-rendu (crochet vert/croix rouge par ligne + Réussi/Échec de la
+  // probabilité de victoire) doit s'afficher — jamais après un second chargement.
+  describe("Bloc 4 — le compte-rendu (historyStatus + verification) apparaît immédiatement, sans second chargement", () => {
+    test("match jamais figé, découvert déjà FINISHED dès la toute première analyse : le compte-rendu apparaît dans CETTE réponse", async () => {
+      const verification = { totalGoals: true, shots: false };
+      saveFrozenPrediction.mockResolvedValueOnce({
+        status: "success",
+        prediction: { probabilities: { home: 70, draw: 20, away: 10 }, markets: {}, verification },
+      });
+      global.fetch = mockFetch({ status: "FINISHED", minute: 90, utcDate: "2026-01-01T15:00:00Z", score: { fullTime: { home: 3, away: 0 } } });
+
+      const { default: handler } = await import("../pages/api/analyze.js");
+      const res = mockRes();
+      await handler({ query: baseQuery }, res);
+
+      expect(res.body.historyStatus).toBe("success");
+      expect(res.body.verification).toEqual(verification);
+    });
+
+    test("match déjà figé, encore \"pending\", et qui vient tout juste de passer à FINISHED dans CETTE requête : le compte-rendu apparaît immédiatement", async () => {
+      const frozenPrediction = { probabilities: { home: 60, draw: 25, away: 15 }, markets: {} };
+      const verification = { totalGoals: false, shots: true };
+      getFrozenPrediction.mockResolvedValueOnce({ prediction: frozenPrediction, status: "pending", final_score: null });
+      verifyFrozenPrediction.mockResolvedValueOnce({ status: "failure", prediction: { ...frozenPrediction, verification } });
+      global.fetch = mockFetch({ status: "FINISHED", minute: 90, utcDate: "2026-01-01T15:00:00Z", score: { fullTime: { home: 1, away: 2 } } });
+
+      const { default: handler } = await import("../pages/api/analyze.js");
+      const res = mockRes();
+      await handler({ query: baseQuery }, res);
+
+      expect(res.body.historyStatus).toBe("failure");
+      expect(res.body.verification).toEqual(verification);
+    });
+
+    test("match déjà classé depuis longtemps (relu depuis le pronostic figé) : le compte-rendu déjà enregistré est bien exposé", async () => {
+      const verification = { totalGoals: true };
+      const frozenPrediction = { probabilities: { home: 60, draw: 25, away: 15 }, markets: {}, verification };
+      getFrozenPrediction.mockResolvedValueOnce({ prediction: frozenPrediction, status: "success", final_score: { home: 2, away: 0 } });
+      global.fetch = mockFetch({ status: "FINISHED", minute: 90, utcDate: "2026-01-01T15:00:00Z", score: { fullTime: { home: 2, away: 0 } } });
+
+      const { default: handler } = await import("../pages/api/analyze.js");
+      const res = mockRes();
+      await handler({ query: baseQuery }, res);
+
+      expect(res.body.historyStatus).toBe("success");
+      expect(res.body.verification).toEqual(verification);
+    });
+
+    test("match encore en cours (\"pending\", pas encore terminé) : jamais de historyStatus (rien à valider avant la fin du match)", async () => {
+      const frozenPrediction = { probabilities: { home: 60, draw: 25, away: 15 }, markets: {} };
+      getFrozenPrediction.mockResolvedValueOnce({ prediction: frozenPrediction, status: "pending", final_score: null });
+      global.fetch = mockFetch({ status: "IN_PLAY", minute: 60, utcDate: "2026-01-01T15:00:00Z", score: { fullTime: { home: 1, away: 0 } } });
+
+      const { default: handler } = await import("../pages/api/analyze.js");
+      const res = mockRes();
+      await handler({ query: baseQuery }, res);
+
+      expect(res.body.historyStatus).toBeUndefined();
+    });
+  });
 });
