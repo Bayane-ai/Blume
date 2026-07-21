@@ -1,20 +1,21 @@
 /**
  * @jest-environment jsdom
  *
- * Bloc statistiques — refonte "app de paris sportifs" : structure EXACTE demandée,
- * dans cet ordre, sans jamais afficher de cote (pas de 1.85, 2.40...) :
- * 1) Probabilité de victoire (1X2) — 3 lignes en "%", qui somment à 100. C'est la
- *    SEULE section du bloc où un "%" apparaît (les autres blocs — Corners et
- *    cartons — ont leur propre carte séparée, voir cards-and-corners.test.jsx).
+ * Bloc statistiques — refonte "app de paris sportifs" : structure EXACTE demandée
+ * (Bloc 2 du parcours vidéo), dans cet ordre, sans jamais afficher de cote (pas de
+ * 1.85, 2.40...) :
+ * 1) Probabilité de victoire (1X2) — 3 lignes en "%" avec une barre visuelle
+ *    proportionnelle à côté de chaque pourcentage, qui somment à 100. C'est la SEULE
+ *    section du bloc où un "%" apparaît (les autres blocs — Corners, Cartons... —
+ *    ont leur propre carte séparée, voir cards-and-corners.test.jsx).
  * 2) Total (buts du match entier) — "Total : Plus de X,X" / "Moins de X,X", avec
  *    une marge (deux lignes) possible quand l'issue est incertaine.
  * 3) Total 1 (domicile seul).
  * 4) Total 2 (extérieur seul) — jamais mélangé avec le domicile.
- * 5) Tirs.
- * 6) Tirs cadrés.
- * 7) Scores exacts (3 à 4, différents par match). Corners/cartons/passes décisives
- *    ont désormais leur propre bloc, en bas de la page de match (voir
- *    components/CardsAndCorners.js et components/AssistsProbables.js).
+ * 5) Scores exacts (3 à 4, différents par match). Tirs/Tirs cadrés ont rejoint le
+ *    bloc "Cartons" (voir components/CardsAndCorners.js) ; Corners/Hors-jeu/Fautes/
+ *    Touches et passes décisives ont chacun leur propre bloc, en bas de la page de
+ *    match.
  */
 import { render, screen, within } from "@testing-library/react";
 import PronosticResults from "../components/PronosticResults";
@@ -34,32 +35,38 @@ test("structure exacte du bloc, dans l'ordre demandé, sans aucune cote affiché
 
   const { container } = render(<PronosticResults pronostic={pronostic} loading={false} />);
 
-  // 1) 1X2 : trois lignes au format exact demandé, qui somment à 100.
+  // 1) 1X2 : trois lignes au format exact demandé, qui somment à 100, chacune avec
+  // une barre visuelle dont la largeur reflète le vrai pourcentage (jamais une barre
+  // décorative fixe).
   expect(screen.getByTestId("prob-home")).toHaveTextContent(/^Victoire Arsenal FC : \d+(\.\d+)? %$/);
   expect(screen.getByTestId("prob-draw")).toHaveTextContent(/^Match nul : \d+(\.\d+)? %$/);
   expect(screen.getByTestId("prob-away")).toHaveTextContent(/^Victoire Chelsea FC : \d+(\.\d+)? %$/);
   const sum = pronostic.probabilities.home + pronostic.probabilities.draw + pronostic.probabilities.away;
   expect(Math.round(sum * 10) / 10).toBe(100);
+  expect(screen.getByTestId("prob-bar-home")).toHaveStyle({ width: `${pronostic.probabilities.home}%` });
+  expect(screen.getByTestId("prob-bar-draw")).toHaveStyle({ width: `${pronostic.probabilities.draw}%` });
+  expect(screen.getByTestId("prob-bar-away")).toHaveStyle({ width: `${pronostic.probabilities.away}%` });
 
-  // 2-5) Lignes de marché au format exact demandé ("Total : Plus de X,X"), avec une
+  // 2-4) Lignes de marché au format exact demandé ("Total : Plus de X,X"), avec une
   // virgule française et jamais un nombre entier (toujours X,5) — une marge
   // optionnelle ("(ou X,5)") est acceptée pour les totaux de buts uniquement.
-  const lineFormat = /^(Total|Total 1|Total 2|Tirs|Tirs cadrés) : (Plus|Moins) de \d+,5( \(ou \d+,5\))?$/;
+  const lineFormat = /^(Total|Total 1|Total 2) : (Plus|Moins) de \d+,5( \(ou \d+,5\))?$/;
   expect(screen.getByTestId("market-total")).toHaveTextContent(lineFormat);
   expect(screen.getByTestId("market-total-1")).toHaveTextContent(lineFormat);
   expect(screen.getByTestId("market-total-2")).toHaveTextContent(lineFormat);
-  expect(screen.getByTestId("market-shots")).toHaveTextContent(lineFormat);
-  expect(screen.getByTestId("market-shots-on-target")).toHaveTextContent(lineFormat);
 
-  // Corners et cartons ne sont plus dans ce bloc (voir components/CardsAndCorners.js).
+  // Corners, cartons, tirs et tirs cadrés ne sont plus dans ce bloc (voir
+  // components/CardsAndCorners.js et components/LiveStatBlock.js).
   expect(screen.queryByTestId("market-corners")).not.toBeInTheDocument();
   expect(screen.queryByTestId("market-cards")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("market-shots")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("market-shots-on-target")).not.toBeInTheDocument();
 
-  // Ordre exact dans le document : 1X2 (3 lignes) puis Total, Total 1, Total 2,
-  // Tirs, Tirs cadrés, puis Scores exacts — jamais un autre ordre.
+  // Ordre exact dans le document : 1X2 (3 lignes) puis Total, Total 1, Total 2, puis
+  // Scores exacts — jamais un autre ordre.
   const orderedTestIds = [
     "prob-home", "prob-draw", "prob-away",
-    "market-total", "market-total-1", "market-total-2", "market-shots", "market-shots-on-target",
+    "market-total", "market-total-1", "market-total-2",
   ];
   const nodes = orderedTestIds.map((id) => screen.getByTestId(id));
   for (let i = 1; i < nodes.length; i++) {
@@ -175,6 +182,7 @@ test("chaque match a ses propres valeurs dans la carte \"Probabilité de victoir
     home: screen.getByTestId("prob-home").textContent,
     draw: screen.getByTestId("prob-draw").textContent,
     away: screen.getByTestId("prob-away").textContent,
+    barHome: screen.getByTestId("prob-bar-home").style.width,
   };
   unmount();
 
@@ -183,11 +191,13 @@ test("chaque match a ses propres valeurs dans la carte \"Probabilité de victoir
     home: screen.getByTestId("prob-home").textContent,
     draw: screen.getByTestId("prob-draw").textContent,
     away: screen.getByTestId("prob-away").textContent,
+    barHome: screen.getByTestId("prob-bar-home").style.width,
   };
 
   expect(a.home).not.toBe(b.home);
   expect(a.draw).not.toBe(b.draw);
   expect(a.away).not.toBe(b.away);
+  expect(a.barHome).not.toBe(b.barHome);
 });
 
 test("l'ordre des scores exacts va du plus probable au moins probable, sans aucun pourcentage affiché", () => {

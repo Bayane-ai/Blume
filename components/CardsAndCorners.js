@@ -1,13 +1,14 @@
-import { riskLabels } from "../lib/marketFormat";
+import { riskLabels, marketLabel } from "../lib/marketFormat";
 
 // Bloc "Cartons", en bas de la page de pronostics : pour cartons jaunes et cartons
 // rouges, deux options "Plus/Moins de X,5" calculées à partir de la même estimation
 // réelle de CE match (voir lib/pronostic.js, riskLines) — une option sûre (forte
 // probabilité réelle) et une option risquée (ligne plus poussée, moins certaine).
-// Complété par les vrais joueurs les plus sujets aux cartons cette saison (API-
-// Football, best-effort — jamais un joueur inventé, "Indisponible" si la source ne
-// répond pas). Les corners ont leur propre bloc dédié, recalculé en direct (voir
-// components/LiveStatBlock.js).
+// Tirs et Tirs cadrés (une seule ligne chacun, voir Bloc 2 du parcours vidéo) ont
+// rejoint ce bloc. Complété par les vrais joueurs les plus sujets aux cartons cette
+// saison (API-Football, best-effort — jamais un joueur inventé, "Indisponible" si la
+// source ne répond pas). Les corners ont leur propre bloc dédié, figé comme le reste
+// (voir components/LiveStatBlock.js).
 function RiskMarketRow({ testId, label, market }) {
   const { safe, risky } = riskLabels(market);
   return (
@@ -21,6 +22,14 @@ function RiskMarketRow({ testId, label, market }) {
           <span style={st.marketOptionTag}>Risqué</span> {risky}
         </span>
       </div>
+    </div>
+  );
+}
+
+function SingleMarketRow({ testId, label, market }) {
+  return (
+    <div style={st.marketRow} data-testid={testId}>
+      {label} : {marketLabel(market)}
     </div>
   );
 }
@@ -61,6 +70,8 @@ export default function CardsAndCorners({ pronostic }) {
       <div style={st.marketList} data-testid="cards-corners-markets">
         <RiskMarketRow testId="market-yellow-cards" label="Cartons jaunes" market={markets.yellowCards} />
         <RiskMarketRow testId="market-red-card" label="Cartons rouges" market={markets.redCards} />
+        <SingleMarketRow testId="market-shots" label="Tirs" market={markets.shots} />
+        <SingleMarketRow testId="market-shots-on-target" label="Tirs cadrés" market={markets.shotsOnTarget} />
       </div>
 
       <p style={st.sectionLabel}>Joueurs susceptibles de prendre un carton</p>
@@ -82,6 +93,7 @@ const st = {
   cardTitle: { fontSize: 15, fontWeight: 800, margin: "0 0 12px", color: "#13291D" },
   marketList: { display: "flex", flexDirection: "column", gap: 8, marginBottom: 4 },
   marketGroup: { background: "#EEF5F0", borderRadius: 8, padding: "10px 12px" },
+  marketRow: { background: "#EEF5F0", borderRadius: 8, padding: "10px 12px", fontSize: 13, fontWeight: 700 },
   marketGroupLabel: { display: "block", fontSize: 13, fontWeight: 800, marginBottom: 6 },
   marketOptions: { display: "flex", gap: 16, flexWrap: "wrap" },
   marketOption: { fontSize: 13, fontWeight: 700 },

@@ -1,26 +1,33 @@
-// Bloc de pronostics d'un match, présenté comme dans une app de paris sportifs — mais
-// SANS jamais afficher de cote (pas de 1.85, 2.40...). Deux cartes bien séparées,
-// chacune avec son propre titre, toujours dans cet ordre, identique pour tous les
-// matchs (en ligne et à venir) :
-//   Carte 1 — "Probabilité de victoire" : UNIQUEMENT le 1X2 (domicile/nul/extérieur).
-//   Les seules valeurs en "%" de tout le bloc — jamais mélangées avec les autres stats.
+// Bloc de pronostics d'un match (Bloc 2 du parcours vidéo), présenté comme dans une
+// app de paris sportifs — mais SANS jamais afficher de cote (pas de 1.85, 2.40...).
+// Deux cartes bien séparées, chacune avec son propre titre, toujours dans cet ordre,
+// identique pour tous les matchs (en ligne et à venir) :
+//   Carte 1 — "Probabilité de victoire" : UNIQUEMENT le 1X2 (domicile/nul/extérieur),
+//   chaque ligne accompagnée d'une barre visuelle dont la largeur reflète le vrai
+//   pourcentage. Les seules valeurs en "%" de tout le bloc — jamais mélangées avec
+//   les autres stats.
 //   Carte 2 — "Statistiques du match" :
 //     Total (buts du match entier) — ligne "Plus de X,X" / "Moins de X,X", avec une
 //     marge (deux lignes voisines) quand l'issue est trop incertaine pour une seule.
 //     Total 1 (équipe à domicile seule).
 //     Total 2 (équipe à l'extérieur seule) — jamais mélangé avec le domicile.
-//     Tirs. Tirs cadrés. Scores exacts (3 à 4), suivis d'un conseil de mise (miser
-//     petit sur chaque score, encore moins quand les cotes sont élevées) — jamais de
-//     cote chiffrée affichée, juste ce conseil de prudence.
-// Corners et cartons ont leur propre bloc en bas de page (components/CardsAndCorners.js).
-// Les lignes ("X,5") et les probabilités viennent de lib/pronostic.js, calculées à
-// partir des vraies statistiques des deux équipes pour CE match précis — jamais une
-// valeur fixe recopiée d'un match à l'autre.
+//     Scores exacts (3 à 4), suivis d'un conseil de mise (miser petit sur chaque
+//     score, encore moins quand les cotes sont élevées) — jamais de cote chiffrée
+//     affichée, juste ce conseil de prudence.
+// Corners/Hors-jeu/Fautes/Touches, Cartons (+ Tirs/Tirs cadrés) ont chacun leur
+// propre bloc en bas de page (components/LiveStatBlock.js et
+// components/CardsAndCorners.js). Les lignes ("X,5") et les probabilités viennent de
+// lib/pronostic.js, calculées à partir des vraies statistiques des deux équipes pour
+// CE match précis — jamais une valeur fixe recopiée d'un match à l'autre.
 import { marketLabel } from "../lib/marketFormat";
 
 function formatPercent(pct) {
   if (pct == null) return "–";
   return `${pct} %`;
+}
+
+function clampPercent(pct) {
+  return Math.min(100, Math.max(0, pct || 0));
 }
 
 export default function PronosticResults({ pronostic, loading }) {
@@ -47,12 +54,21 @@ export default function PronosticResults({ pronostic, loading }) {
         <div style={st.marketList} data-testid="win-probabilities">
           <div style={st.marketRow} data-testid="prob-home">
             Victoire {homeName} : {formatPercent(pronostic.probabilities.home)}
+            <div style={st.probBarTrack}>
+              <div style={{ ...st.probBarFill, width: `${clampPercent(pronostic.probabilities.home)}%` }} data-testid="prob-bar-home" />
+            </div>
           </div>
           <div style={st.marketRow} data-testid="prob-draw">
             Match nul : {formatPercent(pronostic.probabilities.draw)}
+            <div style={st.probBarTrack}>
+              <div style={{ ...st.probBarFill, width: `${clampPercent(pronostic.probabilities.draw)}%` }} data-testid="prob-bar-draw" />
+            </div>
           </div>
           <div style={st.marketRow} data-testid="prob-away">
             Victoire {awayName} : {formatPercent(pronostic.probabilities.away)}
+            <div style={st.probBarTrack}>
+              <div style={{ ...st.probBarFill, width: `${clampPercent(pronostic.probabilities.away)}%` }} data-testid="prob-bar-away" />
+            </div>
           </div>
         </div>
       </section>
@@ -63,8 +79,6 @@ export default function PronosticResults({ pronostic, loading }) {
           <div style={st.marketRow} data-testid="market-total">Total : {marketLabel(markets?.totalGoals)}</div>
           <div style={st.marketRow} data-testid="market-total-1">Total 1 : {marketLabel(markets?.totalHome)}</div>
           <div style={st.marketRow} data-testid="market-total-2">Total 2 : {marketLabel(markets?.totalAway)}</div>
-          <div style={st.marketRow} data-testid="market-shots">Tirs : {marketLabel(markets?.shots)}</div>
-          <div style={st.marketRow} data-testid="market-shots-on-target">Tirs cadrés : {marketLabel(markets?.shotsOnTarget)}</div>
         </div>
 
         {pronostic.correctScores && pronostic.correctScores.length > 0 && (
@@ -115,6 +129,10 @@ const st = {
   marketRow: {
     background: "#EEF5F0", borderRadius: 8, padding: "10px 12px", fontSize: 13, fontWeight: 700,
   },
+  // Barre visuelle sous chaque ligne de probabilité (1/X/2) : largeur proportionnelle
+  // au vrai pourcentage de CE match — jamais une barre décorative fixe.
+  probBarTrack: { marginTop: 8, height: 6, borderRadius: 999, background: "#D8E6DE", overflow: "hidden" },
+  probBarFill: { height: "100%", borderRadius: 999, background: "#39B577" },
   scoresRow: { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 4 },
   scoreCell: { flex: "1 1 calc(33.333% - 6px)", minWidth: 72, textAlign: "center", background: "#EEF5F0", borderRadius: 8, padding: "10px 4px" },
   probLabel: { display: "block", fontSize: 9.5, color: "#5C7A6A", textTransform: "uppercase" },

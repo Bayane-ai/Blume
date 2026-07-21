@@ -3,9 +3,11 @@
  *
  * components/CardsAndCorners.js — bloc "Cartons", en bas de la page de pronostics :
  * pour cartons jaunes et cartons rouges, deux options "Plus/Moins de X,5" (une sûre,
- * une risquée — voir lib/pronostic.js, riskLines), et les vrais joueurs les plus
- * sujets aux cartons cette saison (best-effort, API-Football) — jamais un joueur
- * inventé. Les corners ont leur propre bloc dédié, voir live-stat-block.test.jsx.
+ * une risquée — voir lib/pronostic.js, riskLines), Tirs et Tirs cadrés (une seule
+ * ligne "Plus/Moins de X,5" chacune, voir Bloc 2 du parcours vidéo), et les vrais
+ * joueurs les plus sujets aux cartons cette saison (best-effort, API-Football) —
+ * jamais un joueur inventé. Les corners ont leur propre bloc dédié, voir
+ * live-stat-block.test.jsx.
  */
 import { render, screen, within } from "@testing-library/react";
 import CardsAndCorners from "../components/CardsAndCorners";
@@ -39,6 +41,16 @@ test("le carton rouge suit le même format sûr/risqué en Plus/Moins de X,5 (pa
 test("il n'y a plus de ligne Corners dans ce bloc (déplacée dans son propre bloc dédié)", () => {
   render(<CardsAndCorners pronostic={basePronostic()} />);
   expect(screen.queryByTestId("market-corners")).not.toBeInTheDocument();
+});
+
+test("Tirs et Tirs cadrés (une seule ligne chacun, Plus/Moins de X,5) ont rejoint ce bloc", () => {
+  const pronostic = basePronostic();
+  render(<CardsAndCorners pronostic={pronostic} />);
+  const lineFormat = /^(Tirs|Tirs cadrés) : (Plus|Moins) de \d+,5$/;
+  expect(screen.getByTestId("market-shots")).toHaveTextContent(lineFormat);
+  expect(screen.getByTestId("market-shots-on-target")).toHaveTextContent(lineFormat);
+  // Tirs cadrés est toujours un sous-ensemble cohérent de Tirs (voir lib/pronostic.js).
+  expect(pronostic.markets.shotsOnTarget.line).toBeLessThan(pronostic.markets.shots.line);
 });
 
 test("pour chaque métrique, l'option sûre et l'option risquée sont deux lignes distinctes, jamais la même valeur répétée", () => {
