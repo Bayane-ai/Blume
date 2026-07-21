@@ -34,9 +34,9 @@ const st = {
     WebkitOverflowScrolling: "touch", scrollbarWidth: "thin",
   },
   chip: {
-    flex: "0 0 auto", background: "#FFFFFF", border: "1px solid #D8E6DE", color: "#5C7A6A",
+    flex: "0 0 auto", background: "var(--card-bg)", border: "1px solid var(--border)", color: "var(--text-secondary)",
     borderRadius: 999, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer",
     whiteSpace: "nowrap",
   },
-  chipActive: { background: "#39B577", border: "1px solid #39B577", color: "#06121F" },
+  chipActive: { background: "var(--accent)", border: "1px solid var(--accent)", color: "var(--on-accent)" },
 };

@@ -71,11 +71,11 @@ export default function SiteHeader({ session }) {
 const st = {
   header: { maxWidth: 640, margin: "0 auto 16px", display: "flex", flexDirection: "column", gap: 12 },
   top: { display: "flex", justifyContent: "space-between", alignItems: "center" },
-  logo: { fontSize: 20, fontWeight: 800, color: "#1A7F4F", letterSpacing: 0.3 },
+  logo: { fontSize: 20, fontWeight: 800, color: "var(--accent)", letterSpacing: 0.3 },
   headerRight: { display: "flex", alignItems: "center", gap: 10 },
-  userEmail: { fontSize: 11.5, color: "#5C7A6A", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  userEmail: { fontSize: 11.5, color: "var(--text-secondary)", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   smallBtn: {
-    background: "transparent", border: "1px solid #D8E6DE", color: "#13291D",
+    background: "transparent", border: "1px solid var(--border)", color: "var(--text-primary)",
     borderRadius: 999, padding: "6px 12px", fontSize: 12, textDecoration: "none", cursor: "pointer",
   },
   // Cinq boutons (dont deux libellés longs, "Probabilités réussies/échouées") sur une
@@ -84,14 +84,14 @@ const st = {
   // de se compresser illisiblement ou de passer à la ligne.
   nav: { display: "flex", flexWrap: "nowrap", gap: 8, overflowX: "auto", WebkitOverflowScrolling: "touch" },
   navBtn: {
-    flex: "0 0 auto", whiteSpace: "nowrap", textAlign: "center", background: "#FFFFFF", border: "1px solid #D8E6DE",
-    color: "#5C7A6A", borderRadius: 999, padding: "10px 14px", fontSize: 13, fontWeight: 700,
+    flex: "0 0 auto", whiteSpace: "nowrap", textAlign: "center", background: "var(--card-bg)", border: "1px solid var(--border)",
+    color: "var(--text-secondary)", borderRadius: 999, padding: "10px 14px", fontSize: 13, fontWeight: 700,
     cursor: "pointer", textDecoration: "none",
   },
   liveDot: {
     display: "inline-block", width: 8, height: 8, borderRadius: "50%",
-    background: "#FF3B30", marginRight: 6, boxShadow: "0 0 6px rgba(255,59,48,0.9)",
+    background: "var(--negative)", marginRight: 6, boxShadow: "0 0 6px rgba(var(--negative-rgb),0.9)",
     verticalAlign: "middle",
   },
-  navBtnActive: { background: "#39B577", border: "1px solid #39B577", color: "#06121F" },
+  navBtnActive: { background: "var(--accent)", border: "1px solid var(--accent)", color: "var(--on-accent)" },
 };

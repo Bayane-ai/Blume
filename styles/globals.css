@@ -1,8 +1,35 @@
+/* Thème global "app de paris sportifs sombre" — 6 couleurs de référence, tout le
+   reste du fichier (et tous les styles en ligne des pages/composants, qui
+   consomment ces variables via var(--...)) en dérive : jamais une nouvelle couleur
+   de fond/texte/accent codée en dur ailleurs dans le site. */
+:root {
+  --bg: #1A1B16;              /* fond de l'application */
+  --card-bg: #24261E;         /* fond des cartes/blocs */
+  --accent: #8FD62E;          /* accent : barres, ligne retenue, indicateur positif */
+  --accent-rgb: 143, 214, 46;
+  --text-primary: #E6DFD0;    /* texte principal */
+  --text-secondary: #9AA0A0;  /* texte secondaire / libellés */
+  --negative: #E5484D;        /* indicateur négatif / échec */
+  --negative-rgb: 229, 72, 77;
+
+  /* Tokens dérivés — calculés à partir des 6 couleurs ci-dessus (jamais une valeur
+     indépendante), pour les cas qui ont besoin d'une variante (bordure discrète,
+     fond légèrement teinté, texte lisible sur un bouton accent, troisième niveau
+     "moyen" entre positif et négatif...). */
+  --border: rgba(154, 160, 160, 0.18);
+  --on-accent: var(--bg);
+  --surface: color-mix(in srgb, var(--accent) 6%, var(--card-bg));
+  --accent-soft: rgba(var(--accent-rgb), 0.16);
+  --negative-soft: rgba(var(--negative-rgb), 0.16);
+  --warning: color-mix(in srgb, var(--accent) 55%, var(--negative) 45%);
+  --warning-soft: color-mix(in srgb, var(--warning) 18%, transparent);
+}
+
 * { box-sizing: border-box; }
 html, body { padding: 0; margin: 0; }
 body {
-  background: #EEF5F0;
-  color: #13291D;
+  background: var(--bg);
+  color: var(--text-primary);
   font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
 }
 input, select, button { font-family: inherit; }

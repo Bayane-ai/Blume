@@ -69,7 +69,7 @@ const st = {
   main: { maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 },
   hero: { textAlign: "center", padding: "8px 4px" },
   heroTitle: { fontSize: 21, fontWeight: 800, margin: "0 0 8px", lineHeight: 1.25 },
-  heroSubtitle: { fontSize: 12, color: "#5C7A6A", margin: 0, lineHeight: 1.5 },
-  hint: { fontSize: 12.5, color: "#5C7A6A" },
+  heroSubtitle: { fontSize: 12, color: "var(--text-secondary)", margin: 0, lineHeight: 1.5 },
+  hint: { fontSize: 12.5, color: "var(--text-secondary)" },
   list: { display: "flex", flexDirection: "column", gap: 10 },
 };

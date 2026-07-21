@@ -42,13 +42,13 @@ export default function App({ Component, pageProps }) {
 const s = {
   page: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 },
   card: {
-    width: "100%", maxWidth: 360, background: "#FFFFFF", border: "1px solid #D8E6DE",
+    width: "100%", maxWidth: 360, background: "var(--card-bg)", border: "1px solid var(--border)",
     borderRadius: 16, padding: 24, textAlign: "center",
   },
   h1: { fontSize: 18, margin: "0 0 8px" },
-  text: { fontSize: 13, color: "#5C7A6A", margin: "0 0 16px" },
+  text: { fontSize: 13, color: "var(--text-secondary)", margin: "0 0 16px" },
   btn: {
-    display: "inline-block", background: "#39B577", border: "none", color: "#06121F", fontWeight: 700,
+    display: "inline-block", background: "var(--accent)", border: "none", color: "var(--on-accent)", fontWeight: 700,
     borderRadius: 999, padding: "10px 20px", fontSize: 13, textDecoration: "none",
   },
 };

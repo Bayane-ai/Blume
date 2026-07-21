@@ -172,26 +172,26 @@ export default function Login() {
 const styles = {
   page: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 },
   card: {
-    width: "100%", maxWidth: 360, background: "#FFFFFF", border: "1px solid #D8E6DE",
+    width: "100%", maxWidth: 360, background: "var(--card-bg)", border: "1px solid var(--border)",
     borderRadius: 16, padding: 16, display: "flex", flexDirection: "column", gap: 16,
   },
   tabs: { display: "flex", gap: 8 },
   tabBtn: {
-    flex: 1, background: "#EEF5F0", border: "1px solid #D8E6DE", color: "#5C7A6A",
+    flex: 1, background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-secondary)",
     borderRadius: 999, padding: "10px 8px", fontSize: 12.5, fontWeight: 700, cursor: "pointer",
   },
-  tabBtnActive: { background: "#39B577", border: "1px solid #39B577", color: "#06121F" },
+  tabBtnActive: { background: "var(--accent)", border: "1px solid var(--accent)", color: "var(--on-accent)" },
   form: { display: "flex", flexDirection: "column", gap: 12, padding: "8px 8px 0" },
   h1: { fontSize: 20, margin: "0 0 8px", textAlign: "center" },
   input: {
-    background: "#EEF5F0", border: "1px solid #D8E6DE", color: "#13291D",
+    background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-primary)",
     borderRadius: 9, padding: "11px 12px", fontSize: 14,
   },
   btn: {
-    background: "#39B577", border: "none", color: "#06121F", fontWeight: 700,
+    background: "var(--accent)", border: "none", color: "var(--on-accent)", fontWeight: 700,
     borderRadius: 999, padding: "11px 0", fontSize: 14, cursor: "pointer", marginTop: 6,
   },
-  switchBtn: { background: "transparent", border: "none", color: "#5C7A6A", fontSize: 12.5, cursor: "pointer" },
-  error: { color: "#C0392B", fontSize: 12.5, margin: 0 },
-  info: { color: "#1A7F4F", fontSize: 12.5, margin: 0 },
+  switchBtn: { background: "transparent", border: "none", color: "var(--text-secondary)", fontSize: 12.5, cursor: "pointer" },
+  error: { color: "var(--negative)", fontSize: 12.5, margin: 0 },
+  info: { color: "var(--accent)", fontSize: 12.5, margin: 0 },
 };

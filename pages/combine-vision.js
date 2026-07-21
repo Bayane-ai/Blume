@@ -189,23 +189,23 @@ const st = {
   main: { maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 },
   hero: { textAlign: "center", padding: "8px 4px" },
   heroTitle: { fontSize: 21, fontWeight: 800, margin: "0 0 8px", lineHeight: 1.25 },
-  heroSubtitle: { fontSize: 12, color: "#5C7A6A", margin: 0, lineHeight: 1.5 },
-  hint: { fontSize: 12.5, color: "#5C7A6A" },
+  heroSubtitle: { fontSize: 12, color: "var(--text-secondary)", margin: 0, lineHeight: 1.5 },
+  hint: { fontSize: 12.5, color: "var(--text-secondary)" },
   refreshRow: { display: "flex", flexDirection: "column", alignItems: "center", gap: 6 },
   refreshBtn: {
-    alignSelf: "center", background: "#39B577", border: "none", color: "#06121F", fontWeight: 800,
+    alignSelf: "center", background: "var(--accent)", border: "none", color: "var(--on-accent)", fontWeight: 800,
     borderRadius: 999, padding: "10px 24px", fontSize: 13, cursor: "pointer",
   },
   freshnessHint: {
-    display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#5C7A6A", margin: 0,
+    display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-secondary)", margin: 0,
   },
   freshnessDot: {
-    width: 7, height: 7, borderRadius: "50%", background: "#39B577", flexShrink: 0,
+    width: 7, height: 7, borderRadius: "50%", background: "var(--accent)", flexShrink: 0,
   },
   list: { display: "flex", flexDirection: "column", gap: 10 },
   statsBox: {
-    background: "#FFFFFF", border: "1px solid #D8E6DE", borderRadius: 12, padding: "10px 14px",
+    background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 12, padding: "10px 14px",
     display: "flex", flexDirection: "column", gap: 4,
   },
-  statsRow: { fontSize: 12, fontWeight: 700, color: "#13291D" },
+  statsRow: { fontSize: 12, fontWeight: 700, color: "var(--text-primary)" },
 };

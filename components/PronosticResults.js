@@ -121,22 +121,22 @@ const st = {
   // Même style que les autres cartes de la page (voir pages/match/[id].js — st.panel) :
   // chaque bloc de pronostic est sa propre section visuellement distincte, pas une
   // simple ligne au milieu d'un autre bloc.
-  card: { background: "#FFFFFF", border: "1px solid #D8E6DE", borderRadius: 14, padding: 18 },
-  cardTitle: { fontSize: 15, fontWeight: 800, margin: "0 0 12px", color: "#13291D" },
-  hint: { fontSize: 12.5, color: "#5C7A6A", marginTop: 14 },
-  sectionLabel: { fontSize: 10, color: "#3F6151", textTransform: "uppercase", margin: "14px 0 6px", letterSpacing: 0.4 },
+  card: { background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 14, padding: 18 },
+  cardTitle: { fontSize: 15, fontWeight: 800, margin: "0 0 12px", color: "var(--text-primary)" },
+  hint: { fontSize: 12.5, color: "var(--text-secondary)", marginTop: 14 },
+  sectionLabel: { fontSize: 10, color: "var(--text-secondary)", textTransform: "uppercase", margin: "14px 0 6px", letterSpacing: 0.4 },
   marketList: { display: "flex", flexDirection: "column", gap: 6, marginBottom: 4 },
   marketRow: {
-    background: "#EEF5F0", borderRadius: 8, padding: "10px 12px", fontSize: 13, fontWeight: 700,
+    background: "var(--surface)", borderRadius: 8, padding: "10px 12px", fontSize: 13, fontWeight: 700,
   },
   // Barre visuelle sous chaque ligne de probabilité (1/X/2) : largeur proportionnelle
   // au vrai pourcentage de CE match — jamais une barre décorative fixe.
-  probBarTrack: { marginTop: 8, height: 6, borderRadius: 999, background: "#D8E6DE", overflow: "hidden" },
-  probBarFill: { height: "100%", borderRadius: 999, background: "#39B577" },
+  probBarTrack: { marginTop: 8, height: 6, borderRadius: 999, background: "var(--border)", overflow: "hidden" },
+  probBarFill: { height: "100%", borderRadius: 999, background: "var(--accent)" },
   scoresRow: { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 4 },
-  scoreCell: { flex: "1 1 calc(33.333% - 6px)", minWidth: 72, textAlign: "center", background: "#EEF5F0", borderRadius: 8, padding: "10px 4px" },
-  probLabel: { display: "block", fontSize: 9.5, color: "#5C7A6A", textTransform: "uppercase" },
+  scoreCell: { flex: "1 1 calc(33.333% - 6px)", minWidth: 72, textAlign: "center", background: "var(--surface)", borderRadius: 8, padding: "10px 4px" },
+  probLabel: { display: "block", fontSize: 9.5, color: "var(--text-secondary)", textTransform: "uppercase" },
   probValue: { fontSize: 15, fontWeight: 700 },
-  noteText: { fontSize: 10.5, color: "#3F6151", fontStyle: "italic", margin: "8px 0 0" },
-  bettingTip: { fontSize: 10.5, color: "#5C7A6A", fontStyle: "italic", margin: "8px 0 0" },
+  noteText: { fontSize: 10.5, color: "var(--text-secondary)", fontStyle: "italic", margin: "8px 0 0" },
+  bettingTip: { fontSize: 10.5, color: "var(--text-secondary)", fontStyle: "italic", margin: "8px 0 0" },
 };

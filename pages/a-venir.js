@@ -191,15 +191,15 @@ const st = {
   main: { maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 },
   hero: { textAlign: "center", padding: "8px 4px" },
   heroTitle: { fontSize: 21, fontWeight: 800, margin: "0 0 8px", lineHeight: 1.25 },
-  heroSubtitle: { fontSize: 12, color: "#5C7A6A", margin: 0, lineHeight: 1.5 },
-  hint: { fontSize: 12.5, color: "#5C7A6A" },
+  heroSubtitle: { fontSize: 12, color: "var(--text-secondary)", margin: 0, lineHeight: 1.5 },
+  hint: { fontSize: 12.5, color: "var(--text-secondary)" },
   searchRow: { display: "flex", gap: 8 },
   searchInput: {
-    flex: 1, background: "#FFFFFF", border: "1px solid #D8E6DE", color: "#13291D",
+    flex: 1, background: "var(--card-bg)", border: "1px solid var(--border)", color: "var(--text-primary)",
     borderRadius: 999, padding: "10px 16px", fontSize: 13,
   },
   searchBtn: {
-    background: "#39B577", border: "none", color: "#06121F", fontWeight: 700,
+    background: "var(--accent)", border: "none", color: "var(--on-accent)", fontWeight: 700,
     borderRadius: 999, padding: "0 18px", fontSize: 13, cursor: "pointer",
   },
 };

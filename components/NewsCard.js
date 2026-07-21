@@ -36,18 +36,18 @@ function formatDate(iso) {
 
 const st = {
   card: {
-    display: "flex", gap: 12, background: "#FFFFFF", border: "1px solid #D8E6DE",
-    borderRadius: 14, padding: 12, textDecoration: "none", color: "#13291D",
+    display: "flex", gap: 12, background: "var(--card-bg)", border: "1px solid var(--border)",
+    borderRadius: 14, padding: 12, textDecoration: "none", color: "var(--text-primary)",
   },
   image: {
     width: 92, height: 92, objectFit: "cover", borderRadius: 10, flexShrink: 0,
-    background: "#E4EEE8",
+    background: "var(--surface)",
   },
   body: { display: "flex", flexDirection: "column", gap: 4, minWidth: 0 },
-  title: { fontSize: 14.5, fontWeight: 800, margin: 0, lineHeight: 1.3, color: "#13291D" },
+  title: { fontSize: 14.5, fontWeight: 800, margin: 0, lineHeight: 1.3, color: "var(--text-primary)" },
   summary: {
-    fontSize: 12.5, color: "#3A5648", margin: 0, lineHeight: 1.4,
+    fontSize: 12.5, color: "var(--text-secondary)", margin: 0, lineHeight: 1.4,
     display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden",
   },
-  meta: { fontSize: 11, color: "#5C7A6A", marginTop: 2 },
+  meta: { fontSize: 11, color: "var(--text-secondary)", marginTop: 2 },
 };

@@ -225,7 +225,7 @@ export default function CompetitionPage() {
                         <td style={st.td}>
                           {row.goalsFor != null && row.goalsAgainst != null ? row.goalsFor - row.goalsAgainst : "–"}
                         </td>
-                        <td style={{ ...st.td, fontWeight: 800, color: "#1A7F4F" }}>{row.points ?? "–"}</td>
+                        <td style={{ ...st.td, fontWeight: 800, color: "var(--accent)" }}>{row.points ?? "–"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -243,27 +243,27 @@ const st = {
   page: { minHeight: "100vh", padding: "20px 16px 60px" },
   header: { maxWidth: 640, margin: "0 auto 20px" },
   smallBtn: {
-    background: "transparent", border: "1px solid #D8E6DE", color: "#13291D",
+    background: "transparent", border: "1px solid var(--border)", color: "var(--text-primary)",
     borderRadius: 999, padding: "6px 12px", fontSize: 12, textDecoration: "none",
   },
   main: { maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 },
-  panel: { background: "#FFFFFF", border: "1px solid #D8E6DE", borderRadius: 14, padding: 18 },
-  compArea: { fontSize: 11, color: "#5C7A6A", textTransform: "uppercase", letterSpacing: 0.4, margin: "0 0 4px" },
+  panel: { background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 14, padding: 18 },
+  compArea: { fontSize: 11, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: 0.4, margin: "0 0 4px" },
   compName: { fontSize: 20, fontWeight: 800, margin: 0 },
   tabs: { display: "flex", gap: 8 },
   tabBtn: {
-    flex: 1, background: "#FFFFFF", border: "1px solid #D8E6DE", color: "#5C7A6A",
+    flex: 1, background: "var(--card-bg)", border: "1px solid var(--border)", color: "var(--text-secondary)",
     borderRadius: 999, padding: "10px 8px", fontSize: 12.5, fontWeight: 700, cursor: "pointer",
   },
-  tabBtnActive: { background: "#39B577", border: "1px solid #39B577", color: "#06121F" },
+  tabBtnActive: { background: "var(--accent)", border: "1px solid var(--accent)", color: "var(--on-accent)" },
   sectionHeaderRow: { display: "flex", justifyContent: "space-between", alignItems: "center" },
-  h2: { fontSize: 14, margin: 0, color: "#5C7A6A", textTransform: "uppercase", letterSpacing: 0.4 },
-  liveBadge: { fontSize: 11, color: "#C0392B", fontWeight: 800 },
-  hint: { fontSize: 12.5, color: "#5C7A6A" },
+  h2: { fontSize: 14, margin: 0, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: 0.4 },
+  liveBadge: { fontSize: 11, color: "var(--negative)", fontWeight: 800 },
+  hint: { fontSize: 12.5, color: "var(--text-secondary)" },
   tableWrap: { overflowX: "auto" },
   table: { width: "100%", borderCollapse: "collapse", fontSize: 12.5 },
-  th: { textAlign: "center", color: "#5C7A6A", fontSize: 10.5, textTransform: "uppercase", padding: "6px 4px", borderBottom: "1px solid #D8E6DE" },
-  td: { textAlign: "center", padding: "8px 4px", borderBottom: "1px solid #D8E6DE", color: "#13291D" },
+  th: { textAlign: "center", color: "var(--text-secondary)", fontSize: 10.5, textTransform: "uppercase", padding: "6px 4px", borderBottom: "1px solid var(--border)" },
+  td: { textAlign: "center", padding: "8px 4px", borderBottom: "1px solid var(--border)", color: "var(--text-primary)" },
   teamCell: { display: "flex", alignItems: "center", gap: 8 },
   crest: { width: 18, height: 18, objectFit: "contain", flexShrink: 0 },
 };

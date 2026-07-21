@@ -93,20 +93,20 @@ export default function MatchTimeline({ events, homeTeamId, isLive }) {
 }
 
 const st = {
-  hint: { fontSize: 12.5, color: "#5C7A6A" },
+  hint: { fontSize: 12.5, color: "var(--text-secondary)" },
   separator: {
-    textAlign: "center", fontSize: 10.5, fontWeight: 700, color: "#3F6151",
+    textAlign: "center", fontSize: 10.5, fontWeight: 700, color: "var(--text-secondary)",
     textTransform: "uppercase", letterSpacing: 0.4, margin: "12px 0", position: "relative",
   },
   eventRow: { display: "flex", marginBottom: 8 },
   eventRowHome: { justifyContent: "flex-start" },
   eventRowAway: { justifyContent: "flex-end" },
   eventLine: {
-    display: "flex", alignItems: "center", gap: 8, background: "#EEF5F0",
+    display: "flex", alignItems: "center", gap: 8, background: "var(--surface)",
     borderRadius: 8, padding: "8px 12px", maxWidth: "85%",
   },
-  eventMinute: { fontSize: 11.5, fontWeight: 700, color: "#5C7A6A", flexShrink: 0 },
+  eventMinute: { fontSize: 11.5, fontWeight: 700, color: "var(--text-secondary)", flexShrink: 0 },
   eventIcon: { fontSize: 14, flexShrink: 0 },
-  eventPlayer: { fontSize: 12.5, fontWeight: 600, color: "#13291D" },
-  eventScore: { fontSize: 12.5, fontWeight: 800, color: "#1A7F4F", flexShrink: 0 },
+  eventPlayer: { fontSize: 12.5, fontWeight: 600, color: "var(--text-primary)" },
+  eventScore: { fontSize: 12.5, fontWeight: 800, color: "var(--accent)", flexShrink: 0 },
 };

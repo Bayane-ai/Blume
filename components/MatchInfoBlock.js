@@ -79,19 +79,19 @@ const st = {
   compLeft: { display: "flex", alignItems: "center", gap: 8, minWidth: 0 },
   compEmblem: { width: 18, height: 18, objectFit: "contain", flexShrink: 0 },
   compName: {
-    fontSize: 11, color: "#5C7A6A", textTransform: "uppercase", letterSpacing: 0.3,
+    fontSize: 11, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: 0.3,
     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
   },
-  liveTag: { fontSize: 11, color: "#C0392B", fontWeight: 800, flexShrink: 0, letterSpacing: 0.3 },
-  finishedTag: { fontSize: 11, color: "#5C7A6A", fontWeight: 600, flexShrink: 0 },
+  liveTag: { fontSize: 11, color: "var(--negative)", fontWeight: 800, flexShrink: 0, letterSpacing: 0.3 },
+  finishedTag: { fontSize: 11, color: "var(--text-secondary)", fontWeight: 600, flexShrink: 0 },
   teamRow: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, fontSize: 14 },
   teamBlock: { flex: 1, display: "flex", alignItems: "center", gap: 10, minWidth: 0 },
   teamBlockAway: { justifyContent: "flex-end" },
   crestWrap: {
     width: 40, height: 40, borderRadius: "50%", flexShrink: 0,
     display: "flex", alignItems: "center", justifyContent: "center",
-    background: "radial-gradient(circle, rgba(57,181,119,0.25) 0%, rgba(57,181,119,0) 70%)",
-    boxShadow: "0 0 12px rgba(57,181,119,0.35)",
+    background: "radial-gradient(circle, rgba(var(--accent-rgb),0.25) 0%, rgba(57,181,119,0) 70%)",
+    boxShadow: "0 0 12px rgba(var(--accent-rgb),0.35)",
   },
   crest: { width: 30, height: 30, objectFit: "contain", filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.4))" },
   teamName: {
@@ -100,6 +100,6 @@ const st = {
   },
   teamNameAway: { textAlign: "right" },
   centerRow: { display: "flex", alignItems: "baseline", justifyContent: "center", gap: 8, marginTop: 10 },
-  centerSlot: { fontWeight: 800, color: "#1A7F4F", fontSize: 20, textAlign: "center" },
-  cardMinute: { fontWeight: 800, color: "#C0392B", fontSize: 12.5, letterSpacing: 0.3 },
+  centerSlot: { fontWeight: 800, color: "var(--accent)", fontSize: 20, textAlign: "center" },
+  cardMinute: { fontWeight: 800, color: "var(--negative)", fontSize: 12.5, letterSpacing: 0.3 },
 };

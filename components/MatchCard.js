@@ -59,11 +59,11 @@ export default function MatchCard({ m, comp }) {
 const st = {
   card: {
     display: "block", width: "100%", textAlign: "left", cursor: "pointer",
-    background: "#FFFFFF", border: "1px solid #D8E6DE", borderRadius: "14px 14px 0 0",
+    background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: "14px 14px 0 0",
     padding: 16, borderBottom: "none",
   },
   analyzeBtn: {
-    display: "block", width: "100%", background: "#39B577", border: "none", color: "#06121F",
+    display: "block", width: "100%", background: "var(--accent)", border: "none", color: "var(--on-accent)",
     fontWeight: 800, fontSize: 13.5, borderRadius: "0 0 14px 14px", padding: "13px 0", cursor: "pointer",
     letterSpacing: 0.4, marginBottom: 12,
   },

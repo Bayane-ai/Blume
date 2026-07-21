@@ -28,11 +28,11 @@ export default function LiveStatBlock({ testId, title, block, note }) {
 }
 
 const st = {
-  card: { background: "#FFFFFF", border: "1px solid #D8E6DE", borderRadius: 14, padding: 18 },
-  cardTitle: { fontSize: 15, fontWeight: 800, margin: "0 0 12px", color: "#13291D" },
+  card: { background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 14, padding: 18 },
+  cardTitle: { fontSize: 15, fontWeight: 800, margin: "0 0 12px", color: "var(--text-primary)" },
   marketList: { display: "flex", flexDirection: "column", gap: 6 },
   marketRow: {
-    background: "#EEF5F0", borderRadius: 8, padding: "10px 12px", fontSize: 13, fontWeight: 700,
+    background: "var(--surface)", borderRadius: 8, padding: "10px 12px", fontSize: 13, fontWeight: 700,
   },
-  noteText: { fontSize: 10.5, color: "#3F6151", fontStyle: "italic", margin: "12px 0 0" },
+  noteText: { fontSize: 10.5, color: "var(--text-secondary)", fontStyle: "italic", margin: "12px 0 0" },
 };

@@ -66,18 +66,18 @@ export default function PronosticHistoryCard({ item }) {
 }
 
 const st = {
-  card: { background: "#FFFFFF", border: "1px solid #D8E6DE", borderRadius: 14, padding: 16 },
+  card: { background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 14, padding: 16 },
   headerRow: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 },
-  teams: { fontSize: 14, fontWeight: 800, color: "#13291D" },
+  teams: { fontSize: 14, fontWeight: 800, color: "var(--text-primary)" },
   badge: {
     flexShrink: 0, fontSize: 11, fontWeight: 800, borderRadius: 999, padding: "4px 10px", textTransform: "uppercase",
   },
-  badgeSuccess: { background: "#DCF5E6", color: "#127A45" },
-  badgeFailure: { background: "#FBE1DE", color: "#B23B2C" },
-  metaRow: { display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 12.5, color: "#5C7A6A" },
+  badgeSuccess: { background: "var(--accent-soft)", color: "var(--accent)" },
+  badgeFailure: { background: "var(--negative-soft)", color: "var(--negative)" },
+  metaRow: { display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 12.5, color: "var(--text-secondary)" },
   date: {},
-  score: { fontWeight: 700, color: "#13291D" },
+  score: { fontWeight: 700, color: "var(--text-primary)" },
   predictions: { display: "flex", flexDirection: "column", gap: 4, marginTop: 10 },
-  predictionRow: { fontSize: 12, color: "#3F6151" },
-  verifiedSection: { marginTop: 12, paddingTop: 10, borderTop: "1px solid #EEF5F0" },
+  predictionRow: { fontSize: 12, color: "var(--text-secondary)" },
+  verifiedSection: { marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--surface)" },
 };

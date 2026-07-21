@@ -81,16 +81,16 @@ export default function MatchHeaderHero({ m, comp, isLive }) {
 
 const st = {
   header: {
-    background: "#FFFFFF", border: "1px solid #D8E6DE", borderRadius: 14, padding: "14px 16px 18px",
+    background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 14, padding: "14px 16px 18px",
     maxWidth: 640, margin: "0 auto 16px",
   },
   topRow: { display: "grid", gridTemplateColumns: "32px 1fr 32px", alignItems: "center", marginBottom: 16 },
   backBtn: {
-    background: "transparent", border: "none", color: "#13291D", fontSize: 20,
+    background: "transparent", border: "none", color: "var(--text-primary)", fontSize: 20,
     cursor: "pointer", padding: 0, lineHeight: 1, justifySelf: "start",
   },
   compName: {
-    textAlign: "center", fontSize: 12, fontWeight: 700, color: "#5C7A6A",
+    textAlign: "center", fontSize: 12, fontWeight: 700, color: "var(--text-secondary)",
     textTransform: "uppercase", letterSpacing: 0.4, overflow: "hidden",
     textOverflow: "ellipsis", whiteSpace: "nowrap",
   },
@@ -101,11 +101,11 @@ const st = {
   crestWrap: { width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center" },
   crest: { width: 40, height: 40, objectFit: "contain" },
   teamName: {
-    fontSize: 12, fontWeight: 700, color: "#13291D", textAlign: "center",
+    fontSize: 12, fontWeight: 700, color: "var(--text-primary)", textAlign: "center",
     overflowWrap: "break-word", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
   },
   scoreCol: { flex: "0 0 auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "0 10px" },
-  scoreText: { fontSize: 30, fontWeight: 800, color: "#13291D", letterSpacing: 0.5, lineHeight: 1 },
-  kickoffText: { fontSize: 18, fontWeight: 700, color: "#13291D" },
-  liveMinute: { fontSize: 13, fontWeight: 800, color: "#C0392B", letterSpacing: 0.3 },
+  scoreText: { fontSize: 30, fontWeight: 800, color: "var(--text-primary)", letterSpacing: 0.5, lineHeight: 1 },
+  kickoffText: { fontSize: 18, fontWeight: 700, color: "var(--text-primary)" },
+  liveMinute: { fontSize: 13, fontWeight: 800, color: "var(--negative)", letterSpacing: 0.3 },
 };

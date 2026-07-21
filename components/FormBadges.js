@@ -1,6 +1,6 @@
 // Affiche la forme récente d'une équipe (ex : "WWDLW", fournie par football-data.org)
 // sous forme de badges colorés : vert = victoire, rouge = défaite, gris = nul.
-const COLORS = { W: "#39B577", D: "#7EA694", L: "#D8685E" };
+const COLORS = { W: "var(--accent)", D: "var(--text-secondary)", L: "var(--negative)" };
 
 export default function FormBadges({ form }) {
   if (!form) return null;
@@ -22,6 +22,6 @@ const st = {
   row: { display: "flex", gap: 4 },
   badge: {
     width: 18, height: 18, borderRadius: 4, display: "flex", alignItems: "center",
-    justifyContent: "center", fontSize: 10, fontWeight: 800, color: "#06121F",
+    justifyContent: "center", fontSize: 10, fontWeight: 800, color: "var(--on-accent)",
   },
 };

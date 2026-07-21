@@ -95,17 +95,17 @@ export default function VerifiedLinesList({ markets, matchStats, verification, s
 }
 
 const st = {
-  sectionLabel: { fontSize: 10, color: "#3F6151", textTransform: "uppercase", margin: "0 0 6px", letterSpacing: 0.4 },
+  sectionLabel: { fontSize: 10, color: "var(--text-secondary)", textTransform: "uppercase", margin: "0 0 6px", letterSpacing: 0.4 },
   statGroupLabel: {
-    display: "block", fontSize: 10.5, fontWeight: 800, color: "#13291D", margin: "10px 0 4px", textTransform: "uppercase", letterSpacing: 0.3,
+    display: "block", fontSize: 10.5, fontWeight: 800, color: "var(--text-primary)", margin: "10px 0 4px", textTransform: "uppercase", letterSpacing: 0.3,
   },
   verifiedRow: {
     display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
-    background: "#EEF5F0", borderRadius: 8, padding: "6px 10px", marginBottom: 4,
+    background: "var(--surface)", borderRadius: 8, padding: "6px 10px", marginBottom: 4,
   },
-  verifiedLabel: { fontSize: 12, fontWeight: 600, color: "#13291D" },
+  verifiedLabel: { fontSize: 12, fontWeight: 600, color: "var(--text-primary)" },
   verifiedIcon: { fontSize: 13, fontWeight: 800, flexShrink: 0 },
-  iconSuccess: { color: "#127A45" },
-  iconFailure: { color: "#B23B2C" },
-  verifiedUnavailable: { fontSize: 10, color: "#5C7A6A", fontStyle: "italic", flexShrink: 0 },
+  iconSuccess: { color: "var(--accent)" },
+  iconFailure: { color: "var(--negative)" },
+  verifiedUnavailable: { fontSize: 10, color: "var(--text-secondary)", fontStyle: "italic", flexShrink: 0 },
 };
