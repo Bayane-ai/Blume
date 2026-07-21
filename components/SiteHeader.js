@@ -74,14 +74,14 @@ const st = {
     background: "transparent", border: "1px solid #D8E6DE", color: "#13291D",
     borderRadius: 999, padding: "6px 12px", fontSize: 12, textDecoration: "none", cursor: "pointer",
   },
-  // flexWrap: cinq boutons (dont deux libellés longs, "Probabilités réussies/
-  // échouées") ne tiennent plus sur une seule ligne sur un écran étroit — passent à la
-  // ligne plutôt que de se compresser illisiblement (comportement par défaut sans
-  // flexWrap).
-  nav: { display: "flex", flexWrap: "wrap", gap: 8 },
+  // Cinq boutons (dont deux libellés longs, "Probabilités réussies/échouées") sur une
+  // seule ligne, jamais à la ligne (flexWrap: nowrap) — sur un écran étroit, ils
+  // débordent et se parcourent par défilement horizontal (overflowX: auto) plutôt que
+  // de se compresser illisiblement ou de passer à la ligne.
+  nav: { display: "flex", flexWrap: "nowrap", gap: 8, overflowX: "auto", WebkitOverflowScrolling: "touch" },
   navBtn: {
-    flex: "1 1 auto", minWidth: 104, textAlign: "center", background: "#FFFFFF", border: "1px solid #D8E6DE",
-    color: "#5C7A6A", borderRadius: 999, padding: "10px 8px", fontSize: 13, fontWeight: 700,
+    flex: "0 0 auto", whiteSpace: "nowrap", textAlign: "center", background: "#FFFFFF", border: "1px solid #D8E6DE",
+    color: "#5C7A6A", borderRadius: 999, padding: "10px 14px", fontSize: 13, fontWeight: 700,
     cursor: "pointer", textDecoration: "none",
   },
   liveDot: {
