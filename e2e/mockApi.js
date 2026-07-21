@@ -36,13 +36,14 @@ function buildHistoryFixture() {
 
   const items = [
     // Arsenal, net favori du classement (voir standingsByCompetition.PL) : score qui
-    // confirme le favori ET le sens du Total pronostiqué -> classé "success".
+    // confirme que l'équipe favorite a bien gagné -> classé "success" (Bloc 3 : seul
+    // le résultat de l'équipe favorite compte pour le badge global).
     historyFixtureItem({
       matchId: 901, homeRow: arsenal, awayRow: chelsea, homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC",
       matchDate: new Date(Date.now() - 1 * 24 * 3600000).toISOString(), finalScore: { home: 3, away: 0 },
     }),
-    // Real Madrid vs Barcelone, match plus serré : score qui contredit le favori
-    // attendu -> classé "failure".
+    // Real Madrid vs Barcelone : score qui contredit l'équipe favorite attendue
+    // (favori battu) -> classé "failure".
     historyFixtureItem({
       matchId: 902, homeRow: realMadrid, awayRow: barcelona, homeTeamName: "Real Madrid", awayTeamName: "FC Barcelona",
       matchDate: new Date(Date.now() - 2 * 24 * 3600000).toISOString(), finalScore: { home: 0, away: 3 },

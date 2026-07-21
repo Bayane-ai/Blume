@@ -48,41 +48,52 @@ beforeEach(() => {
   verifyPredictionLines.mockReset().mockReturnValue({ totalGoals: null });
 });
 
-describe("classifyOutcome — jugé sur le 1X2 et le Total de buts, contre le VRAI score final", () => {
-  test("victoire à domicile correctement prédite + Total correct → succès", () => {
-    const prediction = {
-      probabilities: { home: 60, draw: 25, away: 15 },
-      markets: { totalGoals: { line: 2.5, side: "Plus" } },
-    };
+// Bloc 3 (parcours vidéo) : la probabilité de victoire posée AVANT le match désigne
+// une équipe favorite (celle dont la probabilité — domicile/nul/extérieur — est la
+// plus haute). Le badge global Succès/Échec ne juge plus QUE cette question ("cette
+// équipe a-t-elle gagné ?") — le Total de buts ne compte plus dans ce verdict global
+// (il reste vérifié comme n'importe quelle autre ligne individuelle, voir
+// lib/pronosticVerification.js, avec son propre crochet/croix sur la carte).
+describe("classifyOutcome — jugé UNIQUEMENT sur l'équipe favorite désignée avant le match, contre le VRAI résultat", () => {
+  test("l'équipe favorite à domicile gagne réellement → succès", () => {
+    const prediction = { probabilities: { home: 60, draw: 25, away: 15 } };
     expect(classifyOutcome(prediction, { home: 2, away: 1 })).toBe("success");
   });
 
-  test("issue 1X2 mal prédite → échec, même si le Total est correct", () => {
-    const prediction = {
-      probabilities: { home: 60, draw: 25, away: 15 },
-      markets: { totalGoals: { line: 2.5, side: "Plus" } },
-    };
+  test("l'équipe favorite ne gagne pas → échec", () => {
+    const prediction = { probabilities: { home: 60, draw: 25, away: 15 } };
     expect(classifyOutcome(prediction, { home: 0, away: 3 })).toBe("failure");
   });
 
-  test("1X2 correct mais Total de buts faux (\"Plus\" annoncé, total réel en dessous) → échec", () => {
+  // Changement de règle explicitement demandé : le Total de buts ne fait plus
+  // basculer le verdict global — seule l'équipe favorite compte.
+  test("l'équipe favorite gagne réellement mais le Total de buts pronostiqué était faux → succès quand même", () => {
+    const prediction = {
+      probabilities: { home: 60, draw: 25, away: 15 },
+      markets: { totalGoals: { line: 2.5, side: "Plus" } }, // "Plus de 2,5" annoncé
+    };
+    // Total réel = 1 (1-0), donc le marché Total est raté — mais l'équipe favorite
+    // (domicile) a bien gagné : le badge global reste "Succès".
+    expect(classifyOutcome(prediction, { home: 1, away: 0 })).toBe("success");
+  });
+
+  test("l'équipe favorite ne gagne pas, même si le Total de buts pronostiqué était juste → échec quand même", () => {
     const prediction = {
       probabilities: { home: 60, draw: 25, away: 15 },
       markets: { totalGoals: { line: 2.5, side: "Plus" } },
     };
-    expect(classifyOutcome(prediction, { home: 1, away: 0 })).toBe("failure");
+    // Total réel = 3 (0-3), le marché Total est correct — mais l'équipe favorite
+    // (domicile) a perdu : le badge global reste "Échec".
+    expect(classifyOutcome(prediction, { home: 0, away: 3 })).toBe("failure");
   });
 
-  test("match nul correctement prédit comme favori → succès", () => {
-    const prediction = {
-      probabilities: { home: 30, draw: 40, away: 30 },
-      markets: { totalGoals: { line: 2.5, side: "Moins" } },
-    };
+  test("match nul réellement joué, correctement désigné comme favori (aucune équipe favorite, le nul l'emporte dans le modèle) → succès", () => {
+    const prediction = { probabilities: { home: 30, draw: 40, away: 30 } };
     expect(classifyOutcome(prediction, { home: 1, away: 1 })).toBe("success");
   });
 
   test("score final absent ou invalide → null (pas encore vérifiable), jamais une classification inventée", () => {
-    const prediction = { probabilities: { home: 60, draw: 25, away: 15 }, markets: {} };
+    const prediction = { probabilities: { home: 60, draw: 25, away: 15 } };
     expect(classifyOutcome(prediction, null)).toBeNull();
     expect(classifyOutcome(prediction, { home: undefined, away: 1 })).toBeNull();
   });

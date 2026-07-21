@@ -63,10 +63,11 @@ function StatBlockVerification({ label, block, verification }) {
 // score final, la date, le résumé des probabilités, et — voir PROMPT — CHAQUE ligne de
 // pronostic (fautes, total, Total 1, Total 2, corners, touches, hors-jeu, cartons,
 // tirs...) comparée individuellement au vrai résultat du match, avec son propre
-// indicateur ✓/✗. Le badge global (Succès/Échec, voir lib/pronosticHistory.js) reste
-// lui jugé sur l'issue (1X2) et le Total de buts uniquement — les indicateurs par
-// ligne sont un complément plus détaillé, pas un remplacement. Utilisée par
-// pages/probabilites-reussies.js et pages/probabilites-echouees.js.
+// indicateur ✓/✗. Le badge global (Succès/Échec, voir lib/pronosticHistory.js,
+// classifyOutcome) reste lui jugé UNIQUEMENT sur l'équipe favorite désignée avant le
+// match (a-t-elle réellement gagné ?) — les indicateurs par ligne sont un complément
+// plus détaillé, pas un remplacement. Utilisée par pages/probabilites-reussies.js et
+// pages/probabilites-echouees.js.
 export default function PronosticHistoryCard({ item }) {
   if (!item) return null;
 
