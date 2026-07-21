@@ -109,6 +109,38 @@ describe("pickLegForMatch — la sélection la plus fiable de CE match, parmi TO
     expect(leg.confidence).toBe(74.2);
   });
 
+  // Cartons jaunes/rouges sont des événements rares : leur ligne "sûre" atteint donc
+  // structurellement une confiance plus haute que les autres marchés — sans traitement
+  // particulier, ils domineraient presque tous les combinés (voir PROMPT : "les
+  // combinés sont composés presque uniquement de pronostics cartons, ce n'est pas ce
+  // qu'on veut"). Un autre marché éligible doit donc toujours être préféré aux cartons,
+  // même moins confiant.
+  test("un carton plus confiant qu'un autre marché éligible : l'autre marché est quand même préféré", () => {
+    const m = match({
+      pronostic: pronostic({
+        selectionCandidates: [
+          candidate("Cartons rouges", "Plus de 0,5", 92),
+          candidate("Corners", "Plus de 9,5", 64),
+        ],
+      }),
+    });
+    const leg = pickLegForMatch(m);
+    expect(leg.marketLabel).toBe("Corners");
+  });
+
+  test("les cartons sont le SEUL marché éligible de ce match : retenus en dernier recours", () => {
+    const m = match({
+      pronostic: pronostic({
+        selectionCandidates: [
+          candidate("Cartons jaunes", "Plus de 3,5", 65),
+          candidate("Corners", "Plus de 9,5", 50), // sous le seuil (50 % = neutre)
+        ],
+      }),
+    });
+    const leg = pickLegForMatch(m);
+    expect(leg.marketLabel).toBe("Cartons jaunes");
+  });
+
   test("match nul le plus probable et assez sûr : \"Match nul\"", () => {
     const m = match({ pronostic: pronostic({ selectionCandidates: [winnerCandidate("Match nul", 55)] }) });
     const leg = pickLegForMatch(m);
@@ -402,5 +434,131 @@ describe("generateCombos — assemble les combinés à partir des VRAIS matchs c
     const combos = generateCombos(matches);
     const liveCombo = combos.find((c) => c.isLive);
     expect(liveCombo.compromised).toBe(false);
+  });
+
+  // Rareté des cartons dans les combinés (voir PROMPT : "les pronostics cartons ne
+  // doivent apparaître que RAREMENT : au maximum 1 sélection carton par combiné, et
+  // seulement dans une minorité de combinés").
+  describe("rareté des cartons", () => {
+    function cartonsOnlyMatches(count) {
+      return Array.from({ length: count }, (_, i) =>
+        match({
+          id: i + 1,
+          homeTeam: { id: 100 + i, name: `Home ${i}` },
+          awayTeam: { id: 200 + i, name: `Away ${i}` },
+          pronostic: pronostic({ selectionCandidates: [candidate("Cartons jaunes", "Plus de 3,5", 65)] }),
+        })
+      );
+    }
+
+    function mixedMatches() {
+      const nonCartons = Array.from({ length: 8 }, (_, i) =>
+        match({
+          id: i + 1,
+          homeTeam: { id: 100 + i, name: `Home ${i}` },
+          awayTeam: { id: 200 + i, name: `Away ${i}` },
+          pronostic: pronostic({ selectionCandidates: [candidate("Corners", "Plus de 9,5", 60 + i)] }),
+        })
+      );
+      const cartons = Array.from({ length: 4 }, (_, i) =>
+        match({
+          id: 900 + i,
+          homeTeam: { id: 900 + i, name: `Cartons Home ${i}` },
+          awayTeam: { id: 950 + i, name: `Cartons Away ${i}` },
+          pronostic: pronostic({ selectionCandidates: [candidate("Cartons rouges", "Plus de 0,5", 90)] }),
+        })
+      );
+      return [...nonCartons, ...cartons];
+    }
+
+    test("pool entièrement composé de cartons : jamais de combiné inventé en dépassant la limite d'une sélection carton (aucun combiné plutôt qu'une règle violée)", () => {
+      // Avec la règle "au maximum 1 sélection carton par combiné", un pool qui n'offre
+      // AUCUN autre marché ne permet d'assembler un combiné de 2+ lignes en respectant
+      // cette limite — le comportement honnête est de ne rien proposer (voir BLOC 4.D,
+      // "aucun combiné fiable disponible : ne rien forcer"), jamais d'assouplir la
+      // règle pour remplir un ticket.
+      const combos = generateCombos(cartonsOnlyMatches(10), { random: () => 0.01 }); // random bas -> autoriserait les cartons si possible
+      for (const combo of combos) {
+        const cartonsCount = combo.legs.filter((l) => l.marketLabel.startsWith("Cartons")).length;
+        expect(cartonsCount).toBeLessThanOrEqual(1);
+      }
+      expect(combos).toEqual([]);
+    });
+
+    test("pool majoritairement cartons avec quelques matchs non-cartons : jamais plus d'une sélection carton par combiné", () => {
+      const matches = [
+        ...cartonsOnlyMatches(8),
+        match({
+          id: 501, homeTeam: { id: 501, name: "Home A" }, awayTeam: { id: 601, name: "Away A" },
+          pronostic: pronostic({ selectionCandidates: [candidate("Corners", "Plus de 9,5", 65)] }),
+        }),
+        match({
+          id: 502, homeTeam: { id: 502, name: "Home B" }, awayTeam: { id: 602, name: "Away B" },
+          pronostic: pronostic({ selectionCandidates: [candidate("Fautes", "Moins de 21,5", 63)] }),
+        }),
+      ];
+      const combos = generateCombos(matches, { random: () => 0.01 }); // random bas -> autorise les cartons quand la règle le permet
+      expect(combos.length).toBeGreaterThan(0);
+      for (const combo of combos) {
+        const cartonsCount = combo.legs.filter((l) => l.marketLabel.startsWith("Cartons")).length;
+        expect(cartonsCount).toBeLessThanOrEqual(1);
+      }
+    });
+
+    test("aucun combiné n'est composé à 100% de cartons quand un pool suffisant d'autres marchés existe", () => {
+      const combos = generateCombos(mixedMatches(), { random: () => 0.01 }); // random bas -> autorise même les cartons
+      expect(combos.length).toBeGreaterThan(0);
+      for (const combo of combos) {
+        expect(combo.legs.some((l) => !l.marketLabel.startsWith("Cartons"))).toBe(true);
+      }
+    });
+
+    test("random au-dessus du seuil cartons : aucun combiné n'inclut de carton quand un pool suffisant d'autres marchés existe", () => {
+      const combos = generateCombos(mixedMatches(), { random: () => 0.99 });
+      expect(combos.length).toBeGreaterThan(0);
+      for (const combo of combos) {
+        expect(combo.legs.every((l) => !l.marketLabel.startsWith("Cartons"))).toBe(true);
+      }
+    });
+
+    test("la ligne live garantie privilégie un marché non-cartons quand une alternative existe pour ce match", () => {
+      const matches = [
+        ...manyMatches(3, { status: "SCHEDULED" }),
+        match({
+          id: 99, status: "IN_PLAY",
+          homeTeam: { id: 900, name: "Live Home" }, awayTeam: { id: 901, name: "Live Away" },
+          pronostic: pronostic({
+            selectionCandidates: [
+              candidate("Cartons rouges", "Plus de 0,5", 90),
+              candidate("Corners", "Plus de 9,5", 65),
+            ],
+          }),
+        }),
+      ];
+      const combos = generateCombos(matches);
+      const liveCombo = combos.find((c) => c.isLive);
+      const liveLeg = liveCombo.legs.find((l) => l.matchId === 99);
+      expect(liveLeg.marketLabel).toBe("Corners");
+    });
+
+    test("sur de nombreuses générations d'un pool mixte, les cartons n'apparaissent que dans une minorité de combinés", () => {
+      const matches = mixedMatches();
+      let totalCombos = 0;
+      let combosWithCartons = 0;
+      let seed = 1;
+      // Générateur pseudo-aléatoire déterministe (LCG) pour simuler de nombreux tirages
+      // reproductibles, sans dépendre de Math.random dans un test.
+      function nextRandom() {
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        return seed / 2147483648;
+      }
+      for (let i = 0; i < 60; i++) {
+        const combos = generateCombos(matches, { random: nextRandom });
+        totalCombos += combos.length;
+        combosWithCartons += combos.filter((c) => c.legs.some((l) => l.marketLabel.startsWith("Cartons"))).length;
+      }
+      expect(totalCombos).toBeGreaterThan(0);
+      expect(combosWithCartons).toBeLessThan(totalCombos * 0.5);
+    });
   });
 });
