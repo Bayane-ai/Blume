@@ -27,16 +27,28 @@ export default function MatchCard({ m, comp }) {
   const router = useRouter();
   if (!m || !m.homeTeam || !m.awayTeam) return null;
 
+  const goToMatch = () => router.push(matchHref(m, comp));
+
   return (
     <div>
-      <div style={st.card}>
+      {/* Bloc 1 (parcours vidéo) : cliquer n'importe où sur la carte (équipes, score,
+          bandeau compétition) mène DIRECTEMENT sur la page du match, aucune page
+          intermédiaire — un vrai <button> pleine largeur (pas un <div onClick>) pour
+          rester accessible au clavier/lecteur d'écran. Le bouton ANALYSER en dessous
+          reste disponible en plus, comme un appel à l'action explicite. */}
+      <button
+        type="button"
+        style={st.card}
+        onClick={goToMatch}
+        data-testid="match-card-body"
+      >
         <MatchInfoBlock m={m} comp={comp} />
-      </div>
+      </button>
 
       <button
         type="button"
         style={st.analyzeBtn}
-        onClick={() => router.push(matchHref(m, comp))}
+        onClick={goToMatch}
       >
         ANALYSER
       </button>
@@ -46,6 +58,7 @@ export default function MatchCard({ m, comp }) {
 
 const st = {
   card: {
+    display: "block", width: "100%", textAlign: "left", cursor: "pointer",
     background: "#FFFFFF", border: "1px solid #D8E6DE", borderRadius: "14px 14px 0 0",
     padding: 16, borderBottom: "none",
   },

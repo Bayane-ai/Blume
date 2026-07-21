@@ -143,4 +143,38 @@ describe("MatchCard — présentation exacte de la carte", () => {
     const btn = screen.getByRole("button", { name: /analyser/i });
     expect(btn.closest("a")).toBeNull();
   });
+
+  // Bloc 1 (parcours vidéo) : cliquer n'importe où sur la carte (pas seulement le
+  // bouton ANALYSER) mène DIRECTEMENT sur la page du match — aucune page
+  // intermédiaire.
+  test("cliquer sur le corps de la carte (équipes/score, en dehors du bouton ANALYSER) mène directement vers la page du match", () => {
+    render(<MatchCard m={baseMatch()} comp={{ code: "PL", name: "Premier League" }} />);
+
+    // On clique sur le nom de l'équipe à domicile, pas sur le bouton ANALYSER.
+    fireEvent.click(screen.getByText("Arsenal FC"));
+
+    expect(pushMock).toHaveBeenCalledTimes(1);
+    const href = pushMock.mock.calls[0][0];
+    expect(href.pathname).toBe("/match/1");
+    expect(href.query).toEqual(
+      expect.objectContaining({
+        homeTeamId: 10,
+        awayTeamId: 11,
+        homeTeamName: "Arsenal FC",
+        awayTeamName: "Chelsea FC",
+        competitionCode: "PL",
+      })
+    );
+  });
+
+  test("cliquer sur le corps de la carte n'ouvre pas DEUX navigations quand on clique ensuite sur ANALYSER (pas de double gestionnaire empilé)", () => {
+    render(<MatchCard m={baseMatch()} comp={{ code: "PL", name: "Premier League" }} />);
+    fireEvent.click(screen.getByRole("button", { name: /^analyser$/i }));
+    expect(pushMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("le corps de la carte est un vrai bouton accessible (pas un <div> muet au clic)", () => {
+    render(<MatchCard m={baseMatch()} comp={{}} />);
+    expect(screen.getByTestId("match-card-body").tagName).toBe("BUTTON");
+  });
 });

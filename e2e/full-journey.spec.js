@@ -288,6 +288,20 @@ test.describe("Écran 3 — Analyser un match", () => {
     expect(errors.consoleErrors, `Erreurs console : ${errors.consoleErrors.join(" | ")}`).toEqual([]);
   });
 
+  test("Bloc 1 — cliquer directement sur le corps d'une carte (équipes/score, pas le bouton ANALYSER) mène directement à la page du match, aucune page intermédiaire", async ({ page }) => {
+    await page.goto("/");
+
+    const card = page.getByTestId("match-card-body").first();
+    // On clique sur le nom de l'équipe à domicile, à l'intérieur de la carte —
+    // jamais sur le bouton ANALYSER lui-même.
+    await card.getByText("Arsenal FC").click();
+
+    // Navigation directe : l'URL change immédiatement vers /match/ID, aucune page
+    // intermédiaire (pas de confirmation, pas d'écran de chargement bloquant).
+    await expect(page).toHaveURL(/\/match\/101/);
+    await expect(page.getByTestId("win-probability-card")).toBeVisible();
+  });
+
   test("clic ANALYSER depuis Matchs à venir : navigue vers les pronostics du bon match, sans aucun score affiché (pas encore joué)", async ({ page }) => {
     await page.goto("/a-venir");
     await page.getByTestId("match-list").getByText("ANALYSER").first().click();
