@@ -1,12 +1,13 @@
 import { saveComboPredictions, maintainAndGetComboStats } from "../../lib/comboHistory";
 
-// BLOC 4.B "Suivi dans le temps" — deux usages depuis pages/combine-vision.js :
+// BLOC 4.B / BLOC 5 "Suivi dans le temps" — deux usages depuis pages/combine-vision.js :
 //   - POST : enregistre les combinés fraîchement générés côté client ("pending"),
 //     voir lib/comboHistory.js#saveComboPredictions.
-//   - GET  : nettoie les entrées expirées, revérifie les combinés en attente dont
-//     tous les matchs sont désormais terminés, puis renvoie le taux de réussite par
-//     niveau de risque et le statut (Gagné/Perdu/En cours) des combinés actuellement
-//     affichés (`ids`, une liste d'identifiants séparés par des virgules).
+//   - GET  : nettoie les entrées expirées, revérifie les combinés en attente (échec
+//     immédiat dès qu'une sélection est perdue, voir BLOC 5), puis renvoie le taux de
+//     réussite par niveau de risque et la progression détaillée (statut global +
+//     résultat de chaque sélection) des combinés actuellement affichés (`ids`, une
+//     liste d'identifiants séparés par des virgules).
 export default async function handler(req, res) {
   if (req.method === "POST") {
     const combos = req.body?.combos;
@@ -21,10 +22,10 @@ export default async function handler(req, res) {
   const comboIds = typeof idsParam === "string" && idsParam.length > 0 ? idsParam.split(",") : [];
 
   try {
-    const { successRates, statuses } = await maintainAndGetComboStats(comboIds, token, apiFootballKey);
+    const { successRates, progress } = await maintainAndGetComboStats(comboIds, token, apiFootballKey);
     res.setHeader("Cache-Control", "s-maxage=10, stale-while-revalidate=30");
-    return res.status(200).json({ successRates, statuses });
+    return res.status(200).json({ successRates, progress });
   } catch (e) {
-    return res.status(500).json({ error: e.message, successRates: {}, statuses: {} });
+    return res.status(500).json({ error: e.message, successRates: {}, progress: {} });
   }
 }

@@ -24,11 +24,15 @@ export default function CombineVision() {
   const [liveData, setLiveData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [combos, setCombos] = useState([]);
-  // BLOC 4.B "Suivi dans le temps" — taux de réussite par niveau de risque, et statut
-  // (Gagné/Perdu/En cours) des combinés actuellement affichés (voir
-  // lib/comboHistory.js / pages/api/combo-history.js).
+  // BLOC 4.B / BLOC 5 "Suivi dans le temps" — taux de réussite par niveau de risque,
+  // et progression (statut global + résultat de chaque sélection) des combinés
+  // actuellement affichés (voir lib/comboHistory.js / pages/api/combo-history.js).
   const [successRates, setSuccessRates] = useState({});
-  const [statuses, setStatuses] = useState({});
+  const [progress, setProgress] = useState({});
+  // BLOC 5 — "propositions dynamiques" : horodatage de la dernière actualisation
+  // réussie, affiché près du bouton "Actualiser" pour que la personne comprenne que
+  // cette liste n'est pas figée (voir PROMPT).
+  const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
 
   const load = useCallback((silent = false) => {
     if (!silent) setLoading(true);
@@ -44,6 +48,7 @@ export default function CombineVision() {
     ]).then(([upcoming, live]) => {
       setUpcomingData(upcoming);
       setLiveData(live);
+      setLastUpdatedAt(new Date());
     }).finally(() => setLoading(false));
   }, []);
 
@@ -80,11 +85,12 @@ export default function CombineVision() {
     setCombos(generateCombos(allMatches));
   }, [allMatches]);
 
-  // BLOC 4.B — enregistre les combinés fraîchement générés ("pending", voir
-  // lib/comboHistory.js) et relit le taux de réussite par niveau de risque + le
-  // statut (Gagné/Perdu/En cours) des combinés actuellement affichés. Best-effort :
-  // une erreur ici (Supabase indisponible, migration pas encore exécutée) ne doit
-  // jamais empêcher l'affichage des combinés eux-mêmes.
+  // BLOC 4.B / BLOC 5 — enregistre les combinés fraîchement générés ("pending", voir
+  // lib/comboHistory.js) et relit le taux de réussite par niveau de risque + la
+  // progression (statut global + résultat de chaque sélection, pour cocher au fil des
+  // matchs) des combinés actuellement affichés. Best-effort : une erreur ici
+  // (Supabase indisponible, migration pas encore exécutée) ne doit jamais empêcher
+  // l'affichage des combinés eux-mêmes.
   useEffect(() => {
     if (combos.length === 0) return;
     fetch("/api/combo-history", {
@@ -98,7 +104,7 @@ export default function CombineVision() {
       .then((r) => r.json())
       .then((data) => {
         setSuccessRates(data.successRates || {});
-        setStatuses(data.statuses || {});
+        setProgress(data.progress || {});
       })
       .catch((e) => console.error("Erreur lecture historique combinés:", e));
   }, [combos]);
@@ -128,9 +134,19 @@ export default function CombineVision() {
           </p>
         </section>
 
-        <button type="button" style={st.refreshBtn} onClick={() => load(false)} disabled={loading}>
-          {loading ? "Actualisation…" : "Actualiser"}
-        </button>
+        <div style={st.refreshRow}>
+          <button type="button" style={st.refreshBtn} onClick={() => load(false)} disabled={loading}>
+            {loading ? "Actualisation…" : "Actualiser"}
+          </button>
+          {/* BLOC 5 — "propositions dynamiques" : indicateur visuel clair que la liste
+              n'est pas figée, se renouvelle automatiquement (voir PROMPT). */}
+          <p style={st.freshnessHint} data-testid="combined-vision-freshness">
+            <span style={st.freshnessDot} aria-hidden="true" />
+            {lastUpdatedAt
+              ? `Mis à jour à ${lastUpdatedAt.toLocaleTimeString("fr-FR")} · se renouvelle automatiquement`
+              : "Se renouvelle automatiquement"}
+          </p>
+        </div>
 
         {loading && !upcomingData && !liveData && <p style={st.hint}>Chargement des combinés…</p>}
         {!loading && hasError && (
@@ -160,7 +176,7 @@ export default function CombineVision() {
 
         <div style={st.list} data-testid="combined-vision-list">
           {combos.map((combo) => (
-            <CombinedVisionTicket key={combo.id} combo={combo} status={statuses[combo.id]} />
+            <CombinedVisionTicket key={combo.id} combo={combo} progress={progress[combo.id]} />
           ))}
         </div>
       </main>
@@ -175,9 +191,16 @@ const st = {
   heroTitle: { fontSize: 21, fontWeight: 800, margin: "0 0 8px", lineHeight: 1.25 },
   heroSubtitle: { fontSize: 12, color: "#5C7A6A", margin: 0, lineHeight: 1.5 },
   hint: { fontSize: 12.5, color: "#5C7A6A" },
+  refreshRow: { display: "flex", flexDirection: "column", alignItems: "center", gap: 6 },
   refreshBtn: {
     alignSelf: "center", background: "#39B577", border: "none", color: "#06121F", fontWeight: 800,
     borderRadius: 999, padding: "10px 24px", fontSize: 13, cursor: "pointer",
+  },
+  freshnessHint: {
+    display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#5C7A6A", margin: 0,
+  },
+  freshnessDot: {
+    width: 7, height: 7, borderRadius: "50%", background: "#39B577", flexShrink: 0,
   },
   list: { display: "flex", flexDirection: "column", gap: 10 },
   statsBox: {

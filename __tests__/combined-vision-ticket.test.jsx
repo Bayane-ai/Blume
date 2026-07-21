@@ -105,19 +105,50 @@ test("aucune sélection sans raison réelle : pas de texte de justification affi
   expect(screen.queryByTestId("ticket-leg-reason")).not.toBeInTheDocument();
 });
 
-// BLOC 4.B — statut Gagné/Perdu/En cours.
+// BLOC 4.B / BLOC 5 — statut Gagné/Perdu/En cours.
 test("statut \"En cours\" par défaut (combiné pas encore classé)", () => {
   render(<CombinedVisionTicket combo={combo()} />);
   expect(screen.getByTestId("ticket-status-badge")).toHaveTextContent("En cours");
 });
 
 test("statut \"Gagné\" affiché quand le combiné est classé succès", () => {
-  render(<CombinedVisionTicket combo={combo()} status="success" />);
+  render(<CombinedVisionTicket combo={combo()} progress={{ status: "success", legResults: { 1: true, 2: true } }} />);
   expect(screen.getByTestId("ticket-status-badge")).toHaveTextContent("Gagné");
 });
 
-test("statut \"Perdu\" affiché quand le combiné est classé échec", () => {
-  render(<CombinedVisionTicket combo={combo()} status="failure" />);
+test("statut \"Perdu\" affiché quand le combiné est classé échec, avec un message d'échec auto", () => {
+  render(<CombinedVisionTicket combo={combo()} progress={{ status: "failure", legResults: { 1: false, 2: null } }} />);
+  expect(screen.getByTestId("ticket-status-badge")).toHaveTextContent("Perdu");
+  expect(screen.getByTestId("ticket-failure-message")).toHaveTextContent(/échec/i);
+});
+
+// BLOC 5 — les sélections déjà jouées et gagnées apparaissent cochées, les autres
+// restent en attente.
+test("chaque sélection affiche son propre résultat (gagnée cochée, perdue marquée, en attente sinon)", () => {
+  render(<CombinedVisionTicket combo={combo()} progress={{ status: "pending", legResults: { 1: true, 2: null } }} />);
+  const results = screen.getAllByTestId("ticket-leg-result");
+  expect(results[0]).toHaveTextContent("✓");
+  expect(results[0]).toHaveTextContent(/Gagné/i);
+  expect(results[1]).toHaveTextContent(/attente/i);
+});
+
+test("une sélection perdue est bien marquée comme telle (✗)", () => {
+  render(<CombinedVisionTicket combo={combo()} progress={{ status: "failure", legResults: { 1: false, 2: null } }} />);
+  const results = screen.getAllByTestId("ticket-leg-result");
+  expect(results[0]).toHaveTextContent("✗");
+  expect(results[0]).toHaveTextContent(/Perdu/i);
+});
+
+test("sans donnée de progression : chaque sélection reste \"en attente\" (jamais un résultat inventé)", () => {
+  render(<CombinedVisionTicket combo={combo()} />);
+  const results = screen.getAllByTestId("ticket-leg-result");
+  expect(results.every((r) => /attente/i.test(r.textContent))).toBe(true);
+});
+
+// BLOC 5 — un combiné déjà en échec n'est plus présenté comme une opportunité live.
+test("un combiné live déjà en échec n'affiche plus \"saisir l'occasion\"/\"compromis\", seulement le statut \"Perdu\"", () => {
+  render(<CombinedVisionTicket combo={combo({ isLive: true })} progress={{ status: "failure", legResults: {} }} />);
+  expect(screen.queryByTestId("ticket-live-badge")).not.toBeInTheDocument();
   expect(screen.getByTestId("ticket-status-badge")).toHaveTextContent("Perdu");
 });
 

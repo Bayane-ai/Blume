@@ -1,11 +1,12 @@
 /**
  * pages/api/combo-history.js — POST enregistre les combinés fraîchement générés,
- * GET renvoie le taux de réussite par niveau de risque + le statut des combinés
- * actuellement affichés (voir lib/comboHistory.js).
+ * GET renvoie le taux de réussite par niveau de risque + la progression (statut
+ * global + résultat de chaque sélection) des combinés actuellement affichés (voir
+ * lib/comboHistory.js).
  */
 jest.mock("../lib/comboHistory", () => ({
   saveComboPredictions: jest.fn(() => Promise.resolve()),
-  maintainAndGetComboStats: jest.fn(() => Promise.resolve({ successRates: { faible: { won: 2, total: 3, pct: 66.7 } }, statuses: { a: "success" } })),
+  maintainAndGetComboStats: jest.fn(() => Promise.resolve({ successRates: { faible: { won: 2, total: 3, pct: 66.7 } }, progress: { a: { status: "success", legResults: { 1: true } } } })),
 }));
 
 const { saveComboPredictions, maintainAndGetComboStats } = require("../lib/comboHistory");
@@ -49,7 +50,7 @@ test("GET : renvoie le taux de réussite et le statut des combinés demandés (i
 
   expect(maintainAndGetComboStats).toHaveBeenCalledWith(["a", "b", "c"], undefined, undefined);
   expect(res.body.successRates.faible).toEqual({ won: 2, total: 3, pct: 66.7 });
-  expect(res.body.statuses).toEqual({ a: "success" });
+  expect(res.body.progress).toEqual({ a: { status: "success", legResults: { 1: true } } });
   expect(res.setHeader).toHaveBeenCalledWith("Cache-Control", expect.stringContaining("s-maxage"));
 });
 
@@ -69,5 +70,5 @@ test("erreur inattendue : 500 avec des objets vides, jamais un plantage", async 
 
   expect(res.status).toHaveBeenCalledWith(500);
   expect(res.body.successRates).toEqual({});
-  expect(res.body.statuses).toEqual({});
+  expect(res.body.progress).toEqual({});
 });

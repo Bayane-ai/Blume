@@ -319,6 +319,35 @@ describe("generateCombos — assemble les combinés à partir des VRAIS matchs c
     expect(liveCombo.legs.length).toBeLessThanOrEqual(3);
   });
 
+  // BLOC 5 — "Combiné mixte" : un même combiné peut contenir à la fois des matchs en
+  // direct et des matchs à venir. `isLive` doit se déduire des VRAIES lignes qui le
+  // composent, même pour un combiné "ordinaire" (pas le combiné live dédié) qui pioche
+  // par hasard une ligne en direct dans le pool mixte.
+  test("un combiné ordinaire qui pioche à la fois un match en direct et des matchs à venir est bien marqué \"En live\" (combiné mixte)", () => {
+    // Pool réduit à 3 lignes (1 en direct + 2 à venir) et plage "faible"/"moyen"
+    // forcées à leur maximum (3 lignes) : le tirage ne peut alors porter QUE sur ces
+    // 3 lignes, forcément mixte.
+    const matches = [
+      ...manyMatches(2, { status: "SCHEDULED" }),
+      match({ id: 99, status: "IN_PLAY", homeTeam: { id: 900, name: "Live Home" }, awayTeam: { id: 901, name: "Live Away" } }),
+    ];
+    const combos = generateCombos(matches, { random: () => 0.99 });
+    expect(combos.length).toBeGreaterThan(0);
+    const mixedCombo = combos[0];
+    expect(mixedCombo.legs).toHaveLength(3);
+    expect(mixedCombo.legs.some((l) => l.isLive)).toBe(true);
+    expect(mixedCombo.legs.some((l) => !l.isLive)).toBe(true);
+    expect(mixedCombo.isLive).toBe(true);
+  });
+
+  test("l'indicateur \"isLive\" d'un combiné correspond toujours exactement à la présence d'au moins une ligne en direct parmi ses sélections", () => {
+    const matches = [...manyMatches(6, { status: "SCHEDULED" }), match({ id: 99, status: "IN_PLAY", homeTeam: { id: 900, name: "Live Home" }, awayTeam: { id: 901, name: "Live Away" } })];
+    const combos = generateCombos(matches, { random: () => 0.5 });
+    for (const combo of combos) {
+      expect(combo.isLive).toBe(combo.legs.some((l) => l.isLive));
+    }
+  });
+
   test("des matchs avec des sélections de marchés différents (corners, fautes, cartons, 1X2...) alimentent le même combiné", () => {
     const matches = [
       match({ id: 1, pronostic: pronostic({ selectionCandidates: [winnerCandidate("Victoire Home 0", 61)] }) }),

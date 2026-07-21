@@ -45,14 +45,14 @@ function upcomingMatch(id, homeName, awayName, overrides = {}) {
   };
 }
 
-// BLOC 4.B — pages/combine-vision.js enregistre chaque nouveau combiné (POST) et
-// relit le taux de réussite/statut (GET) via /api/combo-history — mock par défaut
-// neutre (aucune donnée), overridable via `comboHistoryResponse`.
+// BLOC 4.B / BLOC 5 — pages/combine-vision.js enregistre chaque nouveau combiné
+// (POST) et relit le taux de réussite/la progression (GET) via /api/combo-history —
+// mock par défaut neutre (aucune donnée), overridable via `comboHistoryResponse`.
 function comboHistoryHandler(comboHistoryResponse) {
   return (url, options) => {
     if (!url.startsWith("/api/combo-history")) return null;
     if (options?.method === "POST") return Promise.resolve({ json: () => Promise.resolve({ saved: true }) });
-    return Promise.resolve({ json: () => Promise.resolve(comboHistoryResponse || { successRates: {}, statuses: {} }) });
+    return Promise.resolve({ json: () => Promise.resolve(comboHistoryResponse || { successRates: {}, progress: {} }) });
   };
 }
 
@@ -227,7 +227,7 @@ test("enregistre (POST) les combinés fraîchement générés auprès de /api/co
 test("affiche le taux de réussite par niveau de risque quand l'historique en a", async () => {
   global.fetch = mockFetchWithMatches(
     [upcomingMatch(1, "Arsenal FC", "Chelsea FC"), upcomingMatch(2, "Real Madrid", "FC Barcelona")],
-    { successRates: { faible: { won: 8, total: 10, pct: 80 } }, statuses: {} }
+    { successRates: { faible: { won: 8, total: 10, pct: 80 } }, progress: {} }
   );
 
   render(<CombineVision />);
@@ -256,9 +256,9 @@ test("un combiné déjà classé affiche son statut Gagné/Perdu (via /api/combo
       if (options?.method === "POST") return Promise.resolve({ json: () => Promise.resolve({ saved: true }) });
       const ids = new URL(url, "http://localhost").searchParams.get("ids")?.split(",") || [];
       comboIdsSeen = ids;
-      const statuses = {};
-      if (ids[0]) statuses[ids[0]] = "success";
-      return Promise.resolve({ json: () => Promise.resolve({ successRates: {}, statuses }) });
+      const progress = {};
+      if (ids[0]) progress[ids[0]] = { status: "success", legResults: {} };
+      return Promise.resolve({ json: () => Promise.resolve({ successRates: {}, progress }) });
     }
     if (url.startsWith("/api/matches")) {
       return Promise.resolve({ json: () => Promise.resolve({ competitions: [{ code: "PL", name: "Premier League", matches: [upcomingMatch(1, "Arsenal FC", "Chelsea FC"), upcomingMatch(2, "Real Madrid", "FC Barcelona")] }] }) });
@@ -275,4 +275,17 @@ test("un combiné déjà classé affiche son statut Gagné/Perdu (via /api/combo
   await waitFor(() => expect(screen.getAllByTestId("combined-vision-ticket").length).toBeGreaterThan(0));
   await waitFor(() => expect(comboIdsSeen).not.toBeNull());
   await waitFor(() => expect(screen.getAllByText("Gagné").length).toBeGreaterThan(0));
+});
+
+// BLOC 5 — "propositions dynamiques" : indicateur visuel clair que la liste n'est
+// pas figée.
+test("affiche un indicateur clair que les combinés se renouvellent automatiquement", async () => {
+  global.fetch = mockFetchWithMatches([upcomingMatch(1, "Arsenal FC", "Chelsea FC"), upcomingMatch(2, "Real Madrid", "FC Barcelona")]);
+
+  render(<CombineVision />);
+
+  await waitFor(() => expect(screen.getAllByTestId("combined-vision-ticket").length).toBeGreaterThan(0));
+  expect(screen.getByTestId("combined-vision-freshness")).toHaveTextContent(/se renouvelle automatiquement/i);
+  // Confirme l'horodatage de la dernière actualisation, pas un texte figé générique.
+  expect(screen.getByTestId("combined-vision-freshness")).toHaveTextContent(/mis à jour à/i);
 });
