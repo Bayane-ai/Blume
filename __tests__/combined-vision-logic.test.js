@@ -3,19 +3,34 @@
  * PROMPT) : chaque ligne "assez sûre" vient d'un VRAI match (jamais inventé), jamais
  * deux lignes du même match dans un combiné, jamais de cote chiffrée — seulement une
  * confiance combinée réelle (produit des probabilités de chaque ligne).
+ *
+ * BLOC 2 — le pool de sélections candidates (`pronostic.selectionCandidates`) est
+ * désormais calculé par lib/pronostic.js (computePronostic → buildSelectionCandidates),
+ * pas par ce fichier : ces tests fournissent donc ce pool directement (comme le ferait
+ * un vrai pronostic), pour tester la logique PROPRE à combinedVision.js (filtrage par
+ * seuil de confiance, choix de la meilleure sélection, assemblage des combinés) —
+ * indépendamment du calcul des statistiques, déjà testé dans
+ * __tests__/pronostic-selection-candidates.test.js.
  */
 import {
   pickLegForMatch, buildLegPool, combinedConfidence, riskLevelForLegCount,
   confidenceLabel, generateCombos,
 } from "../lib/combinedVision";
 
+function candidate(marketLabel, pickLabel, confidence) {
+  return { marketLabel, pickLabel, confidence };
+}
+
+function winnerCandidate(pickLabel, confidence) {
+  return candidate("Issue du match", pickLabel, confidence);
+}
+
 function pronostic(overrides = {}) {
   return {
     available: true,
     home: { name: "Arsenal FC" },
     away: { name: "Chelsea FC" },
-    probabilities: { home: 60, draw: 25, away: 15 },
-    goals: { over25: 55, under25: 45 },
+    selectionCandidates: [winnerCandidate("Victoire Arsenal FC", 60)],
     ...overrides,
   };
 }
@@ -31,43 +46,71 @@ function match(overrides = {}) {
   };
 }
 
-describe("pickLegForMatch — UNE ligne assez sûre par match, entre le 1X2 et le Total 2,5 buts", () => {
+describe("pickLegForMatch — la sélection la plus fiable de CE match, parmi TOUT le pool réel", () => {
   test("aucun pronostic disponible → null, jamais une ligne inventée", () => {
     expect(pickLegForMatch(match({ pronostic: { available: false } }))).toBeNull();
     expect(pickLegForMatch(match({ pronostic: null }))).toBeNull();
     expect(pickLegForMatch(null)).toBeNull();
   });
 
-  test("ni le 1X2 ni le Total n'atteignent leur seuil de confiance → null (rien d'assez sûr)", () => {
-    const m = match({ pronostic: pronostic({ probabilities: { home: 38, draw: 33, away: 29 }, goals: { over25: 52, under25: 48 } }) });
+  test("pronostic sans pool de sélections (ancien instantané) → null, jamais une ligne inventée", () => {
+    expect(pickLegForMatch(match({ pronostic: pronostic({ selectionCandidates: undefined }) }))).toBeNull();
+  });
+
+  test("aucune sélection du pool n'atteint son seuil de confiance → null (rien d'assez sûr)", () => {
+    const m = match({
+      pronostic: pronostic({
+        selectionCandidates: [
+          winnerCandidate("Victoire Arsenal FC", 38),
+          candidate("Total", "Plus de 2,5", 52),
+          candidate("Corners", "Plus de 9,5", 54),
+        ],
+      }),
+    });
     expect(pickLegForMatch(m)).toBeNull();
   });
 
   test("1X2 assez sûr (>= 45 %) : choisit l'issue la plus probable, avec le bon libellé", () => {
-    const m = match({ pronostic: pronostic({ probabilities: { home: 62, draw: 20, away: 18 }, goals: { over25: 50, under25: 50 } }) });
+    const m = match({ pronostic: pronostic({ selectionCandidates: [winnerCandidate("Victoire Arsenal FC", 62)] }) });
     const leg = pickLegForMatch(m);
     expect(leg.marketLabel).toBe("Issue du match");
     expect(leg.pickLabel).toBe("Victoire Arsenal FC");
     expect(leg.confidence).toBe(62);
   });
 
-  test("Total assez sûr (>= 58 %) : choisit Plus/Moins de 2,5 buts selon le sens le plus probable", () => {
-    const m = match({ pronostic: pronostic({ probabilities: { home: 40, draw: 32, away: 28 }, goals: { over25: 30, under25: 70 } }) });
+  test("marché à 2 issues assez sûr (>= 58 %), ex. Total de buts", () => {
+    const m = match({ pronostic: pronostic({ selectionCandidates: [candidate("Total", "Moins de 2,5", 70)] }) });
     const leg = pickLegForMatch(m);
-    expect(leg.marketLabel).toBe("Total de buts");
-    expect(leg.pickLabel).toBe("Moins de 2,5 buts");
+    expect(leg.marketLabel).toBe("Total");
+    expect(leg.pickLabel).toBe("Moins de 2,5");
     expect(leg.confidence).toBe(70);
   });
 
-  test("les deux marchés sont éligibles : choisit celui dont la confiance réelle est la plus haute", () => {
-    const m = match({ pronostic: pronostic({ probabilities: { home: 46, draw: 30, away: 24 }, goals: { over25: 80, under25: 20 } }) });
+  test("marché à 2 issues à 50 % (neutre) n'est PAS assez sûr même si aucun 1X2 n'est fourni", () => {
+    const m = match({ pronostic: pronostic({ selectionCandidates: [candidate("Corners", "Plus de 9,5", 50)] }) });
+    expect(pickLegForMatch(m)).toBeNull();
+  });
+
+  test("plusieurs sélections éligibles (corners, fautes, cartons, tirs...) : choisit celle dont la confiance réelle est la plus haute, peu importe le marché", () => {
+    const m = match({
+      pronostic: pronostic({
+        selectionCandidates: [
+          winnerCandidate("Victoire Arsenal FC", 61),
+          candidate("Total", "Plus de 2,5", 59),
+          candidate("Corners", "Plus de 9,5", 74.2),
+          candidate("Fautes", "Moins de 21,5", 63),
+          candidate("Cartons jaunes", "Plus de 3,5", 60.5),
+        ],
+      }),
+    });
     const leg = pickLegForMatch(m);
-    expect(leg.pickLabel).toBe("Plus de 2,5 buts");
-    expect(leg.confidence).toBe(80);
+    expect(leg.marketLabel).toBe("Corners");
+    expect(leg.pickLabel).toBe("Plus de 9,5");
+    expect(leg.confidence).toBe(74.2);
   });
 
   test("match nul le plus probable et assez sûr : \"Match nul\"", () => {
-    const m = match({ pronostic: pronostic({ probabilities: { home: 20, draw: 55, away: 25 }, goals: { over25: 50, under25: 50 } }) });
+    const m = match({ pronostic: pronostic({ selectionCandidates: [winnerCandidate("Match nul", 55)] }) });
     const leg = pickLegForMatch(m);
     expect(leg.pickLabel).toBe("Match nul");
   });
@@ -84,7 +127,7 @@ describe("pickLegForMatch — UNE ligne assez sûre par match, entre le 1X2 et l
 describe("buildLegPool — une ligne par match éligible, jamais deux fois le même match", () => {
   test("ignore les matchs sans ligne assez sûre, garde les autres", () => {
     const eligible = match({ id: 1 });
-    const ineligible = match({ id: 2, pronostic: pronostic({ probabilities: { home: 38, draw: 33, away: 29 }, goals: { over25: 52, under25: 48 } }) });
+    const ineligible = match({ id: 2, pronostic: pronostic({ selectionCandidates: [winnerCandidate("Victoire Arsenal FC", 38)] }) });
     const pool = buildLegPool([eligible, ineligible]);
     expect(pool).toHaveLength(1);
     expect(pool[0].matchId).toBe(1);
@@ -169,6 +212,20 @@ describe("generateCombos — assemble les combinés à partir des VRAIS matchs c
     const liveCombo = combos.find((c) => c.isLive);
     expect(liveCombo).toBeDefined();
     expect(liveCombo.legs.some((l) => l.isLive)).toBe(true);
+  });
+
+  test("des matchs avec des sélections de marchés différents (corners, fautes, cartons, 1X2...) alimentent le même combiné", () => {
+    const matches = [
+      match({ id: 1, pronostic: pronostic({ selectionCandidates: [winnerCandidate("Victoire Home 0", 61)] }) }),
+      match({ id: 2, pronostic: pronostic({ selectionCandidates: [candidate("Corners", "Plus de 9,5", 65)] }) }),
+      match({ id: 3, pronostic: pronostic({ selectionCandidates: [candidate("Fautes", "Moins de 21,5", 63)] }) }),
+      match({ id: 4, pronostic: pronostic({ selectionCandidates: [candidate("Cartons jaunes", "Plus de 3,5", 70)] }) }),
+    ];
+    const combos = generateCombos(matches, { random: () => 0.9 });
+    const marketLabels = new Set(combos.flatMap((c) => c.legs.map((l) => l.marketLabel)));
+    // Au moins deux marchés différents apparaissent bien parmi les combinés générés —
+    // pas toujours la même sélection répétée (voir PROMPT "Variété").
+    expect(marketLabels.size).toBeGreaterThanOrEqual(2);
   });
 
   test("jamais de cote chiffrée dans les données renvoyées (aucun champ \"odds\"/\"cote\")", () => {

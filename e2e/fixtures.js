@@ -4,25 +4,53 @@
 // de "précision IA" n'est incluse : Blume n'a pas de mesure réelle de précision, et
 // n'en invente pas (voir lib/pronostic.js — modèle statistique de Poisson, pas une IA).
 
-const pronostic = (overrides = {}) => ({
-  available: true,
-  live: false,
-  home: { name: "Arsenal FC", position: 3, points: 55, form: "WWDLW", source: "classement" },
-  away: { name: "Chelsea FC", position: 7, points: 44, form: "LWDDL", source: "classement" },
-  probabilities: { home: 48.2, draw: 26.1, away: 25.7 },
-  goals: { expectedHome: 1.6, expectedAway: 1.1, expectedTotal: 2.7, over25: 54.3, under25: 45.7, bttsYes: 58.9, bttsNo: 41.1 },
-  extraStats: {
-    corners: { home: 6, away: 4, total: 10 },
-    shots: { home: 14, away: 10, total: 24 },
-    cards: { home: 2, away: 3, total: 5 },
-  },
-  correctScores: [
-    { score: "1-1", probability: 10.8 }, { score: "2-1", probability: 9.8 }, { score: "1-0", probability: 9.5 },
-  ],
-  note: "Estimation statistique (modèle de Poisson) basée sur les buts marqués/encaissés au classement — pas une IA.",
-  statsNote: "Corners, tirs et cartons ne sont pas fournis par l'API (plan gratuit) : ce sont des estimations statistiques.",
-  ...overrides,
-});
+// Petite variation déterministe par équipe (à partir du nom), pour que les sélections
+// "assez sûres" ci-dessous ne pointent pas systématiquement vers le même marché sur
+// tous les matchs de ce fixture — comme le ferait naturellement le vrai calcul
+// (lib/pronostic.js), où chaque match a son propre profil statistique.
+function seedFrom(name) {
+  let sum = 0;
+  for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
+  return sum;
+}
+
+const pronostic = (overrides = {}) => {
+  const home = overrides.home || { name: "Arsenal FC", position: 3, points: 55, form: "WWDLW", source: "classement" };
+  const away = overrides.away || { name: "Chelsea FC", position: 7, points: 44, form: "LWDDL", source: "classement" };
+  const seed = seedFrom(home.name);
+  return {
+    available: true,
+    live: false,
+    home,
+    away,
+    probabilities: { home: 48.2, draw: 26.1, away: 25.7 },
+    goals: { expectedHome: 1.6, expectedAway: 1.1, expectedTotal: 2.7, over25: 54.3, under25: 45.7, bttsYes: 58.9, bttsNo: 41.1 },
+    extraStats: {
+      corners: { home: 6, away: 4, total: 10 },
+      shots: { home: 14, away: 10, total: 24 },
+      cards: { home: 2, away: 3, total: 5 },
+    },
+    // Combiné Vision (voir lib/combinedVision.js) pioche parmi ce pool de sélections
+    // "assez sûres" — reproduit ici à la main (comme le reste de ce fixture) plutôt
+    // qu'en appelant le vrai lib/pronostic.js, pour ne dépendre d'aucune autre donnée
+    // de ce fixture (probabilities/goals ci-dessus restent volontairement génériques
+    // d'un match à l'autre, voir plus bas). Plusieurs marchés différents (pas
+    // seulement le 1X2) pour vérifier en conditions réelles (navigateur) que Combiné
+    // Vision propose bien des sélections variées.
+    selectionCandidates: [
+      { marketLabel: "Issue du match", pickLabel: `Victoire ${home.name}`, confidence: 45 + (seed % 20) },
+      { marketLabel: "Total", pickLabel: "Plus de 2,5", confidence: 50 + (seed % 15) },
+      { marketLabel: "Corners", pickLabel: "Plus de 8,5", confidence: 55 + ((seed * 3) % 20) },
+      { marketLabel: "Fautes", pickLabel: "Moins de 21,5", confidence: 55 + ((seed * 7) % 20) },
+    ],
+    correctScores: [
+      { score: "1-1", probability: 10.8 }, { score: "2-1", probability: 9.8 }, { score: "1-0", probability: 9.5 },
+    ],
+    note: "Estimation statistique (modèle de Poisson) basée sur les buts marqués/encaissés au classement — pas une IA.",
+    statsNote: "Corners, tirs et cartons ne sont pas fournis par l'API (plan gratuit) : ce sont des estimations statistiques.",
+    ...overrides,
+  };
+};
 
 const liveMatches = [
   {

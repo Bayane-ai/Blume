@@ -28,8 +28,7 @@ function pronostic(overrides = {}) {
     available: true,
     home: { name: "Arsenal FC" },
     away: { name: "Chelsea FC" },
-    probabilities: { home: 62, draw: 20, away: 18 },
-    goals: { over25: 55, under25: 45 },
+    selectionCandidates: [{ marketLabel: "Issue du match", pickLabel: "Victoire Arsenal FC", confidence: 62 }],
     ...overrides,
   };
 }
@@ -74,7 +73,7 @@ test("affiche des combinés assemblés à partir des vrais matchs chargés, chac
 test("pas assez de pronostics assez sûrs : message clair, jamais un combiné inventé", async () => {
   global.fetch = mockFetchWithMatches([
     upcomingMatch(1, "Arsenal FC", "Chelsea FC", {
-      pronostic: pronostic({ probabilities: { home: 36, draw: 33, away: 31 }, goals: { over25: 51, under25: 49 } }),
+      pronostic: pronostic({ selectionCandidates: [{ marketLabel: "Issue du match", pickLabel: "Victoire Arsenal FC", confidence: 36 }] }),
     }),
   ]);
 
