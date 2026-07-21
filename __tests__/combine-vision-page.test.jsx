@@ -24,11 +24,12 @@ jest.mock("../lib/supabaseClient", () => ({
 }));
 
 function pronostic(overrides = {}) {
+  const home = overrides.home || { name: "Arsenal FC" };
   return {
     available: true,
-    home: { name: "Arsenal FC" },
+    home,
     away: { name: "Chelsea FC" },
-    selectionCandidates: [{ marketLabel: "Issue du match", pickLabel: "Victoire Arsenal FC", confidence: 62 }],
+    selectionCandidates: [{ marketLabel: "Issue du match", pickLabel: `Victoire ${home.name}`, confidence: 62 }],
     ...overrides,
   };
 }
@@ -128,6 +129,41 @@ test("les combinés se rafraîchissent automatiquement, sans action de la person
 
   expect(fetchMock.mock.calls.length).toBeGreaterThan(callsBefore);
   jest.useRealTimers();
+});
+
+// BLOC 3 — "les anciennes propositions dépassées disparaissent ou sont remplacées" :
+// une actualisation qui ramène des matchs différents ne doit jamais laisser d'anciens
+// combinés (référençant des matchs qui ne sont plus assez sûrs) affichés à l'écran.
+test("une actualisation remplace entièrement les anciennes propositions, qui ne restent jamais affichées", async () => {
+  let call = 0;
+  global.fetch = jest.fn((url) => {
+    if (url.startsWith("/api/matches")) {
+      call += 1;
+      const matches = call === 1
+        ? [upcomingMatch(1, "Arsenal FC", "Chelsea FC"), upcomingMatch(2, "Real Madrid", "FC Barcelona")]
+        // Deuxième actualisation : les deux matchs précédents ont disparu du flux
+        // (match terminé, par exemple), remplacés par deux matchs différents.
+        : [upcomingMatch(3, "Bayern Munich", "Paris Saint-Germain"), upcomingMatch(4, "Liverpool FC", "Manchester City FC")];
+      return Promise.resolve({ json: () => Promise.resolve({ competitions: [{ code: "PL", name: "Premier League", matches }] }) });
+    }
+    if (url.startsWith("/api/live-matches")) {
+      return Promise.resolve({ json: () => Promise.resolve({ matches: [] }) });
+    }
+    return Promise.reject(new Error(`URL inattendue : ${url}`));
+  });
+
+  render(<CombineVision />);
+  await waitFor(() => expect(screen.getAllByText(/Arsenal FC/).length).toBeGreaterThan(0));
+
+  const btn = screen.getByRole("button", { name: /actualiser/i });
+  await act(async () => {
+    btn.click();
+  });
+
+  await waitFor(() => expect(screen.getAllByText(/Bayern Munich/).length).toBeGreaterThan(0));
+  // Les anciens matchs (première actualisation) ne sont plus référencés nulle part.
+  expect(screen.queryAllByText(/Arsenal FC/)).toHaveLength(0);
+  expect(screen.queryAllByText(/Real Madrid/)).toHaveLength(0);
 });
 
 test("un match en direct assez sûr alimente aussi les combinés (pas seulement les matchs à venir)", async () => {

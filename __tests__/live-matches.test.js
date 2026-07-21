@@ -169,6 +169,83 @@ test("chaque match renvoyé porte déjà son pronostic (calculé côté serveur)
   expect(res.body.matches[0].pronostic.available).toBe(true);
 });
 
+// BLOC 3 — "Combiné Vision" en direct doit s'appuyer sur EXACTEMENT les mêmes
+// probabilités/totaux de buts en direct que la page du match (pages/api/analyze.js,
+// computeLiveOutcome) — jamais un calcul parallèle qui afficherait des chiffres
+// différents pour le même match au même instant.
+describe("BLOC 3 — le pronostic d'un match en direct suit le vrai score/la vraie minute (cohérence avec pages/api/analyze.js)", () => {
+  const table = [
+    { position: 1, points: 10, form: null, playedGames: 5, goalsFor: 8, goalsAgainst: 2, team: { id: 10 } },
+    { position: 2, points: 9, form: null, playedGames: 5, goalsFor: 6, goalsAgainst: 3, team: { id: 11 } },
+  ];
+
+  function fetchWithTable(matches) {
+    return jest.fn((url) => {
+      if (url.includes("/v4/matches?")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ matches }) });
+      }
+      if (url.includes("/standings")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [{ table }] }) });
+      }
+      return Promise.reject(new Error(`URL inattendue : ${url}`));
+    });
+  }
+
+  test("un match mené largement voit sa probabilité de victoire nettement recalculée par rapport à l'estimation pré-match, avec le même résultat que computeLiveOutcome", async () => {
+    const leading = { ...fixtureMatch(1, "PL"), minute: 70, score: { fullTime: { home: 3, away: 0 } } };
+    global.fetch = fetchWithTable([leading]);
+
+    const { computePronostic, computeLiveOutcome } = require("../lib/pronostic");
+    const { default: handler } = await import("../pages/api/live-matches.js");
+    const res = mockRes();
+    await handler({}, res);
+
+    const pronostic = res.body.matches[0].pronostic;
+    expect(pronostic.live).toBe(true);
+
+    // Le pronostic pré-match (mêmes équipes/classement) sert de base au recalcul —
+    // exactement le même calcul que pages/api/analyze.js appliquerait pour ce match.
+    const prematch = computePronostic({ homeRow: table[0], awayRow: table[1], homeTeamName: "Home 1", awayTeamName: "Away 1" });
+    const expectedLive = computeLiveOutcome({
+      lambdaHome: prematch.goals.expectedHome, lambdaAway: prematch.goals.expectedAway,
+      currentHome: 3, currentAway: 0, minute: 70,
+    });
+    expect(pronostic.probabilities).toEqual(expectedLive.probabilities);
+    expect(pronostic.goals).toEqual(expectedLive.goals);
+    expect(pronostic.markets.totalGoals).toEqual(expectedLive.markets.totalGoals);
+    // Le favori qui mène largement doit avoir une confiance "Issue du match" élevée.
+    const winner = pronostic.selectionCandidates.find((c) => c.marketLabel === "Issue du match");
+    expect(winner.confidence).toBeGreaterThan(90);
+  });
+
+  test("les lignes qui restent figées ailleurs sur le site (corners, cartons, tirs...) restent identiques au pronostic pré-match, même en direct", async () => {
+    const level = { ...fixtureMatch(1, "PL"), minute: 10, score: { fullTime: { home: 0, away: 0 } } };
+    global.fetch = fetchWithTable([level]);
+
+    const { computePronostic } = require("../lib/pronostic");
+    const { default: handler } = await import("../pages/api/live-matches.js");
+    const res = mockRes();
+    await handler({}, res);
+
+    const pronostic = res.body.matches[0].pronostic;
+    const prematch = computePronostic({ homeRow: table[0], awayRow: table[1], homeTeamName: "Home 1", awayTeamName: "Away 1" });
+    expect(pronostic.matchStats).toEqual(prematch.matchStats);
+    expect(pronostic.markets.shots).toEqual(prematch.markets.shots);
+    expect(pronostic.markets.yellowCards).toEqual(prematch.markets.yellowCards);
+  });
+
+  test("un match sans score exploitable (ligne SCHEDULED ramenée par erreur, ou score manquant) reste sur le pronostic pré-match, jamais de calcul en direct hasardeux", async () => {
+    const noScore = { ...fixtureMatch(1, "PL"), score: { fullTime: { home: null, away: null } } };
+    global.fetch = fetchWithTable([noScore]);
+
+    const { default: handler } = await import("../pages/api/live-matches.js");
+    const res = mockRes();
+    await handler({}, res);
+
+    expect(res.body.matches[0].pronostic.live).toBe(false);
+  });
+});
+
 test("propage une vraie erreur API (ex: quota) au lieu de la masquer", async () => {
   global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 429 }));
 

@@ -1,8 +1,10 @@
 import { getStandingsTable } from "../../lib/standingsCache";
 import { getLiveMatchesList } from "../../lib/liveListCache";
 import { getAllLiveFixtures, normalizeTeamName, mapFixtureToLiveMatch } from "../../lib/apiFootball";
-import { computePronostic } from "../../lib/pronostic";
+import { computePronostic, computeLiveOutcome, buildSelectionCandidates } from "../../lib/pronostic";
 import { isBettableCompetitionName } from "../../lib/bettableFilter";
+
+const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
 
 function attachPronostic(m, table) {
   const homeRow = table?.find((row) => String(row.team.id) === String(m.homeTeam?.id));
@@ -10,6 +12,37 @@ function attachPronostic(m, table) {
   const pronostic = computePronostic({
     homeRow, awayRow, homeTeamName: m.homeTeam?.name, awayTeamName: m.awayTeam?.name,
   });
+
+  // "Combiné Vision" en direct (voir lib/combinedVision.js) doit s'appuyer sur EXACTEMENT
+  // les mêmes probabilités/totaux de buts en direct que la page du match (voir
+  // pages/api/analyze.js, même mécanisme computeLiveOutcome) — jamais un calcul
+  // parallèle qui afficherait des chiffres différents pour le même match au même
+  // instant. Comme partout ailleurs sur le site, le reste (corners, cartons, tirs,
+  // hors-jeu, fautes, touches) reste figé sur l'estimation pré-match : seules les
+  // sélections qui en dépendent (Issue du match, Total, Total 1, Total 2) sont
+  // recalculées ici.
+  const currentHome = m.score?.fullTime?.home;
+  const currentAway = m.score?.fullTime?.away;
+  if (LIVE_STATUSES.includes(m.status) && currentHome != null && currentAway != null) {
+    const live = computeLiveOutcome({
+      lambdaHome: pronostic.goals.expectedHome,
+      lambdaAway: pronostic.goals.expectedAway,
+      currentHome, currentAway, minute: m.minute,
+    });
+    pronostic.live = true;
+    pronostic.probabilities = live.probabilities;
+    pronostic.correctScores = live.correctScores;
+    pronostic.goals = live.goals;
+    pronostic.markets = { ...pronostic.markets, ...live.markets };
+    pronostic.selectionCandidates = buildSelectionCandidates({
+      probabilities: pronostic.probabilities,
+      homeTeamName: m.homeTeam?.name,
+      awayTeamName: m.awayTeam?.name,
+      markets: pronostic.markets,
+      extraStats: pronostic.extraStats,
+    });
+  }
+
   return { ...m, pronostic };
 }
 

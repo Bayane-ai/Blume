@@ -214,6 +214,29 @@ describe("generateCombos — assemble les combinés à partir des VRAIS matchs c
     expect(liveCombo.legs.some((l) => l.isLive)).toBe(true);
   });
 
+  // BLOC 3 — les opportunités live "peu/moyennement risquées peuvent revenir
+  // régulièrement" (2-3 lignes, comme le combiné pré-match) ; "les très risquées
+  // restent rares", mais pas impossibles : un combiné live doit pouvoir, de temps en
+  // temps, atteindre le niveau "très risqué" (4+ lignes), avec la même rareté que le
+  // combiné pré-match très risqué (voir PROMPT bloc 3).
+  test("un combiné \"En live\" peut, rarement, être \"très risqué\" quand le pool le permet et que le tirage aléatoire l'autorise", () => {
+    const matches = [...manyMatches(6, { status: "SCHEDULED" }), match({ id: 99, status: "IN_PLAY", homeTeam: { id: 900, name: "Live Home" }, awayTeam: { id: 901, name: "Live Away" } })];
+    const combos = generateCombos(matches, { random: () => 0.01 });
+    const liveCombo = combos.find((c) => c.isLive);
+    expect(liveCombo).toBeDefined();
+    expect(liveCombo.riskLevel).toBe("eleve");
+    expect(liveCombo.legs.length).toBeGreaterThanOrEqual(4);
+  });
+
+  test("avec un random toujours au-dessus du seuil, le combiné \"En live\" reste peu/moyennement risqué (jamais \"très risqué\" à chaque fois)", () => {
+    const matches = [...manyMatches(6, { status: "SCHEDULED" }), match({ id: 99, status: "IN_PLAY", homeTeam: { id: 900, name: "Live Home" }, awayTeam: { id: 901, name: "Live Away" } })];
+    const combos = generateCombos(matches, { random: () => 0.99 });
+    const liveCombo = combos.find((c) => c.isLive);
+    expect(liveCombo).toBeDefined();
+    expect(liveCombo.riskLevel).not.toBe("eleve");
+    expect(liveCombo.legs.length).toBeLessThanOrEqual(3);
+  });
+
   test("des matchs avec des sélections de marchés différents (corners, fautes, cartons, 1X2...) alimentent le même combiné", () => {
     const matches = [
       match({ id: 1, pronostic: pronostic({ selectionCandidates: [winnerCandidate("Victoire Home 0", 61)] }) }),
