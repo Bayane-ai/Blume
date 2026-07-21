@@ -2,10 +2,11 @@ import { useRouter } from "next/router";
 import { supabase } from "../lib/supabaseClient";
 
 // Navigation du site, partagée par toutes les pages : "Live", "Matchs à venir",
-// "Combiné Vision", "News", "Probabilités réussies" et "Probabilités échouées" —
-// même style visuel et même comportement actif/inactif pour les six. Liens en <a>
-// classiques plutôt que next/link : chaque page recharge ses propres données réelles
-// à l'arrivée, et ça évite de dépendre du RouterContext de next/link dans les tests.
+// "Combiné Vision", "News", "Historique", "Probabilités réussies" et "Probabilités
+// échouées" — même style visuel et même comportement actif/inactif pour les sept.
+// Liens en <a> classiques plutôt que next/link : chaque page recharge ses propres
+// données réelles à l'arrivée, et ça évite de dépendre du RouterContext de next/link
+// dans les tests.
 export default function SiteHeader({ session }) {
   const router = useRouter();
   const logout = () => supabase.auth.signOut();
@@ -52,6 +53,12 @@ export default function SiteHeader({ session }) {
           News
         </a>
         <a
+          href="/historique"
+          style={{ ...st.navBtn, ...(router.pathname === "/historique" ? st.navBtnActive : {}) }}
+        >
+          Historique
+        </a>
+        <a
           href="/probabilites-reussies"
           style={{ ...st.navBtn, ...(router.pathname === "/probabilites-reussies" ? st.navBtnActive : {}) }}
         >
@@ -78,7 +85,7 @@ const st = {
     background: "transparent", border: "1px solid var(--border)", color: "var(--text-primary)",
     borderRadius: 999, padding: "6px 12px", fontSize: 12, textDecoration: "none", cursor: "pointer",
   },
-  // Cinq boutons (dont deux libellés longs, "Probabilités réussies/échouées") sur une
+  // Sept boutons (dont deux libellés longs, "Probabilités réussies/échouées") sur une
   // seule ligne, jamais à la ligne (flexWrap: nowrap) — sur un écran étroit, ils
   // débordent et se parcourent par défilement horizontal (overflowX: auto) plutôt que
   // de se compresser illisiblement ou de passer à la ligne.

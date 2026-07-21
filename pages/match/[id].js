@@ -10,6 +10,7 @@ import AssistsProbables from "../../components/AssistsProbables";
 import LiveStatBlock from "../../components/LiveStatBlock";
 import MatchOutcomeRecap from "../../components/MatchOutcomeRecap";
 import { useRequireAuth } from "../../lib/useRequireAuth";
+import { addMatchToHistory } from "../../lib/matchHistory";
 
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
 // 2s : rendu possible sans dépasser le quota de l'API grâce au cache partagé côté
@@ -91,6 +92,32 @@ export default function MatchPage() {
     setHasRequested(false);
     setLiveState(null);
     runAnalysis();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router.isReady, authorized, matchId]);
+
+  // "Historique" (voir PROMPT) : dès que l'utilisateur ouvre l'analyse/les pronostics
+  // d'un match, il s'ajoute automatiquement en haut de l'historique (voir
+  // lib/matchHistory.js) — un instantané pris au moment de l'ouverture (mêmes champs
+  // que components/MatchCard.js:matchHref), jamais mis à jour ensuite par les
+  // rafraîchissements live : seule une NOUVELLE ouverture de la page remonte l'entrée
+  // et remet son délai d'effacement à zéro.
+  useEffect(() => {
+    if (!router.isReady || !authorized || !matchId) return;
+    addMatchToHistory({
+      id: matchId,
+      status: initialStatus || "",
+      minute: initialMinute ? Number(initialMinute) : null,
+      utcDate: utcDate || "",
+      competition: { code: competitionCode || "", name: competitionName || "", emblem: competitionEmblem || "" },
+      homeTeam: { id: homeTeamId || "", name: homeTeamName || "", crest: homeCrest || "" },
+      awayTeam: { id: awayTeamId || "", name: awayTeamName || "", crest: awayCrest || "" },
+      score: {
+        fullTime: {
+          home: scoreHome !== "" && scoreHome !== undefined ? scoreHome : null,
+          away: scoreAway !== "" && scoreAway !== undefined ? scoreAway : null,
+        },
+      },
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router.isReady, authorized, matchId]);
 
@@ -198,6 +225,13 @@ export default function MatchPage() {
           <div style={st.divider} />
 
           <h2 style={st.h2}>Pronostics automatiques</h2>
+          {/* "Historique" (voir PROMPT) : un match rouvert depuis l'historique une fois
+              terminé affiche cette mention, avec ses pronostics/analyses juste en
+              dessous — jamais un score muet sans contexte. S'affiche pour tout match
+              constaté terminé, peu importe le chemin emprunté pour y arriver. */}
+          {isFinishedNow && (
+            <p style={st.finishedHint} data-testid="match-finished-tag">Match terminé</p>
+          )}
           {isLiveNow && (
             <p style={st.liveHint}>
               Le score, les moments forts, les probabilités de victoire, les scores exacts et les totaux de buts
@@ -282,6 +316,11 @@ const st = {
   divider: { borderTop: "1px solid var(--border)", margin: "16px 0" },
   h2: { fontSize: 15, margin: "0 0 4px" },
   liveHint: { fontSize: 11, color: "var(--negative)", margin: "0 0 12px" },
+  finishedHint: {
+    display: "inline-block", fontSize: 11, fontWeight: 700, color: "var(--text-secondary)",
+    background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 999,
+    padding: "4px 10px", margin: "0 0 12px",
+  },
   hint: { fontSize: 12.5, color: "var(--text-secondary)" },
   analyzeBtn: {
     display: "block", width: "100%", background: "var(--accent)", border: "none", color: "var(--on-accent)",

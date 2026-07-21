@@ -37,9 +37,9 @@ test.describe("Écran 1 — Matchs en ligne (accueil)", () => {
     await expect(page.getByText("test@example.com")).toBeVisible();
     await expect(page.getByRole("button", { name: "Déconnexion", exact: true })).toBeVisible();
 
-    // Navigation : exactement six boutons.
+    // Navigation : exactement sept boutons.
     const nav = page.getByTestId("main-nav");
-    await expect(nav.getByRole("link")).toHaveCount(6);
+    await expect(nav.getByRole("link")).toHaveCount(7);
     const liveLink = nav.getByRole("link", { name: "Live" });
     await expect(liveLink).toBeVisible();
     // Bouton "Live" marqué visuellement par un point rouge à côté du texte.
@@ -48,10 +48,16 @@ test.describe("Écran 1 — Matchs en ligne (accueil)", () => {
     await expect(nav.getByRole("link", { name: "Combiné Vision" })).toBeVisible();
     await expect(nav.getByRole("link", { name: "Combiné Vision" })).toHaveAttribute("href", "/combine-vision");
     await expect(nav.getByRole("link", { name: "News" })).toBeVisible();
+    await expect(nav.getByRole("link", { name: "Historique" })).toBeVisible();
+    await expect(nav.getByRole("link", { name: "Historique" })).toHaveAttribute("href", "/historique");
     await expect(nav.getByRole("link", { name: "Probabilités réussies" })).toBeVisible();
     await expect(nav.getByRole("link", { name: "Probabilités échouées" })).toBeVisible();
     await expect(nav.getByRole("link", { name: "Probabilités réussies" })).toHaveAttribute("href", "/probabilites-reussies");
     await expect(nav.getByRole("link", { name: "Probabilités échouées" })).toHaveAttribute("href", "/probabilites-echouees");
+    // "Historique" placé juste avant "Probabilités réussies"/"Probabilités échouées".
+    await expect(nav.getByRole("link")).toContainText([
+      "Live", "Matchs à venir", "Combiné Vision", "News", "Historique", "Probabilités réussies", "Probabilités échouées",
+    ]);
 
     await expect(page.getByRole("heading", { name: /football en direct/i })).toBeVisible();
 
@@ -504,6 +510,79 @@ test.describe("Écran 5 — Probabilités réussies / échouées", () => {
     // Le mock (e2e/mockApi.js) inclut volontairement un 3e match, vieux de 6 jours,
     // filtré comme le ferait le vrai nettoyage à 5 jours de lib/pronosticHistory.js.
     await expect(page.getByTestId("pronostic-history-card")).toHaveCount(1);
+  });
+});
+
+test.describe("Écran — Historique", () => {
+  test("aucun match consulté : message clair, jamais une page blanche", async ({ page }) => {
+    await page.goto("/historique");
+    await expect(page.getByRole("heading", { name: "Historique" })).toBeVisible();
+    await expect(page.getByTestId("match-history-empty")).toHaveText("Aucun match consulté pour le moment.");
+  });
+
+  test("ouvrir l'analyse d'un match l'ajoute en haut de l'historique, sans bouton Analyser, et un clic dessus y ramène", async ({ page }) => {
+    const errors = trackErrors(page);
+    await page.goto("/");
+
+    // Ouvre l'analyse du match 101 (Arsenal FC - Chelsea FC, en direct). La page d'un
+    // match n'a pas de barre de navigation (seulement la flèche "Retour"), on y
+    // accède donc directement via l'URL, comme le ferait un clic sur "Historique"
+    // depuis n'importe quelle autre page.
+    await page.getByTestId("match-list").getByText("ANALYSER").first().click();
+    await expect(page).toHaveURL(/\/match\/101/);
+    await expect(page.getByTestId("prob-home")).toBeVisible();
+
+    await page.goto("/historique");
+
+    const cards = page.getByTestId("match-history-card");
+    await expect(cards).toHaveCount(1);
+    await expect(cards.first()).toContainText("Arsenal FC");
+    await expect(cards.first()).toContainText("Chelsea FC");
+    await expect(page.getByRole("button", { name: /^analyser$/i })).toHaveCount(0);
+
+    // Reclic depuis l'historique : renvoie bien vers les pronostics du bon match.
+    await cards.first().click();
+    await expect(page).toHaveURL(/\/match\/101/);
+    await expect(page.getByTestId("prob-home")).toBeVisible();
+
+    expect(errors.consoleErrors, `Erreurs console : ${errors.consoleErrors.join(" | ")}`).toEqual([]);
+  });
+
+  test("rouvrir un match déjà consulté le remonte en haut sans créer de doublon", async ({ page }) => {
+    await page.goto("/");
+    await page.getByTestId("match-list").getByText("ANALYSER").first().click(); // match 101
+    await expect(page).toHaveURL(/\/match\/101/);
+
+    await page.goto("/a-venir");
+    await page.getByTestId("match-list").getByText("ANALYSER").first().click(); // autre match, "à venir"
+    await expect(page.getByTestId("prob-home")).toBeVisible();
+
+    // Reconsulte le match 101 une deuxième fois : doit remonter en tête, toujours une
+    // seule entrée pour lui (pas de doublon).
+    await page.goto("/match/101?competitionCode=PL&homeTeamId=10&awayTeamId=11&homeTeamName=Arsenal%20FC&awayTeamName=Chelsea%20FC&status=IN_PLAY");
+    await expect(page.getByTestId("prob-home")).toBeVisible();
+
+    await page.goto("/historique");
+    const cards = page.getByTestId("match-history-card");
+    await expect(cards).toHaveCount(2);
+    await expect(cards.first()).toContainText("Arsenal FC");
+  });
+
+  test("reconsulter depuis l'historique un match terminé affiche la mention \"Match terminé\" avec ses pronostics", async ({ page }) => {
+    await page.goto("/competition/PL");
+    await page.getByRole("button", { name: "Résultats", exact: true }).click();
+    await page.getByText("ANALYSER").first().click(); // match 301, FINISHED, 3-1
+
+    await expect(page.getByTestId("match-finished-tag")).toHaveText("Match terminé");
+    await expect(page.getByTestId("prob-home")).toBeVisible();
+
+    await page.goto("/historique");
+    const card = page.getByTestId("match-history-card").first();
+    await expect(card).toContainText("Arsenal FC");
+
+    await card.click();
+    await expect(page).toHaveURL(/\/match\/301/);
+    await expect(page.getByTestId("match-finished-tag")).toHaveText("Match terminé");
   });
 });
 
