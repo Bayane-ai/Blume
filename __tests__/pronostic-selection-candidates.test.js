@@ -80,4 +80,63 @@ describe("selectionCandidates — pool complet de sélections, chacune avec une 
     const second = computePronostic({ homeRow, awayRow, homeTeamName: "A", awayTeamName: "B" });
     expect(second.selectionCandidates).toEqual(first.selectionCandidates);
   });
+
+  // BLOC 4.A — "sous chaque pronostic, afficher une courte raison basée sur les stats"
+  describe("justification par sélection (BLOC 4.A) — courte, basée sur les vraies stats, jamais une cote", () => {
+    test("chaque sélection porte une raison non vide, différente d'une sélection à l'autre", () => {
+      const result = computePronostic({ homeRow, awayRow, homeTeamName: "Arsenal", awayTeamName: "Chelsea" });
+      for (const c of result.selectionCandidates) {
+        expect(typeof c.reason).toBe("string");
+        expect(c.reason.length).toBeGreaterThan(10);
+        expect(c.reason).not.toMatch(/\bcote\b/i);
+        expect(c.reason).not.toMatch(/\b\d\.\d{2}\b/); // jamais 1.85, 2.40...
+      }
+      const reasons = new Set(result.selectionCandidates.map((c) => c.reason));
+      expect(reasons.size).toBe(result.selectionCandidates.length);
+    });
+
+    test("la raison \"Issue du match\" cite le classement réel de l'équipe favorite", () => {
+      const result = computePronostic({ homeRow, awayRow, homeTeamName: "Arsenal", awayTeamName: "Chelsea" });
+      const winner = result.selectionCandidates.find((c) => c.marketLabel === "Issue du match");
+      // homeRow est net favori ici (40 pts pour, 20 contre vs 28 pour, 26 contre) : la
+      // raison doit citer SA position réelle (3e), pas un texte générique.
+      expect(winner.reason).toContain("3e place");
+      expect(winner.reason).toContain("55 pts");
+    });
+
+    test("la raison d'une ligne à répartition (corners, tirs, fautes...) cite les vrais chiffres domicile/extérieur de CE match", () => {
+      const result = computePronostic({ homeRow, awayRow, homeTeamName: "Arsenal", awayTeamName: "Chelsea" });
+      const corners = result.selectionCandidates.find((c) => c.marketLabel === "Corners");
+      expect(corners.reason).toContain(String(result.extraStats.corners.total));
+      expect(corners.reason).toMatch(/Arsenal|Chelsea/);
+    });
+
+    test("deux matchs différents ont des raisons différentes (jamais un texte générique recopié)", () => {
+      const matchA = computePronostic({ homeRow, awayRow, homeTeamName: "A", awayTeamName: "B" });
+      const strongHome = { position: 1, points: 70, form: "WWWWW", playedGames: 20, goalsFor: 60, goalsAgainst: 15, team: { id: 12 } };
+      const weakAway = { position: 18, points: 15, form: "LLLLL", playedGames: 20, goalsFor: 12, goalsAgainst: 50, team: { id: 13 } };
+      const matchB = computePronostic({ homeRow: strongHome, awayRow: weakAway, homeTeamName: "C", awayTeamName: "D" });
+      const winnerA = matchA.selectionCandidates.find((c) => c.marketLabel === "Issue du match");
+      const winnerB = matchB.selectionCandidates.find((c) => c.marketLabel === "Issue du match");
+      expect(winnerA.reason).not.toBe(winnerB.reason);
+    });
+  });
+
+  // Métadonnée de vérification (voir lib/comboHistory.js) : comment comparer plus
+  // tard cette sélection précise au vrai résultat final, une fois le match terminé.
+  describe("métadonnée verify — permet de vérifier chaque sélection plus tard, sans recalcul", () => {
+    test("\"Issue du match\" porte {type:\"winner\", key}", () => {
+      const result = computePronostic({ homeRow, awayRow, homeTeamName: "A", awayTeamName: "B" });
+      const winner = result.selectionCandidates.find((c) => c.marketLabel === "Issue du match");
+      expect(winner.verify.type).toBe("winner");
+      expect(["home", "draw", "away"]).toContain(winner.verify.key);
+    });
+
+    test("une ligne Plus/Moins porte {type:\"line\", statKey, line, side} cohérents avec son pickLabel", () => {
+      const result = computePronostic({ homeRow, awayRow, homeTeamName: "A", awayTeamName: "B" });
+      const corners = result.selectionCandidates.find((c) => c.marketLabel === "Corners");
+      expect(corners.verify).toEqual({ type: "line", statKey: "corners", line: expect.any(Number), side: expect.stringMatching(/^Plus|Moins$/) });
+      expect(corners.pickLabel).toContain(corners.verify.side);
+    });
+  });
 });

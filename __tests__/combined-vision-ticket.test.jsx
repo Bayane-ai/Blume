@@ -29,6 +29,7 @@ function leg(overrides = {}) {
     marketLabel: "Issue du match",
     pickLabel: "Victoire Arsenal FC",
     confidence: 62,
+    reason: "Arsenal FC pointe à la 3e place (55 pts), favori selon le modèle statistique.",
     ...overrides,
   };
 }
@@ -89,4 +90,47 @@ test("le niveau de risque \"très risqué\" est étiqueté clairement", () => {
 test("ne s'affiche pas (pas de carte vide/cassée) sans combiné", () => {
   const { container } = render(<CombinedVisionTicket combo={null} />);
   expect(container).toBeEmptyDOMElement();
+});
+
+// BLOC 4.A — justification par sélection, sous chaque pronostic.
+test("affiche la justification de chaque sélection, sous le pronostic", () => {
+  render(<CombinedVisionTicket combo={combo()} />);
+  const reasons = screen.getAllByTestId("ticket-leg-reason");
+  expect(reasons).toHaveLength(2);
+  expect(reasons[0]).toHaveTextContent("Arsenal FC pointe à la 3e place");
+});
+
+test("aucune sélection sans raison réelle : pas de texte de justification affiché (jamais un texte inventé)", () => {
+  render(<CombinedVisionTicket combo={combo({ legs: [leg({ reason: undefined })] })} />);
+  expect(screen.queryByTestId("ticket-leg-reason")).not.toBeInTheDocument();
+});
+
+// BLOC 4.B — statut Gagné/Perdu/En cours.
+test("statut \"En cours\" par défaut (combiné pas encore classé)", () => {
+  render(<CombinedVisionTicket combo={combo()} />);
+  expect(screen.getByTestId("ticket-status-badge")).toHaveTextContent("En cours");
+});
+
+test("statut \"Gagné\" affiché quand le combiné est classé succès", () => {
+  render(<CombinedVisionTicket combo={combo()} status="success" />);
+  expect(screen.getByTestId("ticket-status-badge")).toHaveTextContent("Gagné");
+});
+
+test("statut \"Perdu\" affiché quand le combiné est classé échec", () => {
+  render(<CombinedVisionTicket combo={combo()} status="failure" />);
+  expect(screen.getByTestId("ticket-status-badge")).toHaveTextContent("Perdu");
+});
+
+// BLOC 4.D — une sélection live compromise n'est plus proposée comme une opportunité
+// fraîche : mention distincte, jamais "saisir l'occasion".
+test("un combiné live compromis affiche \"En live — compromis\", jamais \"saisir l'occasion\"", () => {
+  render(<CombinedVisionTicket combo={combo({ isLive: true, compromised: true })} />);
+  const badge = screen.getByTestId("ticket-live-badge");
+  expect(badge).toHaveTextContent("En live — compromis");
+  expect(badge.textContent).not.toMatch(/saisir l'occasion/i);
+});
+
+test("un combiné live non compromis garde la mention \"saisir l'occasion\"", () => {
+  render(<CombinedVisionTicket combo={combo({ isLive: true, compromised: false })} />);
+  expect(screen.getByTestId("ticket-live-badge")).toHaveTextContent("En live — saisir l'occasion");
 });

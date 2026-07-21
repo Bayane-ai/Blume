@@ -45,8 +45,22 @@ function upcomingMatch(id, homeName, awayName, overrides = {}) {
   };
 }
 
-function mockFetchWithMatches(matches) {
-  return jest.fn((url) => {
+// BLOC 4.B — pages/combine-vision.js enregistre chaque nouveau combiné (POST) et
+// relit le taux de réussite/statut (GET) via /api/combo-history — mock par défaut
+// neutre (aucune donnée), overridable via `comboHistoryResponse`.
+function comboHistoryHandler(comboHistoryResponse) {
+  return (url, options) => {
+    if (!url.startsWith("/api/combo-history")) return null;
+    if (options?.method === "POST") return Promise.resolve({ json: () => Promise.resolve({ saved: true }) });
+    return Promise.resolve({ json: () => Promise.resolve(comboHistoryResponse || { successRates: {}, statuses: {} }) });
+  };
+}
+
+function mockFetchWithMatches(matches, comboHistoryResponse) {
+  const combo = comboHistoryHandler(comboHistoryResponse);
+  return jest.fn((url, options) => {
+    const comboResult = combo(url, options);
+    if (comboResult) return comboResult;
     if (url.startsWith("/api/matches")) {
       return Promise.resolve({ json: () => Promise.resolve({ competitions: [{ code: "PL", name: "Premier League", matches }] }) });
     }
@@ -136,7 +150,10 @@ test("les combinés se rafraîchissent automatiquement, sans action de la person
 // combinés (référençant des matchs qui ne sont plus assez sûrs) affichés à l'écran.
 test("une actualisation remplace entièrement les anciennes propositions, qui ne restent jamais affichées", async () => {
   let call = 0;
-  global.fetch = jest.fn((url) => {
+  const combo = comboHistoryHandler();
+  global.fetch = jest.fn((url, options) => {
+    const comboResult = combo(url, options);
+    if (comboResult) return comboResult;
     if (url.startsWith("/api/matches")) {
       call += 1;
       const matches = call === 1
@@ -167,7 +184,10 @@ test("une actualisation remplace entièrement les anciennes propositions, qui ne
 });
 
 test("un match en direct assez sûr alimente aussi les combinés (pas seulement les matchs à venir)", async () => {
-  global.fetch = jest.fn((url) => {
+  const combo = comboHistoryHandler();
+  global.fetch = jest.fn((url, options) => {
+    const comboResult = combo(url, options);
+    if (comboResult) return comboResult;
     if (url.startsWith("/api/matches")) {
       return Promise.resolve({ json: () => Promise.resolve({ competitions: [] }) });
     }
@@ -187,4 +207,72 @@ test("un match en direct assez sûr alimente aussi les combinés (pas seulement 
   render(<CombineVision />);
 
   await waitFor(() => expect(screen.getAllByTestId("combined-vision-ticket").length).toBeGreaterThan(0));
+});
+
+// BLOC 4.B — "Suivi dans le temps".
+test("enregistre (POST) les combinés fraîchement générés auprès de /api/combo-history", async () => {
+  const fetchMock = mockFetchWithMatches([upcomingMatch(1, "Arsenal FC", "Chelsea FC"), upcomingMatch(2, "Real Madrid", "FC Barcelona")]);
+  global.fetch = fetchMock;
+
+  render(<CombineVision />);
+  await waitFor(() => expect(screen.getAllByTestId("combined-vision-ticket").length).toBeGreaterThan(0));
+
+  const postCall = fetchMock.mock.calls.find(([url, options]) => url === "/api/combo-history" && options?.method === "POST");
+  expect(postCall).toBeDefined();
+  const body = JSON.parse(postCall[1].body);
+  expect(Array.isArray(body.combos)).toBe(true);
+  expect(body.combos.length).toBeGreaterThan(0);
+});
+
+test("affiche le taux de réussite par niveau de risque quand l'historique en a", async () => {
+  global.fetch = mockFetchWithMatches(
+    [upcomingMatch(1, "Arsenal FC", "Chelsea FC"), upcomingMatch(2, "Real Madrid", "FC Barcelona")],
+    { successRates: { faible: { won: 8, total: 10, pct: 80 } }, statuses: {} }
+  );
+
+  render(<CombineVision />);
+
+  await waitFor(() => expect(screen.getByTestId("success-rate-faible")).toBeInTheDocument());
+  expect(screen.getByTestId("success-rate-faible")).toHaveTextContent("Peu risqué");
+  expect(screen.getByTestId("success-rate-faible")).toHaveTextContent("80");
+  expect(screen.getByTestId("success-rate-faible")).toHaveTextContent("10 combinés");
+  // Autorisé (voir PROMPT : "ce n'est pas une cote") — mais jamais un format de cote.
+  expect(screen.getByTestId("success-rate-faible").textContent).not.toMatch(/\b\d\.\d{2}\b/);
+});
+
+test("aucun historique disponible : pas de section taux de réussite affichée (jamais une donnée inventée)", async () => {
+  global.fetch = mockFetchWithMatches([upcomingMatch(1, "Arsenal FC", "Chelsea FC"), upcomingMatch(2, "Real Madrid", "FC Barcelona")]);
+
+  render(<CombineVision />);
+
+  await waitFor(() => expect(screen.getAllByTestId("combined-vision-ticket").length).toBeGreaterThan(0));
+  expect(screen.queryByTestId("combo-success-rates")).not.toBeInTheDocument();
+});
+
+test("un combiné déjà classé affiche son statut Gagné/Perdu (via /api/combo-history)", async () => {
+  let comboIdsSeen = null;
+  const fetchMock = jest.fn((url, options) => {
+    if (url.startsWith("/api/combo-history")) {
+      if (options?.method === "POST") return Promise.resolve({ json: () => Promise.resolve({ saved: true }) });
+      const ids = new URL(url, "http://localhost").searchParams.get("ids")?.split(",") || [];
+      comboIdsSeen = ids;
+      const statuses = {};
+      if (ids[0]) statuses[ids[0]] = "success";
+      return Promise.resolve({ json: () => Promise.resolve({ successRates: {}, statuses }) });
+    }
+    if (url.startsWith("/api/matches")) {
+      return Promise.resolve({ json: () => Promise.resolve({ competitions: [{ code: "PL", name: "Premier League", matches: [upcomingMatch(1, "Arsenal FC", "Chelsea FC"), upcomingMatch(2, "Real Madrid", "FC Barcelona")] }] }) });
+    }
+    if (url.startsWith("/api/live-matches")) {
+      return Promise.resolve({ json: () => Promise.resolve({ matches: [] }) });
+    }
+    return Promise.reject(new Error(`URL inattendue : ${url}`));
+  });
+  global.fetch = fetchMock;
+
+  render(<CombineVision />);
+
+  await waitFor(() => expect(screen.getAllByTestId("combined-vision-ticket").length).toBeGreaterThan(0));
+  await waitFor(() => expect(comboIdsSeen).not.toBeNull());
+  await waitFor(() => expect(screen.getAllByText("Gagné").length).toBeGreaterThan(0));
 });

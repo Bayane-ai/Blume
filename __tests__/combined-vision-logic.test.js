@@ -14,7 +14,7 @@
  */
 import {
   pickLegForMatch, buildLegPool, combinedConfidence, riskLevelForLegCount,
-  confidenceLabel, generateCombos,
+  confidenceLabel, generateCombos, LEG_COUNT_RANGES,
 } from "../lib/combinedVision";
 
 function candidate(marketLabel, pickLabel, confidence) {
@@ -122,6 +122,81 @@ describe("pickLegForMatch — la sélection la plus fiable de CE match, parmi TO
     expect(leg.isLive).toBe(true);
     expect(leg.match).toBe(m);
   });
+
+  test("porte la justification et la métadonnée de vérification de la sélection choisie (BLOC 4.A/B)", () => {
+    const m = match({
+      pronostic: pronostic({
+        selectionCandidates: [{ marketLabel: "Issue du match", pickLabel: "Victoire Arsenal FC", confidence: 62, reason: "Raison réelle X", verify: { type: "winner", key: "home" } }],
+      }),
+    });
+    const leg = pickLegForMatch(m);
+    expect(leg.reason).toBe("Raison réelle X");
+    expect(leg.verify).toEqual({ type: "winner", key: "home" });
+  });
+});
+
+// BLOC 4.C — horizon (matchs du jour et des prochaines 24-48h) et fiabilité des
+// statistiques (ligues avec trop peu de données ignorées).
+describe("BLOC 4.C — horizon (24-48h) et fiabilité des statistiques", () => {
+  test("un match programmé dans plus de 48h est ignoré (hors horizon)", () => {
+    const tooFar = match({ utcDate: new Date(Date.now() + 72 * 3600000).toISOString() });
+    expect(pickLegForMatch(tooFar)).toBeNull();
+  });
+
+  test("un match programmé dans moins de 48h reste éligible", () => {
+    const soon = match({ utcDate: new Date(Date.now() + 30 * 3600000).toISOString() });
+    expect(pickLegForMatch(soon)).not.toBeNull();
+  });
+
+  test("un match déjà en direct est toujours dans l'horizon, quelle que soit sa date de coup d'envoi d'origine", () => {
+    const stillLive = match({ status: "IN_PLAY", utcDate: new Date(Date.now() - 96 * 3600000).toISOString() });
+    expect(pickLegForMatch(stillLive)).not.toBeNull();
+  });
+
+  test("une équipe sans classement/forme réelle (estimation moyenne, stats pas assez fiables) exclut le match", () => {
+    const unreliable = match({ pronostic: pronostic({ home: { name: "Arsenal FC", source: "estimation moyenne" } }) });
+    expect(pickLegForMatch(unreliable)).toBeNull();
+  });
+
+  test("les deux équipes ont des stats fiables : le match reste éligible", () => {
+    const reliable = match({ pronostic: pronostic({ home: { name: "Arsenal FC", source: "classement" }, away: { name: "Chelsea FC", source: "forme récente" } }) });
+    expect(pickLegForMatch(reliable)).not.toBeNull();
+  });
+});
+
+// BLOC 4.D — une sélection "En live" qui tourne mal doit être marquée "compromise".
+describe("BLOC 4.D — sélection live compromise", () => {
+  function liveMatch(overrides = {}) {
+    return match({
+      status: "IN_PLAY",
+      minute: 80,
+      score: { fullTime: { home: 0, away: 1 } },
+      pronostic: pronostic({
+        selectionCandidates: [{ marketLabel: "Issue du match", pickLabel: "Victoire Arsenal FC", confidence: 60, verify: { type: "winner", key: "home" } }],
+      }),
+      ...overrides,
+    });
+  }
+
+  test("équipe pariée menée tard dans le match : sélection marquée compromise", () => {
+    const leg = pickLegForMatch(liveMatch());
+    expect(leg.compromised).toBe(true);
+  });
+
+  test("équipe pariée qui mène : jamais compromise", () => {
+    const leg = pickLegForMatch(liveMatch({ score: { fullTime: { home: 2, away: 0 } } }));
+    expect(leg.compromised).toBe(false);
+  });
+
+  test("encore tôt dans le match (avant la 75e minute) : pas encore jugée compromise, même menée", () => {
+    const leg = pickLegForMatch(liveMatch({ minute: 40 }));
+    expect(leg.compromised).toBe(false);
+  });
+
+  test("un match pas encore commencé n'est jamais compromis (pas une sélection live)", () => {
+    const leg = pickLegForMatch(match());
+    expect(leg.compromised).toBe(false);
+  });
 });
 
 describe("buildLegPool — une ligne par match éligible, jamais deux fois le même match", () => {
@@ -151,13 +226,20 @@ describe("combinedConfidence — le VRAI produit des probabilités de chaque lig
   });
 });
 
+// BLOC 4.A — nouvelles plages par niveau de risque : peu risqué 2-3, moyennement
+// risqué 3-4, très risqué 5-7 (plages volontairement chevauchantes à 3, voir PROMPT).
+// riskLevelForLegCount reste une approximation "au plus petit niveau dont la plage
+// contient ce nombre" : la génération elle-même (generateCombos) fixe le niveau visé
+// explicitement, sans dépendre de cette relecture après coup (voir lib/combinedVision.js).
 describe("riskLevelForLegCount / confidenceLabel", () => {
-  test("1 ou 2 lignes -> faible ; 3 lignes -> moyen ; 4+ -> élevé", () => {
+  test("2-3 lignes -> faible ; 4 lignes -> moyen ; 5-7 lignes -> élevé", () => {
     expect(riskLevelForLegCount(1)).toBe("faible");
     expect(riskLevelForLegCount(2)).toBe("faible");
-    expect(riskLevelForLegCount(3)).toBe("moyen");
-    expect(riskLevelForLegCount(4)).toBe("eleve");
+    expect(riskLevelForLegCount(3)).toBe("faible");
+    expect(riskLevelForLegCount(4)).toBe("moyen");
     expect(riskLevelForLegCount(5)).toBe("eleve");
+    expect(riskLevelForLegCount(6)).toBe("eleve");
+    expect(riskLevelForLegCount(7)).toBe("eleve");
   });
 
   test("étiquette de confiance qualitative dérivée du vrai pourcentage", () => {
@@ -257,5 +339,39 @@ describe("generateCombos — assemble les combinés à partir des VRAIS matchs c
       expect(combo.odds).toBeUndefined();
       expect(JSON.stringify(combo)).not.toMatch(/\bcote\b/i);
     }
+  });
+
+  // BLOC 4.A — le nombre de sélections d'un combiné respecte toujours la plage de son
+  // niveau de risque affiché (voir LEG_COUNT_RANGES).
+  test("chaque combiné respecte la plage de sélections de son niveau de risque affiché", () => {
+    const combos = generateCombos(manyMatches(10), { random: () => 0.01 }); // favorise le combiné très risqué
+    for (const combo of combos) {
+      const [min, max] = LEG_COUNT_RANGES[combo.riskLevel];
+      expect(combo.legs.length).toBeGreaterThanOrEqual(min);
+      expect(combo.legs.length).toBeLessThanOrEqual(max);
+    }
+  });
+
+  // BLOC 4.D — un combiné "En live" avec une sélection compromise est bien marqué
+  // comme tel, et n'est plus proposé comme une opportunité "fraîche".
+  test("un combiné \"En live\" avec une sélection compromise est marqué compromis", () => {
+    const compromisedLiveMatch = match({
+      id: 99, status: "IN_PLAY", minute: 85, score: { fullTime: { home: 0, away: 2 } },
+      homeTeam: { id: 900, name: "Live Home" }, awayTeam: { id: 901, name: "Live Away" },
+      pronostic: pronostic({
+        selectionCandidates: [{ marketLabel: "Issue du match", pickLabel: "Victoire Live Home", confidence: 60, verify: { type: "winner", key: "home" } }],
+      }),
+    });
+    const matches = [...manyMatches(3, { status: "SCHEDULED" }), compromisedLiveMatch];
+    const combos = generateCombos(matches);
+    const liveCombo = combos.find((c) => c.isLive);
+    expect(liveCombo.compromised).toBe(true);
+  });
+
+  test("un combiné \"En live\" sans sélection compromise n'est pas marqué compromis", () => {
+    const matches = [...manyMatches(3, { status: "SCHEDULED" }), match({ id: 99, status: "IN_PLAY", homeTeam: { id: 900, name: "Live Home" }, awayTeam: { id: 901, name: "Live Away" } })];
+    const combos = generateCombos(matches);
+    const liveCombo = combos.find((c) => c.isLive);
+    expect(liveCombo.compromised).toBe(false);
   });
 });

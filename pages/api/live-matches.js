@@ -40,6 +40,9 @@ function attachPronostic(m, table) {
       awayTeamName: m.awayTeam?.name,
       markets: pronostic.markets,
       extraStats: pronostic.extraStats,
+      home: pronostic.home,
+      away: pronostic.away,
+      goals: pronostic.goals,
     });
   }
 

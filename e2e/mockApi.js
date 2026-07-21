@@ -237,6 +237,15 @@ async function installApiMocks(page) {
       return route.fulfill({ json: { items } });
     }
 
+    // BLOC 4.B "Combiné Vision" (voir lib/comboHistory.js) : pas de vraie base
+    // Supabase dans cet environnement E2E — répond honnêtement "rien d'enregistré
+    // pour l'instant" (POST accepté, GET sans historique) plutôt qu'un 404, pour
+    // vérifier en conditions réelles que la page reste fonctionnelle sans historique.
+    if (path === "/api/combo-history") {
+      if (route.request().method() === "POST") return route.fulfill({ json: { saved: true } });
+      return route.fulfill({ json: { successRates: {}, statuses: {} } });
+    }
+
     return route.fulfill({ status: 404, json: { error: `Route non simulée : ${path}` } });
   });
 }

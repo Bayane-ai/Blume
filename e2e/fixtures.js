@@ -36,12 +36,29 @@ const pronostic = (overrides = {}) => {
     // de ce fixture (probabilities/goals ci-dessus restent volontairement génériques
     // d'un match à l'autre, voir plus bas). Plusieurs marchés différents (pas
     // seulement le 1X2) pour vérifier en conditions réelles (navigateur) que Combiné
-    // Vision propose bien des sélections variées.
+    // Vision propose bien des sélections variées. `reason` (BLOC 4.A) et `verify`
+    // (BLOC 4.B/D) reproduisent la forme réelle de lib/pronostic.js#buildSelectionCandidates.
     selectionCandidates: [
-      { marketLabel: "Issue du match", pickLabel: `Victoire ${home.name}`, confidence: 45 + (seed % 20) },
-      { marketLabel: "Total", pickLabel: "Plus de 2,5", confidence: 50 + (seed % 15) },
-      { marketLabel: "Corners", pickLabel: "Plus de 8,5", confidence: 55 + ((seed * 3) % 20) },
-      { marketLabel: "Fautes", pickLabel: "Moins de 21,5", confidence: 55 + ((seed * 7) % 20) },
+      {
+        marketLabel: "Issue du match", pickLabel: `Victoire ${home.name}`, confidence: 45 + (seed % 20),
+        reason: `${home.name} pointe à la ${home.position}e place (${home.points} pts), favori(te) selon le modèle statistique.`,
+        verify: { type: "winner", key: "home" },
+      },
+      {
+        marketLabel: "Total", pickLabel: "Plus de 2,5", confidence: 50 + (seed % 15),
+        reason: `Estimation de ${overrides.goals?.expectedTotal ?? 2.7} but(s) au total pour ce match, d'après le rythme offensif des deux équipes.`,
+        verify: { type: "line", statKey: "totalGoals", line: 2.5, side: "Plus" },
+      },
+      {
+        marketLabel: "Corners", pickLabel: "Plus de 8,5", confidence: 55 + ((seed * 3) % 20),
+        reason: `Estimation d'environ 10 corners pour ce match, avec une part plus importante attendue du côté de ${home.name} (6 contre 4).`,
+        verify: { type: "line", statKey: "corners", line: 8.5, side: "Plus" },
+      },
+      {
+        marketLabel: "Fautes", pickLabel: "Moins de 21,5", confidence: 55 + ((seed * 7) % 20),
+        reason: `Estimation d'environ 20 fautes pour ce match, avec une part plus importante attendue du côté de ${away.name} (12 contre 8).`,
+        verify: { type: "line", statKey: "fouls", line: 21.5, side: "Moins" },
+      },
     ],
     correctScores: [
       { score: "1-1", probability: 10.8 }, { score: "2-1", probability: 9.8 }, { score: "1-0", probability: 9.5 },
