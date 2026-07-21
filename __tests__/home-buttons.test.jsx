@@ -103,14 +103,14 @@ describe("Page Matchs en ligne — chaque bouton restant est fonctionnel", () =>
     expect(screen.getByRole("button", { name: /déconnexion/i })).toBeInTheDocument();
   });
 
-  test("sans session, l'application reste accessible (connexion temporairement optionnelle) avec un lien Se connecter", async () => {
+  test("sans session, l'application reste accessible (connexion temporairement optionnelle), sans aucun bouton \"Se connecter\" dans l'en-tête", async () => {
     mockSession = null;
 
     render(<Home />);
 
     await waitFor(() => expect(screen.getAllByRole("button", { name: /^analyser$/i }).length).toBeGreaterThan(0));
     expect(replaceMock).not.toHaveBeenCalled();
-    expect(screen.getByRole("link", { name: /se connecter/i })).toHaveAttribute("href", "/login");
+    expect(screen.queryByRole("link", { name: /se connecter/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /déconnexion/i })).not.toBeInTheDocument();
   });
 

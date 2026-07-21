@@ -3,10 +3,9 @@ import { supabase } from "../lib/supabaseClient";
 
 // Navigation du site, partagée par toutes les pages : "Live", "Matchs à venir",
 // "News", "Probabilités réussies" et "Probabilités échouées" — même style visuel et
-// même comportement actif/inactif pour les cinq. Liens en <a> classiques (comme le
-// lien "Se connecter" déjà existant) plutôt que next/link : chaque page recharge ses
-// propres données réelles à l'arrivée, et ça évite de dépendre du RouterContext de
-// next/link dans les tests.
+// même comportement actif/inactif pour les cinq. Liens en <a> classiques plutôt que
+// next/link : chaque page recharge ses propres données réelles à l'arrivée, et ça
+// évite de dépendre du RouterContext de next/link dans les tests.
 export default function SiteHeader({ session }) {
   const router = useRouter();
   const logout = () => supabase.auth.signOut();
@@ -15,16 +14,15 @@ export default function SiteHeader({ session }) {
     <header style={st.header}>
       <div style={st.top}>
         <span style={st.logo}>Blume</span>
-        <div style={st.headerRight}>
-          {session ? (
-            <>
-              <span style={st.userEmail}>{session.user?.email}</span>
-              <button onClick={logout} style={st.smallBtn}>Déconnexion</button>
-            </>
-          ) : (
-            <a href="/login" style={st.smallBtn}>Se connecter</a>
-          )}
-        </div>
+        {/* Sans session, aucun bouton "Se connecter" ici (retiré à la demande de
+            l'utilisateur) — l'accès reste possible sans compte (voir
+            lib/useRequireAuth.js), /login reste disponible par son URL directe. */}
+        {session && (
+          <div style={st.headerRight}>
+            <span style={st.userEmail}>{session.user?.email}</span>
+            <button onClick={logout} style={st.smallBtn}>Déconnexion</button>
+          </div>
+        )}
       </div>
 
       <nav style={st.nav} data-testid="main-nav">
