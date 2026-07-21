@@ -2,10 +2,10 @@ import { useRouter } from "next/router";
 import { supabase } from "../lib/supabaseClient";
 
 // Navigation du site, partagée par toutes les pages : "Live", "Matchs à venir",
-// "News", "Probabilités réussies" et "Probabilités échouées" — même style visuel et
-// même comportement actif/inactif pour les cinq. Liens en <a> classiques plutôt que
-// next/link : chaque page recharge ses propres données réelles à l'arrivée, et ça
-// évite de dépendre du RouterContext de next/link dans les tests.
+// "Combiné Vision", "News", "Probabilités réussies" et "Probabilités échouées" —
+// même style visuel et même comportement actif/inactif pour les six. Liens en <a>
+// classiques plutôt que next/link : chaque page recharge ses propres données réelles
+// à l'arrivée, et ça évite de dépendre du RouterContext de next/link dans les tests.
 export default function SiteHeader({ session }) {
   const router = useRouter();
   const logout = () => supabase.auth.signOut();
@@ -38,6 +38,12 @@ export default function SiteHeader({ session }) {
           style={{ ...st.navBtn, ...(router.pathname === "/a-venir" ? st.navBtnActive : {}) }}
         >
           Matchs à venir
+        </a>
+        <a
+          href="/combine-vision"
+          style={{ ...st.navBtn, ...(router.pathname === "/combine-vision" ? st.navBtnActive : {}) }}
+        >
+          Combiné Vision
         </a>
         <a
           href="/news"

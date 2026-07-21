@@ -37,14 +37,16 @@ test.describe("Écran 1 — Matchs en ligne (accueil)", () => {
     await expect(page.getByText("test@example.com")).toBeVisible();
     await expect(page.getByRole("button", { name: "Déconnexion", exact: true })).toBeVisible();
 
-    // Navigation : exactement cinq boutons.
+    // Navigation : exactement six boutons.
     const nav = page.getByTestId("main-nav");
-    await expect(nav.getByRole("link")).toHaveCount(5);
+    await expect(nav.getByRole("link")).toHaveCount(6);
     const liveLink = nav.getByRole("link", { name: "Live" });
     await expect(liveLink).toBeVisible();
     // Bouton "Live" marqué visuellement par un point rouge à côté du texte.
     await expect(liveLink.locator("span").first()).toBeVisible();
     await expect(nav.getByRole("link", { name: "Matchs à venir" })).toBeVisible();
+    await expect(nav.getByRole("link", { name: "Combiné Vision" })).toBeVisible();
+    await expect(nav.getByRole("link", { name: "Combiné Vision" })).toHaveAttribute("href", "/combine-vision");
     await expect(nav.getByRole("link", { name: "News" })).toBeVisible();
     await expect(nav.getByRole("link", { name: "Probabilités réussies" })).toBeVisible();
     await expect(nav.getByRole("link", { name: "Probabilités échouées" })).toBeVisible();
@@ -502,5 +504,62 @@ test.describe("Écran 5 — Probabilités réussies / échouées", () => {
     // Le mock (e2e/mockApi.js) inclut volontairement un 3e match, vieux de 6 jours,
     // filtré comme le ferait le vrai nettoyage à 5 jours de lib/pronosticHistory.js.
     await expect(page.getByTestId("pronostic-history-card")).toHaveCount(1);
+  });
+});
+
+test.describe("Écran — Combiné Vision", () => {
+  test('le bouton "Combiné Vision" mène à une page listant de vrais combinés, chacun avec ses sélections match par match et sa confiance', async ({ page }) => {
+    const errors = trackErrors(page);
+    await page.goto("/");
+
+    await page.getByTestId("main-nav").getByRole("link", { name: "Combiné Vision" }).click();
+    await expect(page).toHaveURL(/\/combine-vision/);
+    await expect(page.getByRole("heading", { name: "Combiné Vision" })).toBeVisible();
+
+    const tickets = page.getByTestId("combined-vision-ticket");
+    await expect(tickets.first()).toBeVisible();
+    const firstTicket = tickets.first();
+    await expect(firstTicket.getByTestId("ticket-risk-badge")).toBeVisible();
+    await expect(firstTicket.getByTestId("ticket-confidence")).toBeVisible();
+    // Chaque combiné assemble des sélections sur PLUSIEURS matchs différents.
+    expect(await firstTicket.getByTestId("ticket-leg").count()).toBeGreaterThanOrEqual(2);
+    // Jamais de cote chiffrée affichée dans la liste des combinés (voir PROMPT
+    // "Combiné Vision") — le texte d'intro de la page emploie le mot "cote" pour
+    // l'expliquer, donc la vérification porte sur la liste des tickets, pas la page entière.
+    const listText = await page.getByTestId("combined-vision-list").textContent();
+    expect(listText).not.toMatch(/\bcote\b/i);
+    expect(listText).not.toMatch(/\b\d\.\d{2}\b/); // jamais 1.85, 2.40...
+
+    expect(errors.consoleErrors, `Erreurs console : ${errors.consoleErrors.join(" | ")}`).toEqual([]);
+    expect(errors.failedRequests, `Requêtes en échec : ${errors.failedRequests.join(" | ")}`).toEqual([]);
+  });
+
+  test("les matchs en direct simulés (assez sûrs) alimentent un combiné marqué \"En live — saisir l'occasion\"", async ({ page }) => {
+    await page.goto("/combine-vision");
+
+    const liveBadge = page.getByTestId("ticket-live-badge").first();
+    await expect(liveBadge).toBeVisible();
+    await expect(liveBadge).toHaveText("En live — saisir l'occasion");
+  });
+
+  test("cliquer sur une sélection mène directement à la page du vrai match concerné", async ({ page }) => {
+    await page.goto("/combine-vision");
+
+    const firstLeg = page.getByTestId("ticket-leg").first();
+    const teamsText = await firstLeg.getByTestId("ticket-leg-teams").textContent();
+    const homeTeamName = teamsText.split(" — ")[0].trim();
+    await firstLeg.click();
+    await expect(page).toHaveURL(/\/match\/\d+/);
+    // Vérifie que la page du match ouvert correspond bien à l'équipe affichée sur la ligne cliquée.
+    await expect(page.getByText(homeTeamName, { exact: false }).first()).toBeVisible();
+  });
+
+  test('le bouton "Actualiser" déclenche un nouveau chargement, sans plantage', async ({ page }) => {
+    await page.goto("/combine-vision");
+    await expect(page.getByTestId("combined-vision-ticket").first()).toBeVisible();
+
+    const btn = page.getByRole("button", { name: /actualiser/i });
+    await btn.click();
+    await expect(page.getByTestId("combined-vision-ticket").first()).toBeVisible();
   });
 });
