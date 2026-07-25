@@ -58,6 +58,14 @@ describe("friendlySignupError", () => {
     expect(msg).toBeTruthy();
     expect(msg).toMatch(/erreur est survenue/i);
   });
+
+  // Voir lib/supabaseClient.js : si NEXT_PUBLIC_SUPABASE_URL / ANON_KEY manquent
+  // (typiquement définies en Preview/Development sur Vercel mais pas en Production),
+  // le client renvoie ce code plutôt que de faire planter toute l'application.
+  test("configuration Supabase manquante (code missing_config) : message clair pointant vers un souci de configuration", () => {
+    const msg = friendlySignupError({ code: "missing_config", message: "Configuration Supabase manquante", status: 500 });
+    expect(msg).toMatch(/configuration/i);
+  });
 });
 
 describe("friendlySigninError", () => {
@@ -70,5 +78,10 @@ describe("friendlySigninError", () => {
   test("identifiants invalides : message clair", () => {
     expect(friendlySigninError({ code: "invalid_credentials", message: "Invalid login credentials" }))
       .toBe("Email ou mot de passe incorrect.");
+  });
+
+  test("configuration Supabase manquante (code missing_config) : message clair pointant vers un souci de configuration", () => {
+    const msg = friendlySigninError({ code: "missing_config", message: "Configuration Supabase manquante", status: 500 });
+    expect(msg).toMatch(/configuration/i);
   });
 });
