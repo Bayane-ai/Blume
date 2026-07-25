@@ -63,10 +63,10 @@ test("affiche tous les champs requis : email, mot de passe, confirmation, date d
   expect(screen.getByText(/j'accepte les conditions/i)).toBeInTheDocument();
 });
 
-test('lien "Déjà un compte ? Se connecter" vers /login', () => {
+test('lien "Déjà un compte ? Se connecter" vers /connexion', () => {
   render(<Inscription />);
   const link = screen.getByRole("link", { name: /se connecter/i });
-  expect(link).toHaveAttribute("href", "/login");
+  expect(link).toHaveAttribute("href", "/connexion");
 });
 
 test("email invalide : message clair, jamais d'appel à Supabase", async () => {

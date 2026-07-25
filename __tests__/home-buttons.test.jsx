@@ -103,15 +103,17 @@ describe("Page Matchs en ligne — chaque bouton restant est fonctionnel", () =>
     expect(screen.getByRole("button", { name: /déconnexion/i })).toBeInTheDocument();
   });
 
-  test("sans session, l'application reste accessible (connexion temporairement optionnelle), sans aucun bouton \"Se connecter\" dans l'en-tête", async () => {
+  // Bloc 3 : la première page vue par un visiteur non connecté doit être la page de
+  // connexion — l'accès anonyme (autrefois temporaire, le temps que l'inscription soit
+  // réparée) n'est plus permis maintenant que l'inscription/la connexion fonctionnent
+  // réellement (Blocs 1-3).
+  test("sans session, redirection immédiate vers /connexion, jamais la liste des matchs affichée", async () => {
     mockSession = null;
 
     render(<Home />);
 
-    await waitFor(() => expect(screen.getAllByRole("button", { name: /^analyser$/i }).length).toBeGreaterThan(0));
-    expect(replaceMock).not.toHaveBeenCalled();
-    expect(screen.queryByRole("link", { name: /se connecter/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /déconnexion/i })).not.toBeInTheDocument();
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/connexion"));
+    expect(screen.queryAllByRole("button", { name: /^analyser$/i })).toHaveLength(0);
   });
 
   test('le bouton "ANALYSER" de chaque carte mène vers la page des pronostics de ce match', async () => {

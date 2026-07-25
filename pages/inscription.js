@@ -10,7 +10,7 @@ const MIN_AGE = 18;
 // Page "Créer un compte" (Bloc 2) — même thème visuel que le reste du site (mêmes
 // tokens de couleurs/espacements que pages/login.js, voir styles ci-dessous), mais une
 // page dédiée à l'inscription : pas d'onglets, un lien "Se connecter" renvoie vers
-// /login (page de connexion existante — Bloc 3 s'en chargera séparément).
+// /connexion (page de connexion dédiée, voir pages/connexion.js — Bloc 3).
 //
 // nom_utilisateur et date_de_naissance sont passés en métadonnées à
 // supabase.auth.signUp (options.data) : c'est le trigger "on_auth_user_created" (voir
@@ -182,7 +182,7 @@ export default function Inscription() {
 
         <p style={styles.switchText}>
           Déjà un compte ?{" "}
-          <a href="/login" style={styles.switchLink}>Se connecter</a>
+          <a href="/connexion" style={styles.switchLink}>Se connecter</a>
         </p>
       </div>
     </div>
