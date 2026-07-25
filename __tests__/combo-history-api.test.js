@@ -24,11 +24,22 @@ beforeEach(() => {
   maintainAndGetComboStats.mockClear();
 });
 
+// Requête "légitime" : même origine que le site (voir verrouillage "propriétaire
+// unique", lib/security/guardMutation.js, appelé en tout premier par le handler POST).
+function sameOriginPostReq(body) {
+  return {
+    method: "POST",
+    body,
+    headers: { origin: "https://blume.example.com", host: "blume.example.com" },
+    socket: {},
+  };
+}
+
 test("POST : enregistre les combinés reçus, répond {saved:true}", async () => {
   const { default: handler } = await import("../pages/api/combo-history.js");
   const res = mockRes();
   const combos = [{ id: "combo-1" }];
-  await handler({ method: "POST", body: { combos } }, res);
+  await handler(sameOriginPostReq({ combos }), res);
 
   expect(saveComboPredictions).toHaveBeenCalledWith(combos);
   expect(res.body).toEqual({ saved: true });
@@ -37,9 +48,21 @@ test("POST : enregistre les combinés reçus, répond {saved:true}", async () =>
 test("POST sans tableau \"combos\" : 400, jamais un plantage", async () => {
   const { default: handler } = await import("../pages/api/combo-history.js");
   const res = mockRes();
-  await handler({ method: "POST", body: {} }, res);
+  await handler(sameOriginPostReq({}), res);
 
   expect(res.status).toHaveBeenCalledWith(400);
+  expect(saveComboPredictions).not.toHaveBeenCalled();
+});
+
+test("POST depuis une origine étrangère : refusé (CSRF), jamais enregistré", async () => {
+  const { default: handler } = await import("../pages/api/combo-history.js");
+  const res = mockRes();
+  await handler(
+    { method: "POST", body: { combos: [{ id: "combo-1" }] }, headers: { origin: "https://attaquant.example.net", host: "blume.example.com" }, socket: {} },
+    res
+  );
+
+  expect(res.status).toHaveBeenCalledWith(403);
   expect(saveComboPredictions).not.toHaveBeenCalled();
 });
 

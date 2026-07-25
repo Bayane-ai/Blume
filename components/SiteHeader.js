@@ -12,6 +12,38 @@ export default function SiteHeader({ session }) {
   const router = useRouter();
   const userId = session?.user?.id;
   const [pseudo, setPseudo] = useState(null);
+  const [isOwnerAccount, setIsOwnerAccount] = useState(false);
+
+  // Lien "Admin" affiché UNIQUEMENT pour le propriétaire (voir PROMPT étape 5 :
+  // "n'apparaît dans la navigation que si isOwner() est vrai"). /api/whoami ne renvoie
+  // qu'un booléen calculé côté serveur (jamais OWNER_ID/OWNER_EMAIL au client) — ceci
+  // est un confort d'affichage, PAS la protection réelle : /admin reste protégé côté
+  // serveur (voir pages/admin.js) même si ce fetch échoue ou est falsifié.
+  useEffect(() => {
+    if (!userId) {
+      setIsOwnerAccount(false);
+      return;
+    }
+    let active = true;
+    // try/catch synchrone en plus du .catch() : un environnement sans `fetch` global
+    // (certains tests) ne doit jamais faire planter l'en-tête pour ce simple confort
+    // d'affichage — l'Admin reste alors simplement invisible, jamais une exception.
+    try {
+      fetch("/api/whoami")
+        .then((r) => r.json())
+        .then((data) => {
+          if (active) setIsOwnerAccount(Boolean(data?.isOwner));
+        })
+        .catch(() => {
+          if (active) setIsOwnerAccount(false);
+        });
+    } catch (e) {
+      setIsOwnerAccount(false);
+    }
+    return () => {
+      active = false;
+    };
+  }, [userId]);
 
   // Bloc 4 : affiche le pseudo du compte connecté (table "profiles", voir
   // supabase/migrations/0005_profiles.sql) — replie sur l'email tant que le pseudo
@@ -113,6 +145,14 @@ export default function SiteHeader({ session }) {
         >
           Probabilités échouées
         </a>
+        {isOwnerAccount && (
+          <a
+            href="/admin"
+            style={{ ...st.navBtn, ...(router.pathname === "/admin" ? st.navBtnActive : {}) }}
+          >
+            Admin
+          </a>
+        )}
       </nav>
     </header>
   );
