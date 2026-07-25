@@ -5,9 +5,9 @@
  * automatiquement renvoyé vers /connexion. Seul un utilisateur connecté accède au
  * site." — garde-fou de non-régression : chaque page de contenu du site (toutes
  * celles qui utilisent lib/useRequireAuth.js) doit rediriger vers /connexion et ne
- * jamais afficher de contenu protégé quand aucune session n'existe. Les pages
- * d'authentification elles-mêmes (login/inscription/connexion) restent volontairement
- * exclues : elles ne doivent JAMAIS rediriger un visiteur non connecté.
+ * jamais afficher de contenu protégé quand aucune session n'existe. La page
+ * d'authentification elle-même (/connexion) reste volontairement exclue : elle ne
+ * doit JAMAIS rediriger un visiteur non connecté.
  */
 import { render, screen } from "@testing-library/react";
 

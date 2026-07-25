@@ -1,10 +1,10 @@
 /**
  * @jest-environment jsdom
  *
- * Bloc 3 : page de connexion "/connexion" — email, mot de passe, bouton "Se
- * connecter", identifiants faux -> message clair, connexion réussie -> redirection
- * vers l'accueil, lien vers /inscription, "Mot de passe oublié" envoie l'email de
- * réinitialisation Supabase.
+ * Écran d'authentification UNIQUE "/connexion" — plus de mot de passe, plus de
+ * distinction inscription/connexion : bouton "Continuer avec Google" (option
+ * principale) ou email + code à 6 chiffres reçu par email. Le compte est créé
+ * automatiquement au premier passage sur un email, dans les deux cas.
  */
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import Connexion from "../pages/connexion";
@@ -15,39 +15,36 @@ jest.mock("next/router", () => ({
   useRouter: () => ({ push: pushMock, replace: replaceMock }),
 }));
 
-const signInWithPassword = jest.fn();
-const resetPasswordForEmail = jest.fn();
+const signInWithOAuth = jest.fn();
+const signInWithOtp = jest.fn();
+const verifyOtp = jest.fn();
 const getSession = jest.fn();
 
 jest.mock("../lib/supabaseClient", () => ({
   supabase: {
     auth: {
       getSession: (...args) => getSession(...args),
-      signInWithPassword: (...args) => signInWithPassword(...args),
-      resetPasswordForEmail: (...args) => resetPasswordForEmail(...args),
+      signInWithOAuth: (...args) => signInWithOAuth(...args),
+      signInWithOtp: (...args) => signInWithOtp(...args),
+      verifyOtp: (...args) => verifyOtp(...args),
     },
   },
 }));
 
 beforeEach(() => {
-  signInWithPassword.mockReset();
-  resetPasswordForEmail.mockReset().mockResolvedValue({ error: null });
+  signInWithOAuth.mockReset().mockResolvedValue({ error: null });
+  signInWithOtp.mockReset().mockResolvedValue({ error: null });
+  verifyOtp.mockReset().mockResolvedValue({ error: null });
   getSession.mockReset().mockResolvedValue({ data: { session: null } });
   pushMock.mockClear();
   replaceMock.mockClear();
 });
 
-test("affiche email, mot de passe et le bouton \"Se connecter\"", () => {
+test('affiche le bouton "Continuer avec Google" et le champ email, jamais de mot de passe', () => {
   render(<Connexion />);
-  expect(screen.getByPlaceholderText("Email")).toBeInTheDocument();
-  expect(screen.getByPlaceholderText("Mot de passe")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Se connecter" })).toBeInTheDocument();
-});
-
-test('lien "Pas encore de compte ? Créer un compte" vers /inscription', () => {
-  render(<Connexion />);
-  const link = screen.getByRole("link", { name: /créer un compte/i });
-  expect(link).toHaveAttribute("href", "/inscription");
+  expect(screen.getByRole("button", { name: /continuer avec google/i })).toBeInTheDocument();
+  expect(screen.getByPlaceholderText("Ton email")).toBeInTheDocument();
+  expect(screen.queryByPlaceholderText(/mot de passe/i)).not.toBeInTheDocument();
 });
 
 test("déjà connecté : redirection immédiate vers l'accueil, sans afficher le formulaire", async () => {
@@ -56,54 +53,112 @@ test("déjà connecté : redirection immédiate vers l'accueil, sans afficher le
   await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/"));
 });
 
-test("identifiants faux : message d'erreur clair, pas de redirection", async () => {
-  signInWithPassword.mockResolvedValue({ error: { code: "invalid_credentials", message: "Invalid login credentials" } });
+describe("Continuer avec Google", () => {
+  test("appelle signInWithOAuth(provider: google) avec une redirection vers l'accueil", async () => {
+    render(<Connexion />);
+    fireEvent.click(screen.getByRole("button", { name: /continuer avec google/i }));
 
-  render(<Connexion />);
-  fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "test@example.com" } });
-  fireEvent.change(screen.getByPlaceholderText("Mot de passe"), { target: { value: "mauvaismdp" } });
-  fireEvent.click(screen.getByRole("button", { name: "Se connecter" }));
+    await waitFor(() => expect(signInWithOAuth).toHaveBeenCalledTimes(1));
+    const call = signInWithOAuth.mock.calls[0][0];
+    expect(call.provider).toBe("google");
+    expect(call.options.redirectTo).toMatch(/\/$/);
+  });
 
-  await screen.findByText(/email ou mot de passe incorrect/i);
-  expect(pushMock).not.toHaveBeenCalled();
+  test("échec du démarrage de la connexion Google : message clair", async () => {
+    signInWithOAuth.mockResolvedValue({ error: { code: "provider_disabled", message: "Provider disabled" } });
+    render(<Connexion />);
+    fireEvent.click(screen.getByRole("button", { name: /continuer avec google/i }));
+
+    await screen.findByText(/momentanément indisponible/i);
+  });
 });
 
-test("connexion réussie : redirige vers l'accueil (email normalisé)", async () => {
-  signInWithPassword.mockResolvedValue({ error: null });
+describe("Email + code à 6 chiffres", () => {
+  test("email invalide : message clair, jamais d'appel à Supabase", async () => {
+    render(<Connexion />);
+    fireEvent.change(screen.getByPlaceholderText("Ton email"), { target: { value: "pas-un-email" } });
+    fireEvent.click(screen.getByRole("button", { name: /recevoir un code/i }));
 
-  render(<Connexion />);
-  fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "  Test@Example.com  " } });
-  fireEvent.change(screen.getByPlaceholderText("Mot de passe"), { target: { value: "motdepasse123" } });
-  fireEvent.click(screen.getByRole("button", { name: "Se connecter" }));
+    await screen.findByText(/adresse email invalide/i);
+    expect(signInWithOtp).not.toHaveBeenCalled();
+  });
 
-  await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/"));
-  expect(signInWithPassword).toHaveBeenCalledWith({ email: "test@example.com", password: "motdepasse123" });
-});
+  test("email valide : envoie le code (shouldCreateUser: true) et passe à l'étape code", async () => {
+    render(<Connexion />);
+    fireEvent.change(screen.getByPlaceholderText("Ton email"), { target: { value: "  Test@Example.com  " } });
+    fireEvent.click(screen.getByRole("button", { name: /recevoir un code/i }));
 
-test('"Mot de passe oublié" sans email renseigné : message clair, pas d\'appel Supabase', async () => {
-  render(<Connexion />);
-  fireEvent.click(screen.getByRole("button", { name: /mot de passe oublié/i }));
+    await waitFor(() => expect(signInWithOtp).toHaveBeenCalledWith({
+      email: "test@example.com",
+      options: { shouldCreateUser: true },
+    }));
+    expect(await screen.findByPlaceholderText("Code à 6 chiffres")).toBeInTheDocument();
+    expect(screen.getByText(/test@example\.com/)).toBeInTheDocument();
+    expect(screen.getByText(/valable 10 minutes/i)).toBeInTheDocument();
+  });
 
-  await screen.findByText(/renseigne d'abord ton adresse email/i);
-  expect(resetPasswordForEmail).not.toHaveBeenCalled();
-});
+  test("code non numérique ou incomplet : jamais accepté dans le champ", async () => {
+    render(<Connexion />);
+    fireEvent.change(screen.getByPlaceholderText("Ton email"), { target: { value: "test@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: /recevoir un code/i }));
+    const codeInput = await screen.findByPlaceholderText("Code à 6 chiffres");
 
-test('"Mot de passe oublié" avec un email renseigné : envoie l\'email de réinitialisation Supabase', async () => {
-  render(<Connexion />);
-  fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "Test@Example.com" } });
-  fireEvent.click(screen.getByRole("button", { name: /mot de passe oublié/i }));
+    fireEvent.change(codeInput, { target: { value: "12a34b56" } });
+    expect(codeInput).toHaveValue("123456");
+  });
 
-  await waitFor(() => expect(resetPasswordForEmail).toHaveBeenCalledWith("test@example.com"));
-  await screen.findByText(/email de réinitialisation envoyé/i);
+  test("code correct : appelle verifyOtp puis redirige vers l'accueil", async () => {
+    render(<Connexion />);
+    fireEvent.change(screen.getByPlaceholderText("Ton email"), { target: { value: "test@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: /recevoir un code/i }));
+    const codeInput = await screen.findByPlaceholderText("Code à 6 chiffres");
+    fireEvent.change(codeInput, { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: /valider le code/i }));
+
+    await waitFor(() => expect(verifyOtp).toHaveBeenCalledWith({ email: "test@example.com", token: "123456", type: "email" }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/"));
+  });
+
+  test("code faux ou expiré : message clair, pas de redirection", async () => {
+    verifyOtp.mockResolvedValue({ error: { code: "otp_expired", message: "Token has expired or is invalid" } });
+    render(<Connexion />);
+    fireEvent.change(screen.getByPlaceholderText("Ton email"), { target: { value: "test@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: /recevoir un code/i }));
+    const codeInput = await screen.findByPlaceholderText("Code à 6 chiffres");
+    fireEvent.change(codeInput, { target: { value: "000000" } });
+    fireEvent.click(screen.getByRole("button", { name: /valider le code/i }));
+
+    await screen.findByText(/invalide ou a expiré/i);
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  test('"Changer d\'email" revient à l\'étape email', async () => {
+    render(<Connexion />);
+    fireEvent.change(screen.getByPlaceholderText("Ton email"), { target: { value: "test@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: /recevoir un code/i }));
+    await screen.findByPlaceholderText("Code à 6 chiffres");
+
+    fireEvent.click(screen.getByRole("button", { name: /changer d'email/i }));
+    expect(screen.getByPlaceholderText("Ton email")).toBeInTheDocument();
+  });
+
+  test('"Renvoyer le code" appelle de nouveau signInWithOtp', async () => {
+    render(<Connexion />);
+    fireEvent.change(screen.getByPlaceholderText("Ton email"), { target: { value: "test@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: /recevoir un code/i }));
+    await screen.findByPlaceholderText("Code à 6 chiffres");
+    signInWithOtp.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: /renvoyer le code/i }));
+    await waitFor(() => expect(signInWithOtp).toHaveBeenCalledTimes(1));
+  });
 });
 
 test("erreur de configuration (\"Invalid path specified\") traduite en français", async () => {
-  signInWithPassword.mockResolvedValue({ error: { message: "Invalid path specified in request URL" } });
-
+  signInWithOtp.mockResolvedValue({ error: { message: "Invalid path specified in request URL" } });
   render(<Connexion />);
-  fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "test@example.com" } });
-  fireEvent.change(screen.getByPlaceholderText("Mot de passe"), { target: { value: "motdepasse123" } });
-  fireEvent.click(screen.getByRole("button", { name: "Se connecter" }));
+  fireEvent.change(screen.getByPlaceholderText("Ton email"), { target: { value: "test@example.com" } });
+  fireEvent.click(screen.getByRole("button", { name: /recevoir un code/i }));
 
   await screen.findByText(/erreur de configuration/i);
   expect(screen.queryByText(/invalid path specified/i)).not.toBeInTheDocument();

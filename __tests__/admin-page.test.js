@@ -13,7 +13,7 @@ jest.mock("../lib/supabaseServer", () => ({
   }),
 }));
 
-const ORIGINAL_OWNER_ID = process.env.OWNER_ID;
+const ORIGINAL_OWNER_EMAIL = process.env.OWNER_EMAIL;
 
 function mockContext() {
   const headers = {};
@@ -28,13 +28,13 @@ function mockContext() {
 }
 
 beforeEach(() => {
-  process.env.OWNER_ID = "user-owner";
+  process.env.OWNER_EMAIL = "owner@example.com";
   mockUser = null;
 });
 
 afterAll(() => {
-  if (ORIGINAL_OWNER_ID === undefined) delete process.env.OWNER_ID;
-  else process.env.OWNER_ID = ORIGINAL_OWNER_ID;
+  if (ORIGINAL_OWNER_EMAIL === undefined) delete process.env.OWNER_EMAIL;
+  else process.env.OWNER_EMAIL = ORIGINAL_OWNER_EMAIL;
 });
 
 test("visiteur non connecté : réponse 403, message générique, page jamais rendue", async () => {
@@ -46,7 +46,7 @@ test("visiteur non connecté : réponse 403, message générique, page jamais re
 });
 
 test("compte connecté mais pas le propriétaire : 403", async () => {
-  mockUser = { id: "quelquun-dautre", email: "quelquun@example.com" };
+  mockUser = { id: "quelquun-dautre", email: "quelquun@example.com", email_confirmed_at: "2026-01-01T00:00:00Z" };
   const ctx = mockContext();
   await getServerSideProps(ctx);
   expect(ctx.res.statusCode).toBe(403);
@@ -54,7 +54,7 @@ test("compte connecté mais pas le propriétaire : 403", async () => {
 });
 
 test("le propriétaire : accède réellement à la page (props renvoyées, pas de 403)", async () => {
-  mockUser = { id: "user-owner", email: "owner@example.com" };
+  mockUser = { id: "user-owner", email: "owner@example.com", email_confirmed_at: "2026-01-01T00:00:00Z" };
   const ctx = mockContext();
   const result = await getServerSideProps(ctx);
   expect(ctx.res.ended).toBe(false);
@@ -62,9 +62,16 @@ test("le propriétaire : accède réellement à la page (props renvoyées, pas d
   expect(result.props.ownerEmail).toBe("owner@example.com");
 });
 
-test("OWNER_ID non défini : 403 même pour une session qui y ressemblerait", async () => {
-  delete process.env.OWNER_ID;
-  mockUser = { id: "user-owner", email: "owner@example.com" };
+test("email correspondant mais NON vérifié : 403 (jamais une simple déclaration d'email)", async () => {
+  mockUser = { id: "user-owner", email: "owner@example.com", email_confirmed_at: null };
+  const ctx = mockContext();
+  await getServerSideProps(ctx);
+  expect(ctx.res.statusCode).toBe(403);
+});
+
+test("OWNER_EMAIL non définie : 403 même pour une session qui y ressemblerait", async () => {
+  delete process.env.OWNER_EMAIL;
+  mockUser = { id: "user-owner", email: "owner@example.com", email_confirmed_at: "2026-01-01T00:00:00Z" };
   const ctx = mockContext();
   await getServerSideProps(ctx);
   expect(ctx.res.statusCode).toBe(403);
