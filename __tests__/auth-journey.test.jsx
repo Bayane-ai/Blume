@@ -2,22 +2,22 @@
  * @jest-environment jsdom
  *
  * Parcours de connexion complet, de bout en bout, contre un FAUX backend Supabase
- * réaliste (Google OAuth + email/code OTP, plus tables avec Row Level Security
- * simulée : chaque lecture/écriture est filtrée par le VRAI user_id du compte
- * actuellement connecté dans le faux backend, exactement comme le ferait Postgres).
- * Couvre les points demandés :
- *   1. Connexion Google avec un nouvel email -> compte créé automatiquement
- *   2. Connexion avec le code email -> compte créé automatiquement
+ * réaliste (email/code OTP uniquement — Google abandonné, plus de tables avec Row
+ * Level Security simulée : chaque lecture/écriture est filtrée par le VRAI user_id
+ * du compte actuellement connecté dans le faux backend, exactement comme le ferait
+ * Postgres). Couvre les points demandés :
+ *   1. Nouvel email -> code reçu -> compte créé automatiquement -> connecté
+ *   2. Déconnexion -> /connexion
  *   3. Reconnexion avec le même email -> on retrouve son contenu
  *   4. Connexion avec un deuxième email -> contenu totalement différent et vide
- *   5. Déconnexion -> /connexion, protection pour un visiteur non connecté
+ *   5. Protection pour un visiteur non connecté
  *   6. Action d'administration depuis un compte non-admin -> refusée
  *
  * Les vraies pages (pages/connexion.js, pages/historique.js, pages/index.js) et la
  * vraie logique (lib/matchHistory.js, lib/useRequireAuth.js, components/SiteHeader.js,
  * lib/auth/owner.js) sont exercées telles quelles — seul le client Supabase est
  * remplacé par ce faux backend en mémoire, pour pouvoir créer plusieurs vrais comptes
- * distincts sans dépendre d'un projet Supabase/Google réel.
+ * distincts sans dépendre d'un projet Supabase réel.
  */
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import Connexion from "../pages/connexion";
@@ -40,17 +40,12 @@ jest.mock("../lib/comboHistory", () => ({ maintainAndGetComboStats: jest.fn(() =
 jest.mock("../lib/pronosticHistory", () => ({ listAndMaintainHistory: jest.fn(() => Promise.resolve([])) }));
 jest.mock("../lib/security/guardMutation", () => ({ guardMutation: () => true }));
 
-// Faux backend Supabase EN MÉMOIRE (Google OAuth + email/code OTP, tables "profiles"
-// et "match_history") — toute la logique métier (isolation par user_id, création
+// Faux backend Supabase EN MÉMOIRE (email/code OTP, tables "profiles" et
+// "match_history") — toute la logique métier (isolation par user_id, création
 // automatique de compte) reste dans les VRAIES pages/lib du site ; ce faux backend ne
 // fait que se comporter comme le ferait réellement Supabase/Postgres pour chacun de
 // ces cas, y compris le filtrage RLS (chaque requête ne renvoie que les lignes dont
 // user_id correspond à l'appelant, jamais un raccourci qui rendrait le test complice).
-//
-// signInWithOAuth ne peut pas réellement rediriger vers Google dans jsdom : un hook de
-// test dédié (__setNextGoogleAccount) simule "la personne a choisi tel compte Google
-// et revient déjà connectée", exactement l'effet observable d'un aller-retour OAuth
-// réussi — le code de pages/connexion.js, lui, appelle signInWithOAuth normalement.
 jest.mock("../lib/supabaseClient", () => {
   let users; // email -> { id }
   let currentSession;
@@ -59,7 +54,6 @@ jest.mock("../lib/supabaseClient", () => {
   let matchHistoryRows;
   let nextUserId;
   let pendingOtp; // email -> code
-  let nextGoogleEmail;
 
   function reset() {
     users = {};
@@ -69,7 +63,6 @@ jest.mock("../lib/supabaseClient", () => {
     matchHistoryRows = [];
     nextUserId = 1;
     pendingOtp = {};
-    nextGoogleEmail = null;
   }
   reset();
 
@@ -78,8 +71,7 @@ jest.mock("../lib/supabaseClient", () => {
   }
 
   // "Un email = un seul compte" : retrouve la ligne existante par email plutôt que
-  // d'en recréer une, exactement le comportement de liaison automatique de Supabase
-  // Auth par email vérifié (Google ET email/code se rattachent à la MÊME ligne).
+  // d'en recréer une.
   function getOrCreateUser(email) {
     if (!users[email]) {
       const id = `user-${nextUserId++}`;
@@ -98,11 +90,6 @@ jest.mock("../lib/supabaseClient", () => {
 
   const supabase = {
     auth: {
-      signInWithOAuth: async () => {
-        if (!nextGoogleEmail) return { error: { code: "provider_disabled", message: "Aucun compte Google simulé pour ce test" } };
-        signIn(nextGoogleEmail);
-        return { error: null };
-      },
       signInWithOtp: async ({ email }) => {
         pendingOtp[email] = "123456";
         return { error: null };
@@ -192,7 +179,6 @@ jest.mock("../lib/supabaseClient", () => {
       return { select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) }) };
     },
     __resetFakeBackend: reset,
-    __setNextGoogleAccount: (email) => { nextGoogleEmail = email; },
   };
 
   return { supabase };
@@ -205,30 +191,17 @@ jest.mock("../lib/supabaseServer", () => ({
 }));
 
 function fillEmail(email) {
-  fireEvent.change(screen.getByPlaceholderText("Ton email"), { target: { value: email } });
+  fireEvent.change(screen.getByPlaceholderText("Entre ton email"), { target: { value: email } });
 }
 
 async function loginWithCode(email) {
   const view = render(<Connexion />);
   fillEmail(email);
-  fireEvent.click(screen.getByRole("button", { name: /recevoir un code/i }));
+  fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
   const codeInput = await screen.findByPlaceholderText("Code à 6 chiffres");
   fireEvent.change(codeInput, { target: { value: "123456" } });
   fireEvent.click(screen.getByRole("button", { name: /valider le code/i }));
   await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/"));
-  view.unmount();
-}
-
-async function loginWithGoogle(email) {
-  supabase.__setNextGoogleAccount(email);
-  const view = render(<Connexion />);
-  fireEvent.click(screen.getByRole("button", { name: /continuer avec google/i }));
-  // Dans la vraie vie, signInWithOAuth redirige le navigateur vers Google puis
-  // revient déjà connecté sur la page choisie (redirectTo) : ici, le faux backend
-  // établit directement la session (voir __setNextGoogleAccount) — la page ne fait
-  // ensuite qu'attendre que sa propre vérification de session la redirige, comme
-  // elle le ferait au retour réel de Google.
-  await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/"));
   view.unmount();
 }
 
@@ -240,36 +213,30 @@ beforeEach(() => {
   delete process.env.OWNER_EMAIL;
 });
 
-test("1. connexion Google avec un nouvel email : compte créé automatiquement, connecté", async () => {
-  await loginWithGoogle("alice@example.com");
+test("1. nouvel email : code reçu, compte créé automatiquement, connecté", async () => {
+  await loginWithCode("alice@example.com");
   const session = (await supabase.auth.getSession()).data.session;
   expect(session?.user?.email).toBe("alice@example.com");
-});
-
-test("2. connexion avec un code reçu par email (nouvel email) : compte créé automatiquement, connecté", async () => {
-  await loginWithCode("bob@example.com");
-  const session = (await supabase.auth.getSession()).data.session;
-  expect(session?.user?.email).toBe("bob@example.com");
 });
 
 test("code faux ou expiré : refusé, aucun compte connecté", async () => {
   render(<Connexion />);
   fillEmail("test@example.com");
-  fireEvent.click(screen.getByRole("button", { name: /recevoir un code/i }));
+  fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
   const codeInput = await screen.findByPlaceholderText("Code à 6 chiffres");
   fireEvent.change(codeInput, { target: { value: "000000" } });
   fireEvent.click(screen.getByRole("button", { name: /valider le code/i }));
 
-  await screen.findByText(/invalide ou a expiré/i);
+  await screen.findByText("Code incorrect ou expiré.");
   expect(pushMock).not.toHaveBeenCalledWith("/");
   expect((await supabase.auth.getSession()).data.session).toBeNull();
 });
 
-test("parcours complet : Google (nouveau compte) -> donnée personnelle -> déconnexion -> code email (2e compte, isolation) -> déconnexion -> reconnexion Google -> contenu retrouvé -> protection -> action admin refusée pour un non-admin", async () => {
+test("parcours complet : nouvel email -> donnée personnelle -> déconnexion -> 2e email (isolation) -> déconnexion -> reconnexion (même email) -> contenu retrouvé -> protection -> action admin refusée pour un non-admin", async () => {
   process.env.OWNER_EMAIL = "owner@example.com";
 
-  // --- 1. Connexion Google, nouvel email : compte A créé et connecté.
-  await loginWithGoogle("alice@example.com");
+  // --- 1. Nouvel email : compte A créé et connecté via le code reçu par email.
+  await loginWithCode("alice@example.com");
   const sessionA = (await supabase.auth.getSession()).data.session;
   expect(sessionA?.user?.email).toBe("alice@example.com");
   const userIdA = sessionA.user.id;
@@ -300,8 +267,7 @@ test("parcours complet : Google (nouveau compte) -> donnée personnelle -> déco
   historiqueForLogout.unmount();
   pushMock.mockClear();
 
-  // --- 2. + isolation : connexion par CODE EMAIL avec un second email (compte B),
-  // jamais le même compte que A.
+  // --- 2e email (compte B), isolation : jamais le même compte que A.
   await loginWithCode("bob@example.com");
   const sessionB = (await supabase.auth.getSession()).data.session;
   expect(sessionB?.user?.email).toBe("bob@example.com");
@@ -332,11 +298,10 @@ test("parcours complet : Google (nouveau compte) -> donnée personnelle -> déco
   expect(screen.queryAllByRole("button", { name: /^analyser$/i })).toHaveLength(0);
   homeAnonymous.unmount();
 
-  // --- 3. Reconnexion avec le MÊME email (Google, comme la première fois) : on
-  // retrouve bien le compte A et SES données.
+  // --- 3. Reconnexion avec le MÊME email : on retrouve bien le compte A et SES données.
   pushMock.mockClear();
   replaceMock.mockClear();
-  await loginWithGoogle("alice@example.com");
+  await loginWithCode("alice@example.com");
   const sessionAAgain = (await supabase.auth.getSession()).data.session;
   expect(sessionAAgain?.user?.email).toBe("alice@example.com");
   expect(sessionAAgain.user.id).toBe(userIdA);
@@ -350,7 +315,7 @@ test("parcours complet : Google (nouveau compte) -> donnée personnelle -> déco
 
 test("action d'administration : autorisée pour le compte dont l'email correspond à OWNER_EMAIL", async () => {
   process.env.OWNER_EMAIL = "owner@example.com";
-  await loginWithGoogle("owner@example.com");
+  await loginWithCode("owner@example.com");
 
   const recomputeReq = { method: "POST", headers: { origin: "https://blume.example.com", host: "blume.example.com" }, socket: {} };
   const recomputeRes = { statusCode: 200, headers: {}, setHeader(k, v) { this.headers[k] = v; }, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } };

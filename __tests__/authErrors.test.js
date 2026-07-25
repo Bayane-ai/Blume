@@ -29,14 +29,9 @@ test("un message brut ressemblant à du JSON sérialisé n'est jamais affiché t
   expect(msg).not.toMatch(/^\{/);
 });
 
-test("code expiré ou invalide (otp_expired) : message clair, sans indice sur la cause exacte", () => {
+test("code expiré ou invalide (otp_expired) : message exact \"Code incorrect ou expiré.\", sans indice sur la cause exacte", () => {
   expect(friendlyAuthError({ code: "otp_expired", message: "Token has expired or is invalid" }))
-    .toBe("Ce code est invalide ou a expiré. Demande-en un nouveau.");
-});
-
-test("connexion Google annulée par la personne (access_denied) : message clair", () => {
-  expect(friendlyAuthError({ code: "access_denied", message: "User denied access" }))
-    .toBe("Connexion annulée.");
+    .toBe("Code incorrect ou expiré.");
 });
 
 test("email invalide : message clair", () => {
@@ -49,14 +44,9 @@ test("trop de tentatives : message clair", () => {
     .toBe("Trop de tentatives en peu de temps. Réessaie dans quelques minutes.");
 });
 
-test("provider Google désactivé : message clair pointant vers l'alternative email", () => {
-  expect(friendlyAuthError({ code: "provider_disabled", message: "Provider disabled" }))
-    .toMatch(/google.*momentanément indisponible/i);
-});
-
-test("callback OAuth invalide (session expirée pendant le retour de Google) : message clair", () => {
-  expect(friendlyAuthError({ code: "bad_oauth_callback", message: "..." }))
-    .toMatch(/connexion avec google a échoué/i);
+test("connexion par email momentanément indisponible (otp_disabled) : message clair", () => {
+  expect(friendlyAuthError({ code: "otp_disabled", message: "Signups not allowed for otp" }))
+    .toMatch(/momentanément indisponible/i);
 });
 
 test("erreur inconnue mais message lisible : le message d'origine est affiché", () => {
