@@ -25,6 +25,15 @@ export default function Connexion() {
     });
   }, [router]);
 
+  // Réchauffe le bundle JS de la page "/" PENDANT que la personne tape encore son
+  // mot de passe : sans ça, le router.push("/") après une connexion réussie doit
+  // d'abord aller chercher ce bundle à la demande, ce qui ajoute un aller-retour
+  // réseau pile au moment critique. Next.js dédoublonne tout seul si le fichier est
+  // déjà en cache.
+  useEffect(() => {
+    router.prefetch?.("/");
+  }, [router]);
+
   const submit = async (e) => {
     e.preventDefault();
     setError(null);
@@ -108,7 +117,7 @@ export default function Connexion() {
           {info && <p style={styles.info}>{info}</p>}
 
           <button type="submit" disabled={loading} style={styles.btn}>
-            {loading ? "..." : "Se connecter"}
+            {loading ? "Connexion…" : "Se connecter"}
           </button>
         </form>
 

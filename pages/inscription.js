@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../lib/supabaseClient";
 import { calculateAge } from "../lib/age";
@@ -31,6 +31,14 @@ export default function Inscription() {
   const [error, setError] = useState(null);
   const [info, setInfo] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  // Réchauffe le bundle JS de l'accueil pendant que la personne remplit encore le
+  // formulaire : si l'inscription connecte tout de suite (voir plus bas), la
+  // redirection n'attend plus le chargement à la demande de la page "/" (voir aussi
+  // pages/connexion.js, même optimisation pour la connexion classique).
+  useEffect(() => {
+    router.prefetch?.("/");
+  }, [router]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -76,6 +84,24 @@ export default function Inscription() {
 
     setLoading(true);
     try {
+      // Vérifie la disponibilité du pseudo AVANT de créer le compte (voir
+      // supabase/migrations/0007_signup_resilience.sql : "nom_utilisateur" est
+      // unique) — évite l'erreur générique "Database error saving new user" pour le
+      // cas le plus courant, avec un message français précis à la place. En échec
+      // ouvert (RPC pas encore déployée, réseau...) : on ne bloque jamais
+      // l'inscription pour cette seule vérification de confort, le trigger reste de
+      // toute façon résilient à une collision de pseudo.
+      try {
+        const { data: taken } = await supabase.rpc("pseudo_is_taken", { p_pseudo: cleanPseudo });
+        if (taken === true) {
+          setError("Ce pseudo est déjà utilisé. Choisis-en un autre.");
+          setLoading(false);
+          return;
+        }
+      } catch (e) {
+        // Ignoré volontairement (voir commentaire ci-dessus).
+      }
+
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: cleanEmail,
         password,
@@ -168,7 +194,7 @@ export default function Inscription() {
           {info && <p style={styles.info}>{info}</p>}
 
           <button type="submit" disabled={loading} style={styles.btn}>
-            {loading ? "..." : "Créer le compte"}
+            {loading ? "Création…" : "Créer le compte"}
           </button>
         </form>
 

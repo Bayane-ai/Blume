@@ -18,8 +18,9 @@ jest.mock("next/router", () => ({
 }));
 
 const signUp = jest.fn();
+const rpc = jest.fn();
 jest.mock("../lib/supabaseClient", () => ({
-  supabase: { auth: { signUp: (...args) => signUp(...args) } },
+  supabase: { auth: { signUp: (...args) => signUp(...args) }, rpc: (...args) => rpc(...args) },
 }));
 
 // La date de naissance se saisit désormais en 3 champs (Jour/Mois/Année, voir
@@ -59,6 +60,7 @@ function isoDateYearsAgo(years) {
 
 beforeEach(() => {
   signUp.mockReset().mockResolvedValue({ data: { session: null }, error: null });
+  rpc.mockReset().mockResolvedValue({ data: false, error: null }); // pseudo disponible par défaut
   pushMock.mockClear();
 });
 
@@ -142,6 +144,52 @@ test("pseudo vide : message clair, jamais d'appel à Supabase", async () => {
 
   await screen.findByText(/choisis un pseudo/i);
   expect(signUp).not.toHaveBeenCalled();
+});
+
+// Bug corrigé : "nom_utilisateur" est unique en base (voir
+// supabase/migrations/0007_signup_resilience.sql) — sans cette vérification
+// préalable, choisir un pseudo déjà pris déclenchait une violation de contrainte
+// côté trigger, que Supabase renvoyait comme une erreur 500 générique. On vérifie
+// maintenant la disponibilité du pseudo AVANT d'appeler signUp.
+test("pseudo déjà utilisé : message clair, jamais d'appel à signUp", async () => {
+  rpc.mockResolvedValue({ data: true, error: null });
+  render(<Inscription />);
+  fillValidForm({ pseudo: "Bayane" });
+  submit();
+
+  await screen.findByText(/ce pseudo est déjà utilisé/i);
+  expect(rpc).toHaveBeenCalledWith("pseudo_is_taken", { p_pseudo: "Bayane" });
+  expect(signUp).not.toHaveBeenCalled();
+});
+
+// La vérification de pseudo est un confort : si la fonction RPC n'est pas encore
+// déployée (migration pas encore appliquée) ou échoue pour une autre raison,
+// l'inscription ne doit JAMAIS être bloquée pour autant (échec ouvert).
+test("la vérification du pseudo échoue (RPC indisponible) : l'inscription continue quand même", async () => {
+  rpc.mockRejectedValue(new Error("RPC pseudo_is_taken introuvable"));
+  render(<Inscription />);
+  fillValidForm();
+  submit();
+
+  await waitFor(() => expect(signUp).toHaveBeenCalledTimes(1));
+});
+
+// Bug corrigé : quand la création du profil échoue côté base (ex. collision de
+// pseudo malgré tout, ou toute autre panne), Supabase Auth répond avec un HTTP 5xx
+// générique — et à cause d'un comportement de supabase-js (voir lib/authErrors.js),
+// le message brut de CETTE erreur précise vaut littéralement "{}", jamais du texte
+// lisible. Vérifie que la page affiche bien un message français clair à la place.
+test("erreur 500 de Supabase (ex. échec du trigger de création de profil) : message français clair, jamais \"{}\"", async () => {
+  signUp.mockResolvedValue({
+    data: null,
+    error: { name: "AuthRetryableFetchError", message: "{}", status: 500 },
+  });
+  render(<Inscription />);
+  fillValidForm();
+  submit();
+
+  await screen.findByText(/erreur technique côté serveur/i);
+  expect(screen.queryByText("{}")).not.toBeInTheDocument();
 });
 
 test("inscription valide : appelle signUp avec email/mot de passe et les métadonnées pseudo/date de naissance", async () => {
