@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import { supabase } from "../lib/supabaseClient";
 import { calculateAge } from "../lib/age";
 import { friendlySignupError } from "../lib/authErrors";
+import DateOfBirthInput from "../components/DateOfBirthInput";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_AGE = 18;
@@ -142,16 +143,7 @@ export default function Inscription() {
             minLength={6}
             style={styles.input}
           />
-          <label style={styles.fieldLabel}>
-            Date de naissance
-            <input
-              type="date"
-              value={dateDeNaissance}
-              onChange={(e) => setDateDeNaissance(e.target.value)}
-              required
-              style={styles.input}
-            />
-          </label>
+          <DateOfBirthInput onChange={setDateDeNaissance} />
           <input
             type="text"
             placeholder="Pseudo"
@@ -202,9 +194,6 @@ const styles = {
   input: {
     background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-primary)",
     borderRadius: 9, padding: "11px 12px", fontSize: 14, width: "100%",
-  },
-  fieldLabel: {
-    display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "var(--text-secondary)",
   },
   checkboxRow: {
     display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "var(--text-primary)", cursor: "pointer",

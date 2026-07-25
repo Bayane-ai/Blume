@@ -172,13 +172,23 @@ jest.mock("../lib/supabaseClient", () => {
   return { supabase };
 });
 
+// La date de naissance se saisit désormais en 3 champs (Jour/Mois/Année, voir
+// components/DateOfBirthInput.js) plutôt qu'un unique <input type="date"> — on
+// éclate ici l'ISO "AAAA-MM-JJ" en ses 3 parties pour remplir chaque champ.
+function fillDateOfBirth(iso) {
+  const [year, month, day] = iso.split("-");
+  fireEvent.change(screen.getByLabelText("Jour de naissance"), { target: { value: day } });
+  fireEvent.change(screen.getByLabelText("Mois de naissance"), { target: { value: month } });
+  fireEvent.change(screen.getByLabelText("Année de naissance"), { target: { value: year } });
+}
+
 function fillInscriptionForm({ email, password, dobYearsAgo, pseudo }) {
   const dob = new Date();
   dob.setFullYear(dob.getFullYear() - dobYearsAgo);
   fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: email } });
   fireEvent.change(screen.getByPlaceholderText("Mot de passe"), { target: { value: password } });
   fireEvent.change(screen.getByPlaceholderText("Confirmer le mot de passe"), { target: { value: password } });
-  fireEvent.change(screen.getByLabelText(/date de naissance/i), { target: { value: dob.toISOString().slice(0, 10) } });
+  fillDateOfBirth(dob.toISOString().slice(0, 10));
   fireEvent.change(screen.getByPlaceholderText("Pseudo"), { target: { value: pseudo } });
   fireEvent.click(screen.getByRole("checkbox"));
 }
@@ -209,7 +219,7 @@ describe("1. Inscription — refus attendus", () => {
     fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "test@example.com" } });
     fireEvent.change(screen.getByPlaceholderText("Mot de passe"), { target: { value: "motdepasse123" } });
     fireEvent.change(screen.getByPlaceholderText("Confirmer le mot de passe"), { target: { value: "autrechose1" } });
-    fireEvent.change(screen.getByLabelText(/date de naissance/i), { target: { value: "2000-06-01" } });
+    fillDateOfBirth("2000-06-01");
     fireEvent.change(screen.getByPlaceholderText("Pseudo"), { target: { value: "Test" } });
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: /créer le compte/i }));

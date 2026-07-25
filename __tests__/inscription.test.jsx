@@ -22,11 +22,21 @@ jest.mock("../lib/supabaseClient", () => ({
   supabase: { auth: { signUp: (...args) => signUp(...args) } },
 }));
 
+// La date de naissance se saisit désormais en 3 champs (Jour/Mois/Année, voir
+// components/DateOfBirthInput.js) plutôt qu'un unique <input type="date"> — on
+// éclate ici l'ISO "AAAA-MM-JJ" en ses 3 parties pour remplir chaque champ.
+function fillDateOfBirth(iso) {
+  const [year, month, day] = iso.split("-");
+  fireEvent.change(screen.getByLabelText("Jour de naissance"), { target: { value: day } });
+  fireEvent.change(screen.getByLabelText("Mois de naissance"), { target: { value: month } });
+  fireEvent.change(screen.getByLabelText("Année de naissance"), { target: { value: year } });
+}
+
 function fillValidForm({ email = "test@example.com", password = "motdepasse123", confirmPassword = "motdepasse123", dob = "2000-06-01", pseudo = "Bayane", acceptTerms = true } = {}) {
   fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: email } });
   fireEvent.change(screen.getByPlaceholderText("Mot de passe"), { target: { value: password } });
   fireEvent.change(screen.getByPlaceholderText("Confirmer le mot de passe"), { target: { value: confirmPassword } });
-  fireEvent.change(screen.getByLabelText(/date de naissance/i), { target: { value: dob } });
+  if (dob) fillDateOfBirth(dob);
   fireEvent.change(screen.getByPlaceholderText("Pseudo"), { target: { value: pseudo } });
   if (acceptTerms) fireEvent.click(screen.getByRole("checkbox"));
 }
@@ -52,12 +62,15 @@ beforeEach(() => {
   pushMock.mockClear();
 });
 
-test("affiche tous les champs requis : email, mot de passe, confirmation, date de naissance, pseudo, case des conditions", () => {
+test("affiche tous les champs requis : email, mot de passe, confirmation, date de naissance (3 champs), pseudo, case des conditions", () => {
   render(<Inscription />);
   expect(screen.getByPlaceholderText("Email")).toBeInTheDocument();
   expect(screen.getByPlaceholderText("Mot de passe")).toBeInTheDocument();
   expect(screen.getByPlaceholderText("Confirmer le mot de passe")).toBeInTheDocument();
-  expect(screen.getByLabelText(/date de naissance/i)).toBeInTheDocument();
+  expect(screen.getByText("Date de naissance")).toBeInTheDocument();
+  expect(screen.getByLabelText("Jour de naissance")).toBeInTheDocument();
+  expect(screen.getByLabelText("Mois de naissance")).toBeInTheDocument();
+  expect(screen.getByLabelText("Année de naissance")).toBeInTheDocument();
   expect(screen.getByPlaceholderText("Pseudo")).toBeInTheDocument();
   expect(screen.getByRole("checkbox")).toBeInTheDocument();
   expect(screen.getByText(/j'accepte les conditions/i)).toBeInTheDocument();
