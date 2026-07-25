@@ -2,13 +2,18 @@
  * @jest-environment jsdom
  *
  * pages/historique.js — liste les matchs consultés par CE COMPTE (lib/matchHistory.js,
- * table Supabase match_history isolée par Row Level Security), les plus récents en
- * premier, sans bouton "Analyser", et un message clair quand la liste est vide.
+ * table match_history, isolée par profile_id — voir
+ * supabase/migrations/0008_custom_auth.sql), les plus récents en premier, sans bouton
+ * "Analyser", et un message clair quand la liste est vide. L'isolation RÉELLE entre
+ * deux comptes (le point important côté sécurité) est vérifiée directement au niveau
+ * de la route serveur dans __tests__/match-history-api.test.js — le client ne peut
+ * plus jamais spécifier "pour quel compte" écrire, seule la session y répond
+ * désormais (voir pages/api/match-history.js), donc ce n'est plus testable en
+ * passant un faux userId ici.
  */
 import { render, screen } from "@testing-library/react";
 import Historique from "../pages/historique";
 import { addMatchToHistory } from "../lib/matchHistory";
-import { supabase } from "../lib/supabaseClient";
 
 const USER_ID = "user-1";
 
@@ -16,67 +21,41 @@ jest.mock("next/router", () => ({
   useRouter: () => ({ pathname: "/historique", push: jest.fn(), replace: jest.fn() }),
 }));
 
-jest.mock("../lib/supabaseClient", () => ({
-  supabase: {
-    auth: {
-      getSession: () => Promise.resolve({ data: { session: { user: { id: "user-1", email: "test@example.com" } } } }),
-      onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
-      signOut: () => Promise.resolve({}),
-    },
-    from: jest.fn(),
-  },
+jest.mock("../lib/useRequireAuth", () => ({
+  useRequireAuth: () => ({
+    session: { id: "user-1", email: "test@example.com" },
+    sessionChecked: true,
+    authorized: true,
+  }),
 }));
 
-// Même simulation en mémoire que __tests__/match-history-lib.test.js — assez fidèle à
-// supabase-js pour exercer la vraie logique de lib/matchHistory.js (upsert/select/delete
-// avec filtres).
+// Simule pages/api/match-history.js EN MÉMOIRE (assez fidèle pour exercer la vraie
+// logique client de lib/matchHistory.js : upsert/liste/nettoyage des entrées de plus
+// de 10 jours) — toutes les requêtes du test tournent pour la MÊME session ("user-1"),
+// exactement comme le fait la vraie route (le profile_id vient de la session, jamais
+// du corps de la requête).
 let rows;
+const EXPIRY_MS = 10 * 24 * 3600 * 1000;
 
-function makeFromMock() {
-  return jest.fn((table) => {
-    if (table !== "match_history") throw new Error(`table inattendue dans le test : ${table}`);
-    return {
-      upsert: (row, opts) => {
-        const conflictCols = (opts?.onConflict || "").split(",");
-        const idx = rows.findIndex((r) => conflictCols.every((c) => r[c] === row[c]));
-        if (idx >= 0) rows[idx] = { ...rows[idx], ...row };
-        else rows.push({ ...row });
-        return Promise.resolve({ error: null });
-      },
-      delete: () => {
-        const filters = [];
-        const builder = {
-          eq: (col, val) => { filters.push(["eq", col, val]); return builder; },
-          lt: (col, val) => { filters.push(["lt", col, val]); return builder; },
-          then: (resolve) => {
-            rows = rows.filter((r) => !filters.every(([op, col, val]) => (op === "eq" ? r[col] === val : r[col] < val)));
-            return Promise.resolve({ error: null }).then(resolve);
-          },
-        };
-        return builder;
-      },
-      select: () => {
-        const filters = [];
-        let orderCol = null;
-        let ascending = true;
-        const builder = {
-          eq: (col, val) => { filters.push([col, val]); return builder; },
-          order: (col, o) => { orderCol = col; ascending = !!o?.ascending; return builder; },
-          then: (resolve) => {
-            let result = rows.filter((r) => filters.every(([col, val]) => r[col] === val));
-            if (orderCol) {
-              result = [...result].sort((a, b) => {
-                if (a[orderCol] === b[orderCol]) return 0;
-                const cmp = a[orderCol] > b[orderCol] ? 1 : -1;
-                return ascending ? cmp : -cmp;
-              });
-            }
-            return Promise.resolve({ data: result, error: null }).then(resolve);
-          },
-        };
-        return builder;
-      },
-    };
+function mockFetch() {
+  global.fetch = jest.fn((url, options) => {
+    if (url !== "/api/match-history") return Promise.reject(new Error(`URL inattendue : ${url}`));
+
+    if (options?.method === "POST") {
+      const { entry } = JSON.parse(options.body);
+      const row = { match_id: String(entry.id), home_team_name: entry.homeTeam.name, away_team_name: entry.awayTeam.name, added_at: new Date().toISOString() };
+      const idx = rows.findIndex((r) => r.match_id === row.match_id);
+      if (idx >= 0) rows[idx] = { ...rows[idx], ...row };
+      else rows.push(row);
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) });
+    }
+
+    const cutoff = Date.now() - EXPIRY_MS;
+    rows = rows.filter((r) => new Date(r.added_at).getTime() >= cutoff);
+    const items = [...rows]
+      .sort((a, b) => new Date(b.added_at).getTime() - new Date(a.added_at).getTime())
+      .map((r) => ({ id: r.match_id, homeTeam: { name: r.home_team_name }, awayTeam: { name: r.away_team_name } }));
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ items }) });
   });
 }
 
@@ -87,7 +66,7 @@ function mockNextAddedAt(secondsFromNow) {
 
 beforeEach(() => {
   rows = [];
-  supabase.from = makeFromMock();
+  mockFetch();
 });
 
 test("affiche un message clair quand aucun match n'a encore été consulté", async () => {
@@ -121,18 +100,4 @@ test("affiche une carte par match consulté, le plus récent en premier, sans bo
   expect(cards[0]).toHaveTextContent("Real Madrid");
   expect(cards[1]).toHaveTextContent("Arsenal FC");
   expect(screen.queryByRole("button", { name: /^analyser$/i })).not.toBeInTheDocument();
-});
-
-test("l'historique d'un autre compte n'apparaît jamais ici (isolation par utilisateur)", async () => {
-  await addMatchToHistory("un-autre-compte", {
-    id: 99, status: "SCHEDULED", minute: null, utcDate: "2026-01-01T15:00:00Z",
-    competition: { code: "PL", name: "Premier League", emblem: "" },
-    homeTeam: { id: 90, name: "Équipe Autrui", crest: "" },
-    awayTeam: { id: 91, name: "Adversaire Autrui", crest: "" },
-    score: { fullTime: { home: null, away: null } },
-  });
-
-  render(<Historique />);
-  expect(await screen.findByTestId("match-history-empty")).toBeInTheDocument();
-  expect(screen.queryByText("Équipe Autrui")).not.toBeInTheDocument();
 });

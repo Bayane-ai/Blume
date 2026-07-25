@@ -31,7 +31,7 @@ function formatKickoff(iso) {
 
 export default function MatchPage() {
   const { session, sessionChecked, authorized } = useRequireAuth();
-  const userId = session?.user?.id;
+  const userId = session?.id;
   const router = useRouter();
   const {
     id: matchId,

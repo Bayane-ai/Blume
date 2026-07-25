@@ -1,21 +1,19 @@
 /**
  * pages/api/whoami.js — route de LECTURE seule : renvoie uniquement un booléen
- * (isOwner), jamais OWNER_ID/OWNER_EMAIL ni aucune information sur l'identité du
- * propriétaire pour qui que ce soit d'autre.
+ * (isOwner), jamais ADMIN_EMAIL ni aucune information sur l'identité de
+ * l'administrateur pour qui que ce soit d'autre.
  */
 import handler from "../pages/api/whoami";
 
-let mockUser = null;
-jest.mock("../lib/supabaseServer", () => ({
-  createSupabaseServerClient: () => ({
-    auth: { getUser: () => Promise.resolve({ data: { user: mockUser } }) },
-  }),
+let mockSession = null;
+jest.mock("../lib/session", () => ({
+  getSession: () => mockSession,
 }));
 
-const ORIGINAL_OWNER_EMAIL = process.env.OWNER_EMAIL;
+const ORIGINAL_ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 
 function mockReqRes() {
-  const req = { headers: {}, socket: {} };
+  const req = { headers: {}, socket: {}, cookies: {} };
   const res = {
     statusCode: 200,
     setHeader() {},
@@ -26,13 +24,13 @@ function mockReqRes() {
 }
 
 beforeEach(() => {
-  process.env.OWNER_EMAIL = "owner@example.com";
-  mockUser = null;
+  process.env.ADMIN_EMAIL = "admin@example.com";
+  mockSession = null;
 });
 
 afterAll(() => {
-  if (ORIGINAL_OWNER_EMAIL === undefined) delete process.env.OWNER_EMAIL;
-  else process.env.OWNER_EMAIL = ORIGINAL_OWNER_EMAIL;
+  if (ORIGINAL_ADMIN_EMAIL === undefined) delete process.env.ADMIN_EMAIL;
+  else process.env.ADMIN_EMAIL = ORIGINAL_ADMIN_EMAIL;
 });
 
 test("visiteur non connecté : isOwner=false", async () => {
@@ -41,23 +39,23 @@ test("visiteur non connecté : isOwner=false", async () => {
   expect(res.body).toEqual({ isOwner: false });
 });
 
-test("compte connecté mais pas le propriétaire : isOwner=false", async () => {
-  mockUser = { id: "quelquun-dautre", email: "quelquun@example.com", email_confirmed_at: "2026-01-01T00:00:00Z" };
+test("compte connecté mais pas l'administrateur : isOwner=false", async () => {
+  mockSession = { id: "quelquun-dautre", email: "quelquun@example.com" };
   const { req, res } = mockReqRes();
   await handler(req, res);
   expect(res.body).toEqual({ isOwner: false });
 });
 
-test("le propriétaire : isOwner=true", async () => {
-  mockUser = { id: "user-owner", email: "owner@example.com", email_confirmed_at: "2026-01-01T00:00:00Z" };
+test("l'administrateur : isOwner=true", async () => {
+  mockSession = { id: "user-admin", email: "admin@example.com" };
   const { req, res } = mockReqRes();
   await handler(req, res);
   expect(res.body).toEqual({ isOwner: true });
 });
 
-test("ne renvoie jamais OWNER_ID/OWNER_EMAIL ni l'email/l'id de la session", async () => {
-  mockUser = { id: "user-owner", email: "owner@example.com", email_confirmed_at: "2026-01-01T00:00:00Z" };
+test("ne renvoie jamais ADMIN_EMAIL ni l'email/l'id de la session", async () => {
+  mockSession = { id: "user-admin", email: "admin@example.com" };
   const { req, res } = mockReqRes();
   await handler(req, res);
-  expect(JSON.stringify(res.body)).not.toMatch(/user-owner|owner@example\.com/);
+  expect(JSON.stringify(res.body)).not.toMatch(/user-admin|admin@example\.com/);
 });

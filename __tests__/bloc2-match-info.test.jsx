@@ -28,14 +28,12 @@ jest.mock("next/router", () => ({
   useRouter: () => mockRouter,
 }));
 
-jest.mock("../lib/supabaseClient", () => ({
-  supabase: {
-    auth: {
-      getSession: () => Promise.resolve({ data: { session: { user: { id: "u1", email: "test@example.com" } } } }),
-      onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
-      signOut: () => Promise.resolve({}),
-    },
-  },
+jest.mock("../lib/useRequireAuth", () => ({
+  useRequireAuth: () => ({
+    session: { id: "u1", email: "test@example.com" },
+    sessionChecked: true,
+    authorized: true,
+  }),
 }));
 
 beforeEach(() => {
@@ -137,7 +135,14 @@ test("le score et la minute se mettent à jour automatiquement sur plusieurs cyc
     { score: { home: 1, away: 1 }, minute: 51 },
     { score: { home: 2, away: 1 }, minute: 78 },
   ];
-  global.fetch = jest.fn(() => {
+  // Seul /api/analyze fait avancer le cycle : la page appelle aussi /api/match-history
+  // (lib/matchHistory.js) et /api/whoami (SiteHeader) en tâche de fond, qui ne
+  // doivent jamais consommer un cran du cycle sous peine de décaler les résultats
+  // attendus d'un cran (voir lib/matchHistory.js, addMatchToHistory).
+  global.fetch = jest.fn((url) => {
+    if (!url.startsWith("/api/analyze")) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) });
+    }
     const cycle = cycles[Math.min(call, cycles.length - 1)];
     call += 1;
     return Promise.resolve({

@@ -1,20 +1,18 @@
 /**
  * pages/api/admin/recompute.js — action d'administration réservée au propriétaire :
  *   1. visiteur non connecté -> 403
- *   2. connecté mais PAS le propriétaire -> 403
- *   3. propriétaire -> autorisé (200)
- *   4. requête sans origine valide (CSRF) -> refusée, même pour le propriétaire
- *   5. OWNER_EMAIL non définie -> jamais d'écriture autorisée, même avec une session
- *      qui "ressemblerait" au propriétaire
+ *   2. connecté mais PAS l'administrateur -> 403
+ *   3. administrateur -> autorisé (200)
+ *   4. requête sans origine valide (CSRF) -> refusée, même pour l'administrateur
+ *   5. ADMIN_EMAIL non définie -> jamais d'écriture autorisée, même avec une session
+ *      qui "ressemblerait" à l'administrateur
  */
 import handler from "../pages/api/admin/recompute";
 import { __resetRateLimitForTests } from "../lib/security/rateLimit";
 
-let mockUser = null;
-jest.mock("../lib/supabaseServer", () => ({
-  createSupabaseServerClient: () => ({
-    auth: { getUser: () => Promise.resolve({ data: { user: mockUser } }) },
-  }),
+let mockSession = null;
+jest.mock("../lib/session", () => ({
+  getSession: () => mockSession,
 }));
 
 jest.mock("../lib/comboHistory", () => ({
@@ -24,10 +22,10 @@ jest.mock("../lib/pronosticHistory", () => ({
   listAndMaintainHistory: jest.fn(() => Promise.resolve([{ id: 1 }])),
 }));
 
-const ORIGINAL_OWNER_EMAIL = process.env.OWNER_EMAIL;
+const ORIGINAL_ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 
 function mockReqRes({ method = "POST", origin = "https://blume.example.com", host = "blume.example.com" } = {}) {
-  const req = { method, headers: { origin, host }, socket: {} };
+  const req = { method, headers: { origin, host }, socket: {}, cookies: {} };
   const res = {
     statusCode: 200,
     headers: {},
@@ -39,72 +37,72 @@ function mockReqRes({ method = "POST", origin = "https://blume.example.com", hos
 }
 
 beforeEach(() => {
-  process.env.OWNER_EMAIL = "owner@example.com";
-  mockUser = null;
+  process.env.ADMIN_EMAIL = "admin@example.com";
+  mockSession = null;
   __resetRateLimitForTests();
 });
 
 afterAll(() => {
-  if (ORIGINAL_OWNER_EMAIL === undefined) delete process.env.OWNER_EMAIL;
-  else process.env.OWNER_EMAIL = ORIGINAL_OWNER_EMAIL;
+  if (ORIGINAL_ADMIN_EMAIL === undefined) delete process.env.ADMIN_EMAIL;
+  else process.env.ADMIN_EMAIL = ORIGINAL_ADMIN_EMAIL;
 });
 
 test("1. visiteur NON connecté : 403", async () => {
-  mockUser = null;
+  mockSession = null;
   const { req, res } = mockReqRes();
   await handler(req, res);
   expect(res.statusCode).toBe(403);
   expect(res.body.error).toBe("Non autorisé");
 });
 
-test("2. connecté mais PAS le propriétaire : 403", async () => {
-  mockUser = { id: "quelquun-dautre", email: "quelquun@example.com", email_confirmed_at: "2026-01-01T00:00:00Z" };
+test("2. connecté mais PAS l'administrateur : 403", async () => {
+  mockSession = { id: "quelquun-dautre", email: "quelquun@example.com" };
   const { req, res } = mockReqRes();
   await handler(req, res);
   expect(res.statusCode).toBe(403);
   expect(res.body.error).toBe("Non autorisé");
 });
 
-test("3. le propriétaire : autorisé (200)", async () => {
-  mockUser = { id: "user-owner", email: "owner@example.com", email_confirmed_at: "2026-01-01T00:00:00Z" };
+test("3. l'administrateur : autorisé (200)", async () => {
+  mockSession = { id: "user-admin", email: "admin@example.com" };
   const { req, res } = mockReqRes();
   await handler(req, res);
   expect(res.statusCode).toBe(200);
   expect(res.body).toHaveProperty("comboSuccessRates");
 });
 
-test("4. propriétaire mais requête d'une origine étrangère : refusée (CSRF)", async () => {
-  mockUser = { id: "user-owner", email: "owner@example.com", email_confirmed_at: "2026-01-01T00:00:00Z" };
+test("4. administrateur mais requête d'une origine étrangère : refusée (CSRF)", async () => {
+  mockSession = { id: "user-admin", email: "admin@example.com" };
   const { req, res } = mockReqRes({ origin: "https://attaquant.example.net" });
   await handler(req, res);
   expect(res.statusCode).toBe(403);
 });
 
-test("4bis. propriétaire mais sans Origin ni Referer : refusée (jamais une autorisation implicite)", async () => {
-  mockUser = { id: "user-owner", email: "owner@example.com", email_confirmed_at: "2026-01-01T00:00:00Z" };
+test("4bis. administrateur mais sans Origin ni Referer : refusée (jamais une autorisation implicite)", async () => {
+  mockSession = { id: "user-admin", email: "admin@example.com" };
   const { req, res } = mockReqRes({ origin: undefined });
   delete req.headers.origin;
   await handler(req, res);
   expect(res.statusCode).toBe(403);
 });
 
-test("5. OWNER_EMAIL non définie : jamais d'écriture autorisée, même avec une session qui y ressemble", async () => {
-  delete process.env.OWNER_EMAIL;
-  mockUser = { id: "user-owner", email: "owner@example.com", email_confirmed_at: "2026-01-01T00:00:00Z" };
+test("5. ADMIN_EMAIL non définie : jamais d'écriture autorisée, même avec une session qui y ressemble", async () => {
+  delete process.env.ADMIN_EMAIL;
+  mockSession = { id: "user-admin", email: "admin@example.com" };
   const { req, res } = mockReqRes();
   await handler(req, res);
   expect(res.statusCode).toBe(403);
 });
 
-test("méthode autre que POST : refusée (405), avant même le contrôle propriétaire", async () => {
-  mockUser = { id: "user-owner", email: "owner@example.com", email_confirmed_at: "2026-01-01T00:00:00Z" };
+test("méthode autre que POST : refusée (405), avant même le contrôle admin", async () => {
+  mockSession = { id: "user-admin", email: "admin@example.com" };
   const { req, res } = mockReqRes({ method: "GET" });
   await handler(req, res);
   expect(res.statusCode).toBe(405);
 });
 
-test("rate limiting : au-delà du quota, même le propriétaire reçoit 429", async () => {
-  mockUser = { id: "user-owner", email: "owner@example.com", email_confirmed_at: "2026-01-01T00:00:00Z" };
+test("rate limiting : au-delà du quota, même l'administrateur reçoit 429", async () => {
+  mockSession = { id: "user-admin", email: "admin@example.com" };
   for (let i = 0; i < 10; i++) {
     const { req, res } = mockReqRes();
     // eslint-disable-next-line no-await-in-loop

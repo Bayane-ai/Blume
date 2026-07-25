@@ -1,31 +1,30 @@
 /**
  * @jest-environment jsdom
  *
- * Parcours de connexion complet, de bout en bout, contre un FAUX backend Supabase
- * réaliste (email/code OTP uniquement — Google abandonné, plus de tables avec Row
- * Level Security simulée : chaque lecture/écriture est filtrée par le VRAI user_id
- * du compte actuellement connecté dans le faux backend, exactement comme le ferait
- * Postgres). Couvre les points demandés :
- *   1. Nouvel email -> code reçu -> compte créé automatiquement -> connecté
- *   2. Déconnexion -> /connexion
- *   3. Reconnexion avec le même email -> on retrouve son contenu
+ * Parcours de connexion complet, de bout en bout, contre un FAUX backend réaliste
+ * (email uniquement, sans mot de passe/code/Google — voir pages/api/auth/login.js —
+ * plus une table match_history simulée avec isolation par profile_id, comme le ferait
+ * réellement Postgres avec la clé service_role). Couvre les points demandés :
+ *   1. Nouvel email -> compte créé automatiquement -> connecté IMMÉDIATEMENT
+ *   2. Rechargement de la page -> toujours connecté (session persistante)
+ *   3. Déconnexion -> cookie effacé, retour à /connexion
  *   4. Connexion avec un deuxième email -> contenu totalement différent et vide
- *   5. Protection pour un visiteur non connecté
- *   6. Action d'administration depuis un compte non-admin -> refusée
+ *   5. Reconnexion avec le même email -> on retrouve son contenu
+ *   6. Compte non-admin -> aucune écriture possible
  *
  * Les vraies pages (pages/connexion.js, pages/historique.js, pages/index.js) et la
- * vraie logique (lib/matchHistory.js, lib/useRequireAuth.js, components/SiteHeader.js,
- * lib/auth/owner.js) sont exercées telles quelles — seul le client Supabase est
- * remplacé par ce faux backend en mémoire, pour pouvoir créer plusieurs vrais comptes
- * distincts sans dépendre d'un projet Supabase réel.
+ * vraie logique (lib/matchHistory.js, lib/useRequireAuth.js, components/SiteHeader.js)
+ * sont exercées telles quelles — seul le réseau (fetch) est simulé en mémoire, pour
+ * pouvoir créer plusieurs vrais comptes distincts sans dépendre d'un projet Supabase
+ * réel. lib/session.js est mocké uniquement pour pouvoir appeler directement la route
+ * d'administration (pages/api/admin/recompute.js), qui elle tourne réellement côté
+ * "serveur" dans ce test, pas via fetch.
  */
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import Connexion from "../pages/connexion";
 import Historique from "../pages/historique";
 import Home from "../pages/index";
-import { supabase } from "../lib/supabaseClient";
-import { addMatchToHistory } from "../lib/matchHistory";
-import { isOwner } from "../lib/auth/owner";
+import { isAdmin } from "../lib/auth/admin";
 import handleRecompute from "../pages/api/admin/recompute";
 
 const pushMock = jest.fn();
@@ -36,220 +35,130 @@ jest.mock("next/router", () => ({
   useRouter: () => ({ push: pushMock, replace: replaceMock, pathname: mockPathname, isReady: true, query: {} }),
 }));
 
+jest.mock("../lib/security/guardMutation", () => ({ guardMutation: () => true }));
 jest.mock("../lib/comboHistory", () => ({ maintainAndGetComboStats: jest.fn(() => Promise.resolve({ successRates: {}, progress: {} })) }));
 jest.mock("../lib/pronosticHistory", () => ({ listAndMaintainHistory: jest.fn(() => Promise.resolve([])) }));
-jest.mock("../lib/security/guardMutation", () => ({ guardMutation: () => true }));
 
-// Faux backend Supabase EN MÉMOIRE (email/code OTP, tables "profiles" et
-// "match_history") — toute la logique métier (isolation par user_id, création
-// automatique de compte) reste dans les VRAIES pages/lib du site ; ce faux backend ne
-// fait que se comporter comme le ferait réellement Supabase/Postgres pour chacun de
-// ces cas, y compris le filtrage RLS (chaque requête ne renvoie que les lignes dont
-// user_id correspond à l'appelant, jamais un raccourci qui rendrait le test complice).
-jest.mock("../lib/supabaseClient", () => {
-  let users; // email -> { id }
-  let currentSession;
-  let listeners;
-  let profiles;
-  let matchHistoryRows;
-  let nextUserId;
-  let pendingOtp; // email -> code
-
-  function reset() {
-    users = {};
-    currentSession = null;
-    listeners = [];
-    profiles = {};
-    matchHistoryRows = [];
-    nextUserId = 1;
-    pendingOtp = {};
-  }
-  reset();
-
-  function notify() {
-    listeners.forEach((cb) => cb(currentSession ? "SIGNED_IN" : "SIGNED_OUT", currentSession));
-  }
-
-  // "Un email = un seul compte" : retrouve la ligne existante par email plutôt que
-  // d'en recréer une.
-  function getOrCreateUser(email) {
-    if (!users[email]) {
-      const id = `user-${nextUserId++}`;
-      users[email] = { id, email };
-      profiles[id] = { id, email, nom_utilisateur: null, date_de_naissance: null };
-    }
-    return users[email];
-  }
-
-  function signIn(email) {
-    const u = getOrCreateUser(email);
-    currentSession = { user: { id: u.id, email, email_confirmed_at: "2026-01-01T00:00:00Z" } };
-    notify();
-    return currentSession;
-  }
-
-  const supabase = {
-    auth: {
-      signInWithOtp: async ({ email }) => {
-        pendingOtp[email] = "123456";
-        return { error: null };
-      },
-      verifyOtp: async ({ email, token }) => {
-        if (pendingOtp[email] !== token) {
-          return { error: { code: "otp_expired", message: "Token has expired or is invalid" } };
-        }
-        delete pendingOtp[email];
-        signIn(email);
-        return { error: null };
-      },
-      signOut: async () => {
-        currentSession = null;
-        notify();
-        return {};
-      },
-      getSession: async () => ({ data: { session: currentSession } }),
-      getUser: async () => ({ data: { user: currentSession?.user || null } }),
-      onAuthStateChange: (cb) => {
-        listeners.push(cb);
-        return { data: { subscription: { unsubscribe: () => { listeners = listeners.filter((l) => l !== cb); } } } };
-      },
-    },
-    from: (table) => {
-      if (table === "profiles") {
-        return {
-          select: () => ({
-            eq: (col, val) => ({
-              maybeSingle: async () => {
-                const row = Object.values(profiles).find((p) => p[col] === val);
-                return { data: row || null, error: null };
-              },
-            }),
-          }),
-        };
-      }
-      if (table === "match_history") {
-        return {
-          upsert: async (row, opts) => {
-            const conflictCols = (opts?.onConflict || "").split(",");
-            const idx = matchHistoryRows.findIndex((r) => conflictCols.every((c) => r[c] === row[c]));
-            if (idx >= 0) matchHistoryRows[idx] = { ...matchHistoryRows[idx], ...row };
-            else matchHistoryRows.push({ ...row });
-            return { error: null };
-          },
-          delete: () => {
-            const filters = [];
-            const builder = {
-              eq: (col, val) => { filters.push(["eq", col, val]); return builder; },
-              lt: (col, val) => { filters.push(["lt", col, val]); return builder; },
-              then: (resolve) => {
-                // Isolation RLS simulée : ne retire jamais les lignes d'un AUTRE compte.
-                matchHistoryRows = matchHistoryRows.filter(
-                  (r) => !filters.every(([op, col, val]) => (op === "eq" ? r[col] === val : r[col] < val))
-                );
-                return Promise.resolve({ error: null }).then(resolve);
-              },
-            };
-            return builder;
-          },
-          select: () => {
-            const filters = [];
-            let orderCol = null;
-            let ascending = true;
-            const builder = {
-              eq: (col, val) => { filters.push([col, val]); return builder; },
-              order: (col, o) => { orderCol = col; ascending = !!o?.ascending; return builder; },
-              then: (resolve) => {
-                // Isolation RLS simulée : seules les lignes du user_id demandé sont
-                // renvoyées, jamais celles d'un autre compte.
-                let result = matchHistoryRows.filter((r) => filters.every(([col, val]) => r[col] === val));
-                if (orderCol) {
-                  result = [...result].sort((a, b) => {
-                    if (a[orderCol] === b[orderCol]) return 0;
-                    const cmp = a[orderCol] > b[orderCol] ? 1 : -1;
-                    return ascending ? cmp : -cmp;
-                  });
-                }
-                return Promise.resolve({ data: result, error: null }).then(resolve);
-              },
-            };
-            return builder;
-          },
-        };
-      }
-      return { select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) }) };
-    },
-    __resetFakeBackend: reset,
-  };
-
-  return { supabase };
-});
-
-jest.mock("../lib/supabaseServer", () => ({
-  createSupabaseServerClient: () => ({
-    auth: { getUser: () => supabase.auth.getUser() },
-  }),
+// lib/session.js n'est mocké que pour la route d'administration, appelée directement
+// (pas via fetch) — voir plus bas, "currentSession" est la même variable qui pilote
+// aussi le faux réseau.
+let currentSession = null;
+jest.mock("../lib/session", () => ({
+  getSession: () => currentSession,
 }));
 
-function fillEmail(email) {
-  fireEvent.change(screen.getByPlaceholderText("Entre ton email"), { target: { value: email } });
+// Faux backend EN MÉMOIRE (profiles + match_history) — toute la logique métier
+// (isolation par profile_id, création automatique de compte par email) reste dans
+// les VRAIES pages/lib du site ; ce faux réseau ne fait que se comporter comme le
+// ferait réellement le serveur pour chacun de ces cas.
+let profiles; // email -> { id, email }
+let matchHistoryRows;
+let nextProfileId;
+
+function resetBackend() {
+  profiles = {};
+  matchHistoryRows = [];
+  nextProfileId = 1;
+  currentSession = null;
+}
+resetBackend();
+
+function getOrCreateProfile(email) {
+  if (!profiles[email]) {
+    const id = `profile-${nextProfileId++}`;
+    profiles[email] = { id, email };
+  }
+  return profiles[email];
 }
 
-async function loginWithCode(email) {
+global.fetch = jest.fn();
+
+function mockFetch() {
+  global.fetch = jest.fn((url, options) => {
+    if (url === "/api/auth/login") {
+      const { email } = JSON.parse(options.body);
+      const profile = getOrCreateProfile(email);
+      currentSession = { id: profile.id, email: profile.email };
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) });
+    }
+    if (url === "/api/auth/session") {
+      return Promise.resolve({ json: () => Promise.resolve({ session: currentSession }) });
+    }
+    if (url === "/api/auth/logout") {
+      currentSession = null;
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) });
+    }
+    if (url === "/api/whoami") {
+      return Promise.resolve({ json: () => Promise.resolve({ isOwner: isAdmin(currentSession) }) });
+    }
+    if (url === "/api/live-matches") {
+      return Promise.resolve({ json: () => Promise.resolve({ matches: [] }) });
+    }
+    if (url === "/api/match-history" && (!options || !options.method)) {
+      const items = matchHistoryRows
+        .filter((r) => r.profile_id === currentSession?.id)
+        .sort((a, b) => b.added_at - a.added_at)
+        .map((r) => ({ id: r.match_id, homeTeam: { name: r.home_team_name }, awayTeam: { name: r.away_team_name } }));
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ items }) });
+    }
+    if (url === "/api/match-history" && options?.method === "POST") {
+      const { entry } = JSON.parse(options.body);
+      const row = {
+        profile_id: currentSession?.id, match_id: String(entry.id),
+        home_team_name: entry.homeTeam.name, away_team_name: entry.awayTeam.name, added_at: Date.now(),
+      };
+      const idx = matchHistoryRows.findIndex((r) => r.profile_id === row.profile_id && r.match_id === row.match_id);
+      if (idx >= 0) matchHistoryRows[idx] = row; else matchHistoryRows.push(row);
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) });
+    }
+    return Promise.reject(new Error(`URL inattendue dans le test : ${url}`));
+  });
+}
+
+async function loginWithEmail(email) {
   const view = render(<Connexion />);
-  fillEmail(email);
+  fireEvent.change(screen.getByPlaceholderText("Entre ton email"), { target: { value: email } });
   fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
-  const codeInput = await screen.findByPlaceholderText("Code à 6 chiffres");
-  fireEvent.change(codeInput, { target: { value: "123456" } });
-  fireEvent.click(screen.getByRole("button", { name: /valider le code/i }));
   await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/"));
   view.unmount();
 }
 
 beforeEach(() => {
-  supabase.__resetFakeBackend();
+  resetBackend();
+  mockFetch();
   pushMock.mockClear();
   replaceMock.mockClear();
   mockPathname = "/";
-  delete process.env.OWNER_EMAIL;
+  delete process.env.ADMIN_EMAIL;
 });
 
-test("1. nouvel email : code reçu, compte créé automatiquement, connecté", async () => {
-  await loginWithCode("alice@example.com");
-  const session = (await supabase.auth.getSession()).data.session;
-  expect(session?.user?.email).toBe("alice@example.com");
+test("1. nouvel email : compte créé automatiquement, connecté IMMÉDIATEMENT (pas de code, pas de vérification)", async () => {
+  await loginWithEmail("alice@example.com");
+  expect(currentSession?.email).toBe("alice@example.com");
 });
 
-test("code faux ou expiré : refusé, aucun compte connecté", async () => {
-  render(<Connexion />);
-  fillEmail("test@example.com");
-  fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
-  const codeInput = await screen.findByPlaceholderText("Code à 6 chiffres");
-  fireEvent.change(codeInput, { target: { value: "000000" } });
-  fireEvent.click(screen.getByRole("button", { name: /valider le code/i }));
+test("2. rechargement de la page (nouveau montage) : toujours connecté, jamais renvoyé vers /connexion", async () => {
+  await loginWithEmail("alice@example.com");
 
-  await screen.findByText("Code incorrect ou expiré.");
-  expect(pushMock).not.toHaveBeenCalledWith("/");
-  expect((await supabase.auth.getSession()).data.session).toBeNull();
+  // Un "rechargement" = un nouveau montage de la page protégée, qui redemande sa
+  // session au serveur comme le ferait un vrai rechargement de navigateur.
+  const home = render(<Home />);
+  await waitFor(() => expect(screen.queryByText(/chargement/i)).not.toBeInTheDocument());
+  expect(replaceMock).not.toHaveBeenCalledWith("/connexion");
+  home.unmount();
 });
 
-test("parcours complet : nouvel email -> donnée personnelle -> déconnexion -> 2e email (isolation) -> déconnexion -> reconnexion (même email) -> contenu retrouvé -> protection -> action admin refusée pour un non-admin", async () => {
-  process.env.OWNER_EMAIL = "owner@example.com";
+test("parcours complet : nouveau compte -> donnée personnelle -> déconnexion (cookie effacé) -> 2e email (isolation) -> protection -> reconnexion (même email, contenu retrouvé) -> compte non-admin refusé", async () => {
+  process.env.ADMIN_EMAIL = "admin@example.com";
 
-  // --- 1. Nouvel email : compte A créé et connecté via le code reçu par email.
-  await loginWithCode("alice@example.com");
-  const sessionA = (await supabase.auth.getSession()).data.session;
-  expect(sessionA?.user?.email).toBe("alice@example.com");
-  const userIdA = sessionA.user.id;
+  // --- 1. Nouvel email : compte A créé et connecté.
+  await loginWithEmail("alice@example.com");
+  expect(currentSession?.email).toBe("alice@example.com");
+  const profileIdA = currentSession.id;
 
   // --- Le compte A enregistre une donnée personnelle (un match consulté, voir
-  // lib/matchHistory.js — table match_history, Row Level Security).
-  await addMatchToHistory(userIdA, {
-    id: 101, status: "SCHEDULED", minute: null, utcDate: "2026-08-01T15:00:00Z",
-    competition: { code: "PL", name: "Premier League", emblem: "" },
-    homeTeam: { id: 10, name: "Arsenal FC", crest: "" },
-    awayTeam: { id: 11, name: "Chelsea FC", crest: "" },
-    score: { fullTime: { home: null, away: null } },
-  });
+  // lib/matchHistory.js — table match_history, filtrée par profile_id).
+  matchHistoryRows.push({ profile_id: profileIdA, match_id: "101", home_team_name: "Arsenal FC", away_team_name: "Chelsea FC", added_at: Date.now() });
 
   const historiqueA1 = render(<Historique />);
   const cardsA1 = await screen.findAllByTestId("match-history-card");
@@ -258,20 +167,19 @@ test("parcours complet : nouvel email -> donnée personnelle -> déconnexion -> 
   historiqueA1.unmount();
 
   // --- Déconnexion du compte A : le bouton "Se déconnecter" (SiteHeader, rendu par
-  // Historique) déconnecte réellement et renvoie vers /connexion.
+  // Historique) efface le cookie de session et renvoie vers /connexion.
   const historiqueForLogout = render(<Historique />);
   await screen.findAllByTestId("match-history-card");
   fireEvent.click(screen.getByRole("button", { name: "Se déconnecter" }));
   await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/connexion"));
-  expect((await supabase.auth.getSession()).data.session).toBeNull();
+  expect(currentSession).toBeNull();
   historiqueForLogout.unmount();
   pushMock.mockClear();
 
-  // --- 2e email (compte B), isolation : jamais le même compte que A.
-  await loginWithCode("bob@example.com");
-  const sessionB = (await supabase.auth.getSession()).data.session;
-  expect(sessionB?.user?.email).toBe("bob@example.com");
-  expect(sessionB.user.id).not.toBe(userIdA);
+  // --- 4. Connexion avec un 2e email (compte B), isolation : jamais le même compte.
+  await loginWithEmail("bob@example.com");
+  expect(currentSession?.email).toBe("bob@example.com");
+  expect(currentSession.id).not.toBe(profileIdA);
 
   // --- Isolation (test clé) : B ne doit voir AUCUNE donnée de A.
   const historiqueB = render(<Historique />);
@@ -280,15 +188,15 @@ test("parcours complet : nouvel email -> donnée personnelle -> déconnexion -> 
   expect(screen.queryByTestId("match-history-card")).not.toBeInTheDocument();
   historiqueB.unmount();
 
-  // --- Action d'administration depuis le compte B (non-admin) : refusée.
-  expect(isOwner(sessionB)).toBe(false);
-  const recomputeReq = { method: "POST", headers: { origin: "https://blume.example.com", host: "blume.example.com" }, socket: {} };
+  // --- 6. Action d'administration depuis le compte B (non-admin) : refusée.
+  expect(isAdmin(currentSession)).toBe(false);
+  const recomputeReq = { method: "POST", headers: { origin: "https://blume.example.com", host: "blume.example.com" }, socket: {}, cookies: {} };
   const recomputeRes = { statusCode: 200, headers: {}, setHeader(k, v) { this.headers[k] = v; }, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } };
   await handleRecompute(recomputeReq, recomputeRes);
   expect(recomputeRes.statusCode).toBe(403);
 
   // --- Déconnexion du compte B.
-  await supabase.auth.signOut();
+  currentSession = null;
 
   // --- Protection : un visiteur non connecté qui tente d'ouvrir une page du site est
   // renvoyé vers /connexion (aucune session -> lib/useRequireAuth.js redirige).
@@ -298,13 +206,12 @@ test("parcours complet : nouvel email -> donnée personnelle -> déconnexion -> 
   expect(screen.queryAllByRole("button", { name: /^analyser$/i })).toHaveLength(0);
   homeAnonymous.unmount();
 
-  // --- 3. Reconnexion avec le MÊME email : on retrouve bien le compte A et SES données.
+  // --- 5. Reconnexion avec le MÊME email : on retrouve bien le compte A et SES données.
   pushMock.mockClear();
   replaceMock.mockClear();
-  await loginWithCode("alice@example.com");
-  const sessionAAgain = (await supabase.auth.getSession()).data.session;
-  expect(sessionAAgain?.user?.email).toBe("alice@example.com");
-  expect(sessionAAgain.user.id).toBe(userIdA);
+  await loginWithEmail("alice@example.com");
+  expect(currentSession?.email).toBe("alice@example.com");
+  expect(currentSession.id).toBe(profileIdA);
 
   const historiqueA2 = render(<Historique />);
   const cardsA2 = await screen.findAllByTestId("match-history-card");
@@ -313,11 +220,11 @@ test("parcours complet : nouvel email -> donnée personnelle -> déconnexion -> 
   historiqueA2.unmount();
 }, 20000);
 
-test("action d'administration : autorisée pour le compte dont l'email correspond à OWNER_EMAIL", async () => {
-  process.env.OWNER_EMAIL = "owner@example.com";
-  await loginWithCode("owner@example.com");
+test("6bis. action d'administration : autorisée pour le compte dont l'email correspond à ADMIN_EMAIL", async () => {
+  process.env.ADMIN_EMAIL = "admin@example.com";
+  await loginWithEmail("admin@example.com");
 
-  const recomputeReq = { method: "POST", headers: { origin: "https://blume.example.com", host: "blume.example.com" }, socket: {} };
+  const recomputeReq = { method: "POST", headers: { origin: "https://blume.example.com", host: "blume.example.com" }, socket: {}, cookies: {} };
   const recomputeRes = { statusCode: 200, headers: {}, setHeader(k, v) { this.headers[k] = v; }, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } };
   await handleRecompute(recomputeReq, recomputeRes);
   expect(recomputeRes.statusCode).toBe(200);

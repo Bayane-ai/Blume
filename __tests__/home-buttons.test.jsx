@@ -14,16 +14,14 @@ jest.mock("next/router", () => ({
   useRouter: () => ({ pathname: "/", push: pushMock, replace: replaceMock }),
 }));
 
-let mockSession = { user: { email: "test@example.com" } };
+let mockSession = { email: "test@example.com" };
 
-jest.mock("../lib/supabaseClient", () => ({
-  supabase: {
-    auth: {
-      getSession: () => Promise.resolve({ data: { session: mockSession } }),
-      onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
-      signOut: () => Promise.resolve({}),
-    },
-  },
+jest.mock("../lib/useRequireAuth", () => ({
+  useRequireAuth: () => ({
+    session: mockSession,
+    sessionChecked: true,
+    authorized: Boolean(mockSession),
+  }),
 }));
 
 const pronostic = {
@@ -73,7 +71,7 @@ describe("Page Matchs en ligne — chaque bouton restant est fonctionnel", () =>
     mockFetchRouter();
     pushMock.mockClear();
     replaceMock.mockClear();
-    mockSession = { user: { email: "test@example.com" } };
+    mockSession = { email: "test@example.com" };
   });
 
   test("la recherche filtre réellement les matchs, sans bouton factice inactif", async () => {
@@ -103,16 +101,16 @@ describe("Page Matchs en ligne — chaque bouton restant est fonctionnel", () =>
     expect(screen.getByRole("button", { name: /se déconnecter/i })).toBeInTheDocument();
   });
 
-  // Bloc 3 : la première page vue par un visiteur non connecté doit être la page de
-  // connexion — l'accès anonyme (autrefois temporaire, le temps que l'inscription soit
-  // réparée) n'est plus permis maintenant que l'inscription/la connexion fonctionnent
-  // réellement (Blocs 1-3).
-  test("sans session, redirection immédiate vers /connexion, jamais la liste des matchs affichée", async () => {
+  // Bloc 3 : sans session, jamais la liste des matchs affichée (la redirection
+  // effective vers /connexion elle-même est vérifiée de bout en bout, pour TOUTES
+  // les pages protégées, par __tests__/all-pages-protected.test.jsx — useRequireAuth
+  // est mocké ici, ce test-ci ne couvre que le comportement OBSERVABLE de cette page
+  // quand elle n'est pas autorisée).
+  test("sans session, jamais la liste des matchs affichée", async () => {
     mockSession = null;
 
     render(<Home />);
 
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/connexion"));
     expect(screen.queryAllByRole("button", { name: /^analyser$/i })).toHaveLength(0);
   });
 

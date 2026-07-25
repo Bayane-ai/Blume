@@ -1,16 +1,14 @@
-import { createSupabaseServerClient } from "../../lib/supabaseServer";
-import { isOwner } from "../../lib/auth/owner";
+import { getSession } from "../../lib/session";
+import { isAdmin } from "../../lib/auth/admin";
 
 // Route de LECTURE seule : répond uniquement "est-ce que la session ACTUELLE de
-// l'appelant est celle du propriétaire ?" (un simple booléen) — jamais OWNER_ID ni
-// OWNER_EMAIL eux-mêmes, jamais l'identité du propriétaire pour qui que ce soit
-// d'autre. Sert uniquement à afficher (ou non) le lien "Admin" dans la navigation
-// (voir components/SiteHeader.js) : un simple confort d'affichage, jamais la
-// protection elle-même (la vraie protection est le contrôle serveur de /admin et des
-// routes d'écriture, voir lib/auth/owner.js).
+// l'appelant est celle de l'administrateur ?" (un simple booléen) — jamais ADMIN_EMAIL
+// lui-même, jamais l'identité de l'administrateur pour qui que ce soit d'autre. Sert
+// uniquement à afficher (ou non) le lien "Admin" dans la navigation (voir
+// components/SiteHeader.js) : un simple confort d'affichage, jamais la protection
+// elle-même (la vraie protection est le contrôle serveur de /admin et des routes
+// d'écriture, voir lib/auth/admin.js).
 export default async function handler(req, res) {
-  const supabase = createSupabaseServerClient(req, res);
-  const { data: { user } } = await supabase.auth.getUser();
   res.setHeader("Cache-Control", "no-store");
-  return res.status(200).json({ isOwner: isOwner(user ? { user } : null) });
+  return res.status(200).json({ isOwner: isAdmin(getSession(req)) });
 }

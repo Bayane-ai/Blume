@@ -14,11 +14,7 @@ jest.mock("next/router", () => ({
   useRouter: () => ({ pathname: "/" }),
 }));
 
-jest.mock("../lib/supabaseClient", () => ({
-  supabase: { auth: { signOut: jest.fn() } },
-}));
-
-const session = { user: { id: "user-1", email: "test@example.com" } };
+const session = { id: "user-1", email: "test@example.com" };
 
 beforeEach(() => {
   global.fetch = jest.fn();

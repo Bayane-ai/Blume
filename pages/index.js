@@ -37,7 +37,7 @@ function normalize(str) {
 export default function Home() {
   const { session, sessionChecked, authorized } = useRequireAuth();
   const router = useRouter();
-  const userId = session?.user?.id;
+  const userId = session?.id;
 
   const [search, setSearch] = useState("");
   const [recentSearches, setRecentSearches] = useState([]);
@@ -95,8 +95,8 @@ export default function Home() {
     return () => clearInterval(id);
   }, [authorized, loadLiveMatches]);
 
-  // Historique de recherche : personnel à chaque compte (Supabase, avec RLS — voir
-  // supabase/migrations/0001_personalization.sql), jamais partagé entre deux comptes.
+  // Historique de recherche : personnel à chaque compte, filtré côté serveur par
+  // profile_id (voir pages/api/search-history.js), jamais partagé entre deux comptes.
   useEffect(() => {
     if (!authorized || !userId) return;
     getRecentSearches(userId).then(setRecentSearches);

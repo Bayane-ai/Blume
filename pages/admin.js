@@ -1,34 +1,30 @@
 import { useState } from "react";
-import { createSupabaseServerClient } from "../lib/supabaseServer";
-import { isOwner } from "../lib/auth/owner";
+import { getSession } from "../lib/session";
+import { isAdmin } from "../lib/auth/admin";
 import SiteHeader from "../components/SiteHeader";
 
 // Zone "propriétaire unique" (voir PROMPT) : le contrôle d'accès a lieu ENTIÈREMENT
 // côté serveur, avant même que la moindre ligne de cette page n'atteigne le
-// navigateur — un visiteur qui n'est pas le propriétaire (session absente, invalide,
+// navigateur — un visiteur qui n'est pas l'administrateur (session absente, invalide,
 // ou simplement un autre compte) reçoit un vrai 403 HTTP, jamais le HTML/JS de cette
 // page. C'est délibérément DIFFÉRENT du reste du site (protégé côté client via
 // lib/useRequireAuth.js) : ici, la protection ne doit jamais dépendre de JavaScript
 // qui s'exécute dans le navigateur de l'appelant — un script qui interroge /admin
 // directement (curl, Postman) doit recevoir exactement la même réponse 403.
 export async function getServerSideProps({ req, res }) {
-  const supabase = createSupabaseServerClient(req, res);
-  // auth.getUser() (jamais getSession() seul) : revalide le jeton auprès du serveur
-  // Supabase Auth à chaque appel, la seule vérification fiable côté serveur (voir
-  // lib/auth/owner.js).
-  const { data: { user } } = await supabase.auth.getUser();
+  const session = getSession(req);
 
-  if (!isOwner(user ? { user } : null)) {
+  if (!isAdmin(session)) {
     res.statusCode = 403;
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
     res.end("Non autorisé");
     return { props: {} };
   }
 
-  return { props: { ownerEmail: user.email || null } };
+  return { props: { adminEmail: session.email } };
 }
 
-export default function Admin({ ownerEmail }) {
+export default function Admin({ adminEmail }) {
   const [recomputeState, setRecomputeState] = useState({ loading: false, result: null, error: null });
 
   const runRecompute = async () => {
@@ -45,13 +41,13 @@ export default function Admin({ ownerEmail }) {
 
   return (
     <div style={st.page}>
-      <SiteHeader session={{ user: { email: ownerEmail } }} />
+      <SiteHeader session={{ id: null, email: adminEmail }} />
 
       <main style={st.main}>
         <section style={st.hero}>
           <h1 style={st.heroTitle}>Administration</h1>
           <p style={st.heroSubtitle}>
-            Zone réservée au propriétaire du site — connecté en tant que {ownerEmail || "propriétaire"}.
+            Zone réservée au propriétaire du site — connecté en tant que {adminEmail || "administrateur"}.
           </p>
         </section>
 

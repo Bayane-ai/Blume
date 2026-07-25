@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { supabase } from "../lib/supabaseClient";
 
 // Navigation du site, partagée par toutes les pages : "Live", "Matchs à venir",
 // "Combiné Vision", "News", "Historique", "Probabilités réussies" et "Probabilités
@@ -8,17 +7,22 @@ import { supabase } from "../lib/supabaseClient";
 // Liens en <a> classiques plutôt que next/link : chaque page recharge ses propres
 // données réelles à l'arrivée, et ça évite de dépendre du RouterContext de next/link
 // dans les tests.
+//
+// `session` est ici `{ id, email }` (voir lib/session.js#getSession) — il n'y a plus
+// de pseudo (la table "profiles" ne stocke plus qu'un email, voir
+// supabase/migrations/0008_custom_auth.sql) : l'email est affiché directement, sans
+// lecture supplémentaire.
 export default function SiteHeader({ session }) {
   const router = useRouter();
-  const userId = session?.user?.id;
-  const [pseudo, setPseudo] = useState(null);
+  const userId = session?.id;
   const [isOwnerAccount, setIsOwnerAccount] = useState(false);
 
-  // Lien "Admin" affiché UNIQUEMENT pour le propriétaire (voir PROMPT étape 5 :
-  // "n'apparaît dans la navigation que si isOwner() est vrai"). /api/whoami ne renvoie
-  // qu'un booléen calculé côté serveur (jamais OWNER_ID/OWNER_EMAIL au client) — ceci
-  // est un confort d'affichage, PAS la protection réelle : /admin reste protégé côté
-  // serveur (voir pages/admin.js) même si ce fetch échoue ou est falsifié.
+  // Lien "Admin" affiché UNIQUEMENT pour l'administrateur (voir PROMPT point 8 :
+  // "seul le compte dont l'email est égal à ADMIN_EMAIL peut modifier quoi que ce
+  // soit"). /api/whoami ne renvoie qu'un booléen calculé côté serveur (jamais
+  // ADMIN_EMAIL lui-même) — ceci est un confort d'affichage, PAS la protection
+  // réelle : /admin et les routes d'écriture restent protégés côté serveur (voir
+  // pages/admin.js, lib/auth/admin.js) même si ce fetch échoue ou est falsifié.
   useEffect(() => {
     if (!userId) {
       setIsOwnerAccount(false);
@@ -45,47 +49,17 @@ export default function SiteHeader({ session }) {
     };
   }, [userId]);
 
-  // Bloc 4 : affiche le pseudo du compte connecté (table "profiles", voir
-  // supabase/migrations/0005_profiles.sql) — replie sur l'email tant que le pseudo
-  // n'est pas encore renseigné (ex : compte créé avant l'ajout du pseudo à
-  // l'inscription). La lecture passe par le client navigateur authentifié : la Row
-  // Level Security ("profiles_select_own") garantit déjà qu'un compte ne peut lire
-  // QUE sa propre ligne, quoi qu'il arrive.
-  useEffect(() => {
-    if (!userId) {
-      setPseudo(null);
-      return;
-    }
-    let active = true;
-    // try/catch synchrone en plus du .catch() : un client Supabase minimal (tests,
-    // environnements où seule l'auth est configurée) peut ne pas exposer .from — ne
-    // jamais faire planter l'en-tête pour un simple affichage de confort, l'email
-    // reste toujours affiché en repli.
-    try {
-      supabase
-        .from("profiles")
-        .select("nom_utilisateur")
-        .eq("id", userId)
-        .maybeSingle()
-        .then(({ data }) => {
-          if (active) setPseudo(data?.nom_utilisateur || null);
-        })
-        .catch((e) => console.error("Erreur lecture du pseudo:", e.message));
-    } catch (e) {
-      console.error("Erreur lecture du pseudo:", e.message);
-    }
-    return () => {
-      active = false;
-    };
-  }, [userId]);
-
-  const displayName = pseudo || session?.user?.email;
-
-  // "Se déconnecter" (voir PROMPT) renvoie explicitement vers /connexion — sans
-  // attendre le mécanisme réactif de lib/useRequireAuth.js (qui redirigerait de toute
-  // façon dès que la session disparaît), pour un comportement immédiat et prévisible.
+  // "Se déconnecter" (voir PROMPT) efface le cookie de session côté serveur puis
+  // renvoie explicitement vers /connexion — sans attendre le mécanisme réactif de
+  // lib/useRequireAuth.js, pour un comportement immédiat et prévisible.
   const logout = async () => {
-    await supabase.auth.signOut();
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch (e) {
+      // Le cookie httpOnly reste alors en place côté navigateur : redirection quand
+      // même, la prochaine vérification de session (voir useRequireAuth) le
+      // détectera à nouveau si l'appel a réellement échoué.
+    }
     router.push("/connexion");
   };
 
@@ -95,7 +69,7 @@ export default function SiteHeader({ session }) {
         <span style={st.logo}>Blume</span>
         {session && (
           <div style={st.headerRight}>
-            <span style={st.userEmail}>{displayName}</span>
+            <span style={st.userEmail}>{session.email}</span>
             <button onClick={logout} style={st.smallBtn}>Se déconnecter</button>
           </div>
         )}

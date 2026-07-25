@@ -13,14 +13,12 @@ jest.mock("next/router", () => ({
   useRouter: () => ({ isReady: true, query: { code: "PL" }, replace: jest.fn() }),
 }));
 
-jest.mock("../lib/supabaseClient", () => ({
-  supabase: {
-    auth: {
-      getSession: () => Promise.resolve({ data: { session: { user: { id: "u1", email: "test@example.com" } } } }),
-      onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
-      signOut: () => Promise.resolve({}),
-    },
-  },
+jest.mock("../lib/useRequireAuth", () => ({
+  useRequireAuth: () => ({
+    session: { id: "u1", email: "test@example.com" },
+    sessionChecked: true,
+    authorized: true,
+  }),
 }));
 
 function mockFetch({ standingsTable = [] } = {}) {

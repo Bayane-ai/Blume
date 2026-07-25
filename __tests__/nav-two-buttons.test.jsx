@@ -17,14 +17,12 @@ jest.mock("next/router", () => ({
   useRouter: () => ({ pathname: mockPathname, push: jest.fn(), replace: jest.fn() }),
 }));
 
-jest.mock("../lib/supabaseClient", () => ({
-  supabase: {
-    auth: {
-      getSession: () => Promise.resolve({ data: { session: { user: { email: "test@example.com" } } } }),
-      onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
-      signOut: () => Promise.resolve({}),
-    },
-  },
+jest.mock("../lib/useRequireAuth", () => ({
+  useRequireAuth: () => ({
+    session: { email: "test@example.com" },
+    sessionChecked: true,
+    authorized: true,
+  }),
 }));
 
 function liveFixture() {

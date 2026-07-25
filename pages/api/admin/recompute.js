@@ -1,5 +1,5 @@
-import { createSupabaseServerClient } from "../../../lib/supabaseServer";
-import { isOwner, requireOwner, OwnerRequiredError } from "../../../lib/auth/owner";
+import { getSession } from "../../../lib/session";
+import { requireAdmin, AdminRequiredError } from "../../../lib/auth/admin";
 import { guardMutation } from "../../../lib/security/guardMutation";
 import { maintainAndGetComboStats } from "../../../lib/comboHistory";
 import { listAndMaintainHistory } from "../../../lib/pronosticHistory";
@@ -10,9 +10,11 @@ import { listAndMaintainHistory } from "../../../lib/pronosticHistory";
 // chargement des pages concernées, voir pages/api/pronostic-history.js et
 // pages/api/combo-history.js) — réservé au propriétaire, jamais un visiteur ordinaire.
 //
-// requireOwner() en tout premier, avant même de lire le corps de la requête ou de
+// requireAdmin() en tout premier, avant même de lire le corps de la requête ou de
 // toucher à quoi que ce soit : AUCUNE exception. Message de refus générique (jamais
-// "tu n'es pas <email du propriétaire>"), même code 403 qu'un visiteur non connecté.
+// "tu n'es pas <email de l'administrateur>"), même code 403 qu'un visiteur non
+// connecté. Être connecté (avoir une session valide) ne suffit pas : seul le compte
+// dont l'email correspond à ADMIN_EMAIL passe ce contrôle (voir lib/auth/admin.js).
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -20,17 +22,15 @@ export default async function handler(req, res) {
   }
 
   try {
-    const supabase = createSupabaseServerClient(req, res);
-    const { data: { user } } = await supabase.auth.getUser();
-    requireOwner(user ? { user } : null);
+    requireAdmin(getSession(req));
   } catch (e) {
-    if (e instanceof OwnerRequiredError) return res.status(403).json({ error: "Non autorisé" });
+    if (e instanceof AdminRequiredError) return res.status(403).json({ error: "Non autorisé" });
     return res.status(500).json({ error: "Erreur serveur." });
   }
 
-  // CSRF/origine + débit — après requireOwner() : un appel qui n'est même pas
-  // authentifié comme propriétaire ne doit jamais avancer jusqu'ici, mais un compte
-  // propriétaire compromis reste lui aussi soumis à ces protections.
+  // CSRF/origine + débit — après requireAdmin() : un appel qui n'est même pas
+  // authentifié comme administrateur ne doit jamais avancer jusqu'ici, mais un
+  // compte administrateur compromis reste lui aussi soumis à ces protections.
   if (!guardMutation(req, res, "admin-recompute", { limit: 10 })) return;
 
   const token = process.env.FOOTBALL_DATA_TOKEN;

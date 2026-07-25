@@ -29,25 +29,16 @@ jest.mock("next/router", () => ({
   useRouter: () => ({ pathname: "/", push: pushMock, replace: replaceMock, isReady: true, query: mockQuery }),
 }));
 
-jest.mock("../lib/supabaseClient", () => ({
-  supabase: {
-    auth: {
-      // Aucune session : c'est exactement le cas "visiteur non connecté" à vérifier.
-      getSession: () => Promise.resolve({ data: { session: null } }),
-      onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
-      signOut: () => Promise.resolve({}),
-    },
-    from: jest.fn(() => ({
-      select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) }),
-    })),
-  },
-}));
-
 beforeEach(() => {
   replaceMock.mockClear();
   pushMock.mockClear();
   mockQuery = {};
-  global.fetch = jest.fn(() => Promise.reject(new Error("aucune requête réseau attendue : la page doit rediriger avant tout chargement de données")));
+  global.fetch = jest.fn((url) => {
+    // Aucune session : c'est exactement le cas "visiteur non connecté" à vérifier
+    // (voir lib/useRequireAuth.js, qui demande la session au serveur via cette route).
+    if (url === "/api/auth/session") return Promise.resolve({ json: () => Promise.resolve({ session: null }) });
+    return Promise.reject(new Error("aucune autre requête réseau attendue : la page doit rediriger avant tout chargement de données"));
+  });
 });
 
 const pages = [
