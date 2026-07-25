@@ -41,6 +41,22 @@ export default function Connexion() {
     });
   }, [router]);
 
+  // Échec de "Continuer avec Google" APRÈS le départ vers Google (provider pas
+  // encore activé côté Supabase, redirect URI non autorisée, personne qui annule sur
+  // l'écran Google...) : Supabase renvoie alors vers "/" avec l'erreur dans l'URL,
+  // jamais directement ici — c'est lib/useRequireAuth.js (le point de passage commun
+  // à toutes les pages protégées) qui détecte ce cas et redirige vers CET écran avec
+  // "?authError=...". On l'affiche ici comme n'importe quelle autre erreur de
+  // connexion, puis on nettoie l'URL pour qu'un rechargement de la page ne la
+  // réaffiche pas indéfiniment.
+  useEffect(() => {
+    if (!router.isReady) return;
+    const { authError, authErrorDescription } = router.query;
+    if (!authError && !authErrorDescription) return;
+    setError(friendlyAuthError({ code: authError, message: authErrorDescription }));
+    router.replace("/connexion", undefined, { shallow: true });
+  }, [router, router.isReady, router.query]);
+
   // Réchauffe le bundle JS de la page "/" pendant que la personne est encore sur cet
   // écran : la redirection après connexion n'attend plus le chargement à la demande.
   useEffect(() => {

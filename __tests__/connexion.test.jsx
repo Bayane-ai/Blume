@@ -11,8 +11,10 @@ import Connexion from "../pages/connexion";
 
 const pushMock = jest.fn();
 const replaceMock = jest.fn();
+let mockIsReady = false;
+let mockQuery = {};
 jest.mock("next/router", () => ({
-  useRouter: () => ({ push: pushMock, replace: replaceMock }),
+  useRouter: () => ({ push: pushMock, replace: replaceMock, isReady: mockIsReady, query: mockQuery }),
 }));
 
 const signInWithOAuth = jest.fn();
@@ -38,6 +40,8 @@ beforeEach(() => {
   getSession.mockReset().mockResolvedValue({ data: { session: null } });
   pushMock.mockClear();
   replaceMock.mockClear();
+  mockIsReady = false;
+  mockQuery = {};
 });
 
 test('affiche le bouton "Continuer avec Google" et le champ email, jamais de mot de passe', () => {
@@ -70,6 +74,31 @@ describe("Continuer avec Google", () => {
     fireEvent.click(screen.getByRole("button", { name: /continuer avec google/i }));
 
     await screen.findByText(/momentanément indisponible/i);
+  });
+});
+
+// Bug corrigé : quand "Continuer avec Google" échoue APRÈS le départ vers Google
+// (provider pas encore activé côté Supabase, redirect URI non autorisée, personne qui
+// annule sur l'écran Google...), Supabase renvoie vers "/" avec l'erreur dans l'URL —
+// lib/useRequireAuth.js détecte ce cas (voir __tests__/use-require-auth.test.js) et
+// redirige ici avec "?authError=...&authErrorDescription=..." : cette page doit
+// l'afficher clairement plutôt que de laisser la personne sur un écran qui semble
+// vide.
+describe("échec de connexion Google détecté au retour (?authError=...)", () => {
+  test("affiche un message clair traduit et nettoie l'URL", async () => {
+    mockIsReady = true;
+    mockQuery = { authError: "access_denied", authErrorDescription: "User denied access" };
+    render(<Connexion />);
+
+    await screen.findByText(/connexion annulée/i);
+    expect(replaceMock).toHaveBeenCalledWith("/connexion", undefined, { shallow: true });
+  });
+
+  test("aucune erreur dans l'URL : rien ne s'affiche, aucun nettoyage inutile", () => {
+    mockIsReady = true;
+    mockQuery = {};
+    render(<Connexion />);
+    expect(replaceMock).not.toHaveBeenCalled();
   });
 });
 

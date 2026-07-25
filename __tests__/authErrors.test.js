@@ -34,6 +34,11 @@ test("code expiré ou invalide (otp_expired) : message clair, sans indice sur la
     .toBe("Ce code est invalide ou a expiré. Demande-en un nouveau.");
 });
 
+test("connexion Google annulée par la personne (access_denied) : message clair", () => {
+  expect(friendlyAuthError({ code: "access_denied", message: "User denied access" }))
+    .toBe("Connexion annulée.");
+});
+
 test("email invalide : message clair", () => {
   expect(friendlyAuthError({ code: "validation_failed", message: "Unable to validate email address: invalid format" }))
     .toBe("Adresse email invalide.");
