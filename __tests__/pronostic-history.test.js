@@ -9,11 +9,11 @@ import {
   classifyOutcome, toPredictionSnapshot, getFrozenPrediction, saveFrozenPrediction,
   verifyFrozenPrediction, canPersistMatch, listAndMaintainHistory,
 } from "../lib/pronosticHistory";
-import { supabase } from "../lib/supabaseClient";
+import { supabaseAnon as supabase } from "../lib/supabaseAnon";
 import { getLiveMatch } from "../lib/liveMatchCache";
 import { fetchRealMatchStats, verifyPredictionLines } from "../lib/pronosticVerification";
 
-jest.mock("../lib/supabaseClient", () => ({ supabase: { from: jest.fn() } }));
+jest.mock("../lib/supabaseAnon", () => ({ supabaseAnon: { from: jest.fn() } }));
 jest.mock("../lib/liveMatchCache", () => ({ getLiveMatch: jest.fn() }));
 jest.mock("../lib/pronosticVerification", () => ({
   fetchRealMatchStats: jest.fn(() => Promise.resolve(null)),

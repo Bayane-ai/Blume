@@ -8,11 +8,11 @@
  * entrées de plus de 5 jours.
  */
 import { saveComboPredictions, getSuccessRates, getComboProgress, maintainAndGetComboStats } from "../lib/comboHistory";
-import { supabase } from "../lib/supabaseClient";
+import { supabaseAnon as supabase } from "../lib/supabaseAnon";
 import { getLiveMatch } from "../lib/liveMatchCache";
 import { fetchRealMatchStats } from "../lib/pronosticVerification";
 
-jest.mock("../lib/supabaseClient", () => ({ supabase: { from: jest.fn() } }));
+jest.mock("../lib/supabaseAnon", () => ({ supabaseAnon: { from: jest.fn() } }));
 jest.mock("../lib/liveMatchCache", () => ({ getLiveMatch: jest.fn() }));
 jest.mock("../lib/pronosticVerification", () => ({ fetchRealMatchStats: jest.fn(() => Promise.resolve(null)) }));
 
