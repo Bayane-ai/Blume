@@ -182,12 +182,32 @@ describe('"Renvoyer le code" — disponible après 30 secondes seulement', () =>
   });
 });
 
-test("erreur de configuration (\"Invalid path specified\") traduite en français", async () => {
+// Le détail technique brut est désormais affiché (jamais un texte vague) : c'est ce
+// qui permet de diagnostiquer une config Supabase cassée directement depuis l'écran,
+// sans avoir besoin des logs serveur.
+test("erreur de configuration (\"Invalid path specified\") : message clair ET détail technique brut visible", async () => {
   signInWithOtp.mockResolvedValue({ error: { message: "Invalid path specified in request URL" } });
   render(<Connexion />);
   fireEvent.change(screen.getByPlaceholderText("Entre ton email"), { target: { value: "test@example.com" } });
   fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
 
   await screen.findByText(/erreur de configuration/i);
-  expect(screen.queryByText(/invalid path specified/i)).not.toBeInTheDocument();
+  expect(screen.getByText(/invalid path specified/i)).toBeInTheDocument();
+});
+
+// Bug remonté par l'utilisateur : "Erreur de configuration" s'affichait sans jamais
+// dire QUELLE variable manquait — voir lib/supabaseClient.js (missing_config).
+test("configuration Supabase manquante : le message précis (quelle variable, quoi faire) est affiché", async () => {
+  signInWithOtp.mockResolvedValue({
+    error: {
+      code: "missing_config",
+      message: "Configuration Supabase manquante : NEXT_PUBLIC_SUPABASE_URL est vide dans ce déploiement. Redéploie après l'avoir ajoutée sur Vercel.",
+    },
+  });
+  render(<Connexion />);
+  fireEvent.change(screen.getByPlaceholderText("Entre ton email"), { target: { value: "test@example.com" } });
+  fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
+
+  expect(await screen.findByText(/NEXT_PUBLIC_SUPABASE_URL est vide/i)).toBeInTheDocument();
+  expect(screen.getByText(/redéploie/i)).toBeInTheDocument();
 });

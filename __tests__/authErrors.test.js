@@ -61,9 +61,13 @@ test("aucune erreur reconnue et aucun message exploitable : message générique 
 });
 
 // Voir lib/supabaseClient.js : si NEXT_PUBLIC_SUPABASE_URL / ANON_KEY manquent
-// (typiquement définies en Preview/Development sur Vercel mais pas en Production),
-// le client renvoie ce code plutôt que de faire planter toute l'application.
-test("configuration Supabase manquante (code missing_config) : message clair pointant vers un souci de configuration", () => {
-  const msg = friendlyAuthError({ code: "missing_config", message: "Configuration Supabase manquante", status: 500 });
-  expect(msg).toMatch(/configuration/i);
+// (typiquement définies en Preview/Development sur Vercel mais pas en Production, ou
+// ajoutées sans redéployer ensuite), le client renvoie ce code plutôt que de faire
+// planter toute l'application. Contrairement aux autres erreurs, le message brut est
+// affiché TEL QUEL (jamais un texte vague) : il dit exactement quelle variable
+// manque, ce n'est jamais une donnée sensible.
+test("configuration Supabase manquante (code missing_config) : le message précis (quelle variable manque) est affiché tel quel", () => {
+  const raw = "Configuration Supabase manquante : NEXT_PUBLIC_SUPABASE_URL est vide dans ce déploiement. Redéploie après l'avoir ajoutée.";
+  const msg = friendlyAuthError({ code: "missing_config", message: raw, status: 500 });
+  expect(msg).toBe(raw);
 });
