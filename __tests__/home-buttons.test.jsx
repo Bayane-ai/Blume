@@ -96,11 +96,11 @@ describe("Page Matchs en ligne — chaque bouton restant est fonctionnel", () =>
     expect(input.value).toBe("");
   });
 
-  test("un compte connecté voit son email et un bouton de déconnexion (l'accès n'est plus possible sans compte)", async () => {
+  test("un compte connecté voit son email (pas encore de pseudo) et un bouton \"Se déconnecter\" (l'accès n'est plus possible sans compte)", async () => {
     render(<Home />);
     await waitFor(() => expect(screen.getAllByRole("button", { name: /^analyser$/i }).length).toBeGreaterThan(0));
     expect(screen.getByText("test@example.com")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /déconnexion/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /se déconnecter/i })).toBeInTheDocument();
   });
 
   // Bloc 3 : la première page vue par un visiteur non connecté doit être la page de

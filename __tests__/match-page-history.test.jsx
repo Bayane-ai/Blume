@@ -2,14 +2,18 @@
  * @jest-environment jsdom
  *
  * pages/match/[id].js — dès que l'utilisateur ouvre l'analyse/les pronostics d'un
- * match, il s'ajoute automatiquement en haut de l'historique (voir PROMPT
- * "Historique", lib/matchHistory.js). Rouvrir un match depuis l'historique doit
- * afficher les pronostics sans score s'il n'a pas encore été joué, ou la mention
- * "Match terminé" (avec ses pronostics) s'il l'a été depuis.
+ * match, il s'ajoute automatiquement en haut de SON historique personnel (voir PROMPT
+ * "Historique", lib/matchHistory.js, table Supabase match_history isolée par compte).
+ * Rouvrir un match depuis l'historique doit afficher les pronostics sans score s'il n'a
+ * pas encore été joué, ou la mention "Match terminé" (avec ses pronostics) s'il l'a été
+ * depuis.
  */
 import { render, screen, waitFor } from "@testing-library/react";
 import MatchPage from "../pages/match/[id]";
 import { listMatchHistory } from "../lib/matchHistory";
+import { supabase } from "../lib/supabaseClient";
+
+const USER_ID = "user-1";
 
 let mockRouter = { pathname: "/match/777", isReady: true, replace: jest.fn(), query: {} };
 jest.mock("next/router", () => ({
@@ -19,12 +23,64 @@ jest.mock("next/router", () => ({
 jest.mock("../lib/supabaseClient", () => ({
   supabase: {
     auth: {
-      getSession: () => Promise.resolve({ data: { session: { user: { email: "test@example.com" } } } }),
+      getSession: () => Promise.resolve({ data: { session: { user: { id: "user-1", email: "test@example.com" } } } }),
       onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
       signOut: () => Promise.resolve({}),
     },
+    from: jest.fn(),
   },
 }));
+
+// Même simulation en mémoire que __tests__/match-history-lib.test.js.
+let rows;
+
+function makeFromMock() {
+  return jest.fn((table) => {
+    if (table !== "match_history") throw new Error(`table inattendue dans le test : ${table}`);
+    return {
+      upsert: (row, opts) => {
+        const conflictCols = (opts?.onConflict || "").split(",");
+        const idx = rows.findIndex((r) => conflictCols.every((c) => r[c] === row[c]));
+        if (idx >= 0) rows[idx] = { ...rows[idx], ...row };
+        else rows.push({ ...row });
+        return Promise.resolve({ error: null });
+      },
+      delete: () => {
+        const filters = [];
+        const builder = {
+          eq: (col, val) => { filters.push(["eq", col, val]); return builder; },
+          lt: (col, val) => { filters.push(["lt", col, val]); return builder; },
+          then: (resolve) => {
+            rows = rows.filter((r) => !filters.every(([op, col, val]) => (op === "eq" ? r[col] === val : r[col] < val)));
+            return Promise.resolve({ error: null }).then(resolve);
+          },
+        };
+        return builder;
+      },
+      select: () => {
+        const filters = [];
+        let orderCol = null;
+        let ascending = true;
+        const builder = {
+          eq: (col, val) => { filters.push([col, val]); return builder; },
+          order: (col, o) => { orderCol = col; ascending = !!o?.ascending; return builder; },
+          then: (resolve) => {
+            let result = rows.filter((r) => filters.every(([col, val]) => r[col] === val));
+            if (orderCol) {
+              result = [...result].sort((a, b) => {
+                if (a[orderCol] === b[orderCol]) return 0;
+                const cmp = a[orderCol] > b[orderCol] ? 1 : -1;
+                return ascending ? cmp : -cmp;
+              });
+            }
+            return Promise.resolve({ data: result, error: null }).then(resolve);
+          },
+        };
+        return builder;
+      },
+    };
+  });
+}
 
 function baseQuery(overrides = {}) {
   return {
@@ -52,7 +108,8 @@ function baseAnalyzeResponse(overrides = {}) {
 }
 
 beforeEach(() => {
-  window.localStorage.clear();
+  rows = [];
+  supabase.from = makeFromMock();
 });
 
 test("ouvrir la page d'un match l'ajoute automatiquement en haut de l'historique", async () => {
@@ -61,11 +118,11 @@ test("ouvrir la page d'un match l'ajoute automatiquement en haut de l'historique
 
   render(<MatchPage />);
 
-  await waitFor(() => {
-    const list = listMatchHistory();
+  await waitFor(async () => {
+    const list = await listMatchHistory(USER_ID);
     expect(list).toHaveLength(1);
   });
-  const list = listMatchHistory();
+  const list = await listMatchHistory(USER_ID);
   expect(list[0].id).toBe("777");
   expect(list[0].homeTeam.name).toBe("Arsenal FC");
   expect(list[0].awayTeam.name).toBe("Chelsea FC");
@@ -76,7 +133,7 @@ test("ouvrir un match déjà présent dans l'historique le remonte en haut sans 
 
   mockRouter = { pathname: "/match/1", isReady: true, replace: jest.fn(), query: baseQuery({ id: "1" }) };
   const { unmount } = render(<MatchPage />);
-  await waitFor(() => expect(listMatchHistory()).toHaveLength(1));
+  await waitFor(async () => expect(await listMatchHistory(USER_ID)).toHaveLength(1));
   unmount();
 
   mockRouter = {
@@ -84,13 +141,13 @@ test("ouvrir un match déjà présent dans l'historique le remonte en haut sans 
     query: baseQuery({ id: "2", homeTeamName: "Real Madrid", awayTeamName: "Barcelona", homeTeamId: "20", awayTeamId: "21" }),
   };
   const second = render(<MatchPage />);
-  await waitFor(() => expect(listMatchHistory()).toHaveLength(2));
+  await waitFor(async () => expect(await listMatchHistory(USER_ID)).toHaveLength(2));
   second.unmount();
 
   mockRouter = { pathname: "/match/1", isReady: true, replace: jest.fn(), query: baseQuery({ id: "1" }) };
   render(<MatchPage />);
-  await waitFor(() => {
-    const list = listMatchHistory();
+  await waitFor(async () => {
+    const list = await listMatchHistory(USER_ID);
     expect(list).toHaveLength(2);
     expect(list[0].id).toBe("1");
   });

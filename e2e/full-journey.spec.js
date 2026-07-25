@@ -35,7 +35,7 @@ test.describe("Écran 1 — Matchs en ligne (accueil)", () => {
 
     await expect(page.getByText("Blume", { exact: true })).toBeVisible();
     await expect(page.getByText("test@example.com")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Déconnexion", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Se déconnecter", exact: true })).toBeVisible();
 
     // Navigation : exactement sept boutons.
     const nav = page.getByTestId("main-nav");

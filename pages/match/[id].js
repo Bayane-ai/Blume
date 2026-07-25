@@ -30,7 +30,8 @@ function formatKickoff(iso) {
 }
 
 export default function MatchPage() {
-  const { sessionChecked, authorized } = useRequireAuth();
+  const { session, sessionChecked, authorized } = useRequireAuth();
+  const userId = session?.user?.id;
   const router = useRouter();
   const {
     id: matchId,
@@ -96,14 +97,14 @@ export default function MatchPage() {
   }, [router.isReady, authorized, matchId]);
 
   // "Historique" (voir PROMPT) : dès que l'utilisateur ouvre l'analyse/les pronostics
-  // d'un match, il s'ajoute automatiquement en haut de l'historique (voir
-  // lib/matchHistory.js) — un instantané pris au moment de l'ouverture (mêmes champs
-  // que components/MatchCard.js:matchHref), jamais mis à jour ensuite par les
-  // rafraîchissements live : seule une NOUVELLE ouverture de la page remonte l'entrée
-  // et remet son délai d'effacement à zéro.
+  // d'un match, il s'ajoute automatiquement en haut de SON historique personnel (voir
+  // lib/matchHistory.js, table match_history propre à chaque compte) — un instantané
+  // pris au moment de l'ouverture (mêmes champs que components/MatchCard.js:matchHref),
+  // jamais mis à jour ensuite par les rafraîchissements live : seule une NOUVELLE
+  // ouverture de la page remonte l'entrée et remet son délai d'effacement à zéro.
   useEffect(() => {
-    if (!router.isReady || !authorized || !matchId) return;
-    addMatchToHistory({
+    if (!router.isReady || !authorized || !matchId || !userId) return;
+    addMatchToHistory(userId, {
       id: matchId,
       status: initialStatus || "",
       minute: initialMinute ? Number(initialMinute) : null,
@@ -119,7 +120,7 @@ export default function MatchPage() {
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router.isReady, authorized, matchId]);
+  }, [router.isReady, authorized, matchId, userId]);
 
   const currentStatus = liveState?.status || initialStatus;
 

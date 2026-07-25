@@ -4,20 +4,21 @@ import { listMatchHistory } from "../lib/matchHistory";
 import SiteHeader from "../components/SiteHeader";
 import MatchHistoryCard from "../components/MatchHistoryCard";
 
-// Page "Historique" (voir PROMPT) : les matchs dont l'utilisateur a déjà ouvert
-// l'analyse/les pronostics, du plus récent au plus ancien — voir lib/matchHistory.js
-// (journal côté navigateur, jamais effacé par la fin d'un match, seulement par le
-// temps : ~10 jours après consultation). Aucun bouton "Analyser" ici (voir
-// components/MatchHistoryCard.js) : cette page rappelle seulement ce qui a déjà été
-// consulté.
+// Page "Historique" (voir PROMPT) : les matchs dont CE COMPTE a déjà ouvert l'analyse/
+// les pronostics, du plus récent au plus ancien — voir lib/matchHistory.js (table
+// Supabase match_history, personnelle à chaque compte via Row Level Security, jamais
+// effacée par la fin d'un match, seulement par le temps : ~10 jours après
+// consultation). Aucun bouton "Analyser" ici (voir components/MatchHistoryCard.js) :
+// cette page rappelle seulement ce qui a déjà été consulté.
 export default function Historique() {
   const { session, sessionChecked, authorized } = useRequireAuth();
+  const userId = session?.user?.id;
   const [items, setItems] = useState(null);
 
   useEffect(() => {
-    if (!authorized) return;
-    setItems(listMatchHistory());
-  }, [authorized]);
+    if (!authorized || !userId) return;
+    listMatchHistory(userId).then(setItems);
+  }, [authorized, userId]);
 
   if (!sessionChecked) {
     return (

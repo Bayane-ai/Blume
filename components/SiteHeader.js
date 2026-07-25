@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../lib/supabaseClient";
 
@@ -9,19 +10,61 @@ import { supabase } from "../lib/supabaseClient";
 // dans les tests.
 export default function SiteHeader({ session }) {
   const router = useRouter();
-  const logout = () => supabase.auth.signOut();
+  const userId = session?.user?.id;
+  const [pseudo, setPseudo] = useState(null);
+
+  // Bloc 4 : affiche le pseudo du compte connecté (table "profiles", voir
+  // supabase/migrations/0005_profiles.sql) — replie sur l'email tant que le pseudo
+  // n'est pas encore renseigné (ex : compte créé avant l'ajout du pseudo à
+  // l'inscription). La lecture passe par le client navigateur authentifié : la Row
+  // Level Security ("profiles_select_own") garantit déjà qu'un compte ne peut lire
+  // QUE sa propre ligne, quoi qu'il arrive.
+  useEffect(() => {
+    if (!userId) {
+      setPseudo(null);
+      return;
+    }
+    let active = true;
+    // try/catch synchrone en plus du .catch() : un client Supabase minimal (tests,
+    // environnements où seule l'auth est configurée) peut ne pas exposer .from — ne
+    // jamais faire planter l'en-tête pour un simple affichage de confort, l'email
+    // reste toujours affiché en repli.
+    try {
+      supabase
+        .from("profiles")
+        .select("nom_utilisateur")
+        .eq("id", userId)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (active) setPseudo(data?.nom_utilisateur || null);
+        })
+        .catch((e) => console.error("Erreur lecture du pseudo:", e.message));
+    } catch (e) {
+      console.error("Erreur lecture du pseudo:", e.message);
+    }
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
+  const displayName = pseudo || session?.user?.email;
+
+  // "Se déconnecter" (voir PROMPT) renvoie explicitement vers /connexion — sans
+  // attendre le mécanisme réactif de lib/useRequireAuth.js (qui redirigerait de toute
+  // façon dès que la session disparaît), pour un comportement immédiat et prévisible.
+  const logout = async () => {
+    await supabase.auth.signOut();
+    router.push("/connexion");
+  };
 
   return (
     <header style={st.header}>
       <div style={st.top}>
         <span style={st.logo}>Blume</span>
-        {/* Sans session, aucun bouton "Se connecter" ici (retiré à la demande de
-            l'utilisateur) — l'accès reste possible sans compte (voir
-            lib/useRequireAuth.js), /login reste disponible par son URL directe. */}
         {session && (
           <div style={st.headerRight}>
-            <span style={st.userEmail}>{session.user?.email}</span>
-            <button onClick={logout} style={st.smallBtn}>Déconnexion</button>
+            <span style={st.userEmail}>{displayName}</span>
+            <button onClick={logout} style={st.smallBtn}>Se déconnecter</button>
           </div>
         )}
       </div>
