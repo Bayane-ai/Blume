@@ -27,9 +27,12 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Méthode non autorisée." });
   }
 
-  // CSRF/origine + débit (10 tentatives par minute maximum par IP, voir PROMPT point
-  // 10) — avant tout traitement, comme sur toutes les routes de mutation du site.
-  if (!guardMutation(req, res, "auth-login", { limit: 10 })) return;
+  // CSRF/origine + débit (20 tentatives par minute maximum PAR IP — jamais un
+  // compteur global partagé entre tous les visiteurs, jamais de limite journalière
+  // sur le nombre d'emails distincts : rien n'empêche donc 2000 comptes différents,
+  // depuis 2000 IP différentes, de se connecter le même jour) — avant tout
+  // traitement, comme sur toutes les routes de mutation du site.
+  if (!guardMutation(req, res, "auth-login", { limit: 20 })) return;
 
   if (!process.env.AUTH_SESSION_SECRET) {
     return res.status(500).json({
