@@ -142,3 +142,32 @@ test("2000 emails distincts (volume d'une journée) : aucune 429, aucun email bl
   expect(statusCodes.filter((c) => c === 200).length).toBe(TOTAL);
   expect(profilesByEmail.size).toBe(TOTAL);
 }, 60000);
+
+test("50 emails DIFFÉRENTS puis 50 fois LE MÊME email, à la suite (un seul scénario, dans cet ordre précis) : aucune ne doit échouer, aucun message de limitation n'apparaît", async () => {
+  const statusCodes = [];
+  const bodies = [];
+
+  for (let i = 0; i < 50; i++) {
+    const { req, res } = mockReqRes({ email: `sequence${i}@example.com` });
+    // eslint-disable-next-line no-await-in-loop
+    await handler(req, res);
+    statusCodes.push(res.statusCode);
+    bodies.push(res.body);
+  }
+
+  const repeatedEmail = "repetee@example.com";
+  for (let i = 0; i < 50; i++) {
+    const { req, res } = mockReqRes({ email: repeatedEmail });
+    // eslint-disable-next-line no-await-in-loop
+    await handler(req, res);
+    statusCodes.push(res.statusCode);
+    bodies.push(res.body);
+  }
+
+  expect(statusCodes).toEqual(Array(100).fill(200));
+  expect(bodies.every((b) => b?.ok === true)).toBe(true);
+  expect(statusCodes.some((c) => c === 429)).toBe(false);
+  const allBodiesText = JSON.stringify(bodies);
+  expect(allBodiesText).not.toMatch(/trop de tentatives/i);
+  expect(allBodiesText).not.toMatch(/réessaie dans quelques minutes/i);
+});
