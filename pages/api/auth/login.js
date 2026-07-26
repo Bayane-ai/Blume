@@ -13,14 +13,25 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // supabase/migrations/0008_custom_auth.sql) via la clé service_role.
 //
 // Il n'y a plus de distinction inscription/connexion : l'upsert (onConflict: email)
-// crée le compte au premier passage sur cet email, ou retrouve la ligne existante et
-// met juste à jour last_login_at — un seul parcours, un seul code (voir PROMPT,
-// point 3 : "si l'email n'existe pas, le compte est créé automatiquement").
+// crée le compte au premier passage sur cet email, ou retrouve la ligne existante —
+// un seul parcours, un seul code (voir PROMPT, point 3 : "si l'email n'existe pas,
+// le compte est créé automatiquement").
 //
 // Les messages d'erreur renvoyés ici sont déjà des phrases françaises précises
 // (jamais "contactez l'administrateur", voir PROMPT point 7) : contrairement à
 // l'ancien système (Supabase Auth), il n'y a plus besoin d'une couche de traduction
 // séparée — cette route EST la source du message affiché tel quel sur /connexion.
+// AUCUN détail technique de base de données (message Postgres/PostgREST brut,
+// nom de colonne, etc.) ne doit jamais atteindre le client : loggé côté serveur
+// (console.error) et remplacé par une phrase générique côté réponse HTTP.
+//
+// L'upsert est volontairement scindé en DEUX appels distincts (voir PROMPT) : seul
+// le premier (id + email) conditionne la connexion — une colonne non essentielle
+// absente ou un cache de schéma PostgREST périmé sur `last_login_at` ne doit JAMAIS
+// empêcher qui que ce soit de se connecter. C'est exactement ce qui s'est produit une
+// fois en production ("Could not find the 'last_login_at' column ... in the schema
+// cache") : les deux étaient combinés dans un seul upsert, donc un souci sur la
+// colonne accessoire faisait échouer l'authentification elle-même.
 //
 // AUCUNE limitation de débit ici, volontairement (voir PROMPT : "un même email doit
 // pouvoir se connecter autant de fois qu'il veut d'affilée, sans aucun blocage") : ni
@@ -60,14 +71,33 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: e.message });
   }
 
+  // 1) Appel ESSENTIEL — seul celui-ci conditionne la connexion : id + email
+  // uniquement, jamais last_login_at ici. Si ça échoue, aucune session n'est créée
+  // (message générique côté client, détail réel dans les logs serveur).
   const { data: profile, error } = await supabaseAdmin
     .from("profiles")
-    .upsert({ email: cleanEmail, last_login_at: new Date().toISOString() }, { onConflict: "email" })
-    .select()
+    .upsert({ email: cleanEmail }, { onConflict: "email" })
+    .select("id, email")
     .single();
 
   if (error || !profile) {
-    return res.status(500).json({ error: `Impossible de créer ou retrouver le compte : ${error?.message || "réponse vide de la base de données"}.` });
+    console.error("Échec de l'upsert essentiel sur profiles (connexion) :", error?.message || "réponse vide de la base de données");
+    return res.status(500).json({ error: "Impossible de te connecter pour l'instant. Réessaie dans un instant." });
+  }
+
+  // 2) Appel ACCESSOIRE, isolé — met à jour last_login_at "au mieux" : une colonne
+  // absente, un cache de schéma PostgREST périmé ou une erreur réseau ici ne doivent
+  // JAMAIS empêcher la connexion, qui a déjà réussi à l'étape 1. Seulement loggé.
+  try {
+    const { error: lastLoginError } = await supabaseAdmin
+      .from("profiles")
+      .update({ last_login_at: new Date().toISOString() })
+      .eq("id", profile.id);
+    if (lastLoginError) {
+      console.error("Échec de la mise à jour de last_login_at (non bloquant) :", lastLoginError.message);
+    }
+  } catch (e) {
+    console.error("Échec de la mise à jour de last_login_at (non bloquant) :", e.message);
   }
 
   const token = createSessionToken({ id: profile.id, email: profile.email }, process.env.AUTH_SESSION_SECRET);

@@ -34,6 +34,15 @@ jest.mock("../lib/supabaseAdmin", () => ({
             },
           }),
         }),
+        // Appel ACCESSOIRE (voir pages/api/auth/login.js) : met à jour last_login_at,
+        // isolé de l'upsert essentiel ci-dessus.
+        update: (patch) => ({
+          eq: async (col, val) => {
+            const row = [...profilesByEmail.values()].find((p) => p[col] === val);
+            if (row) Object.assign(row, patch);
+            return { error: null };
+          },
+        }),
       };
     },
   }),
