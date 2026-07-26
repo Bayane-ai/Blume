@@ -1,6 +1,6 @@
 import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
 import { createSessionToken, setSessionCookie } from "../../../lib/session";
-import { guardMutation } from "../../../lib/security/guardMutation";
+import { isSameOriginRequest } from "../../../lib/security/sameOrigin";
 
 export const config = { api: { bodyParser: true } };
 
@@ -21,18 +21,22 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // (jamais "contactez l'administrateur", voir PROMPT point 7) : contrairement à
 // l'ancien système (Supabase Auth), il n'y a plus besoin d'une couche de traduction
 // séparée — cette route EST la source du message affiché tel quel sur /connexion.
+//
+// AUCUNE limitation de débit ici, volontairement (voir PROMPT : "un même email doit
+// pouvoir se connecter autant de fois qu'il veut d'affilée, sans aucun blocage") : ni
+// compteur en mémoire, ni table Supabase de tentatives, ni cookie/localStorage de
+// cooldown — seule reste la vérification d'origine (CSRF), qui ne bloque jamais un
+// visiteur légitime répétant la même action depuis le site lui-même, seulement une
+// requête forgée depuis un autre site.
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ error: "Méthode non autorisée." });
   }
 
-  // CSRF/origine + débit (20 tentatives par minute maximum PAR IP — jamais un
-  // compteur global partagé entre tous les visiteurs, jamais de limite journalière
-  // sur le nombre d'emails distincts : rien n'empêche donc 2000 comptes différents,
-  // depuis 2000 IP différentes, de se connecter le même jour) — avant tout
-  // traitement, comme sur toutes les routes de mutation du site.
-  if (!guardMutation(req, res, "auth-login", { limit: 20 })) return;
+  if (!isSameOriginRequest(req)) {
+    return res.status(403).json({ error: "Non autorisé" });
+  }
 
   if (!process.env.AUTH_SESSION_SECRET) {
     return res.status(500).json({
