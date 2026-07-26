@@ -209,3 +209,51 @@ test("l'historique d'un compte n'apparaît jamais dans celui d'un autre compte (
   const theirs = await list();
   expect(theirs.map((e) => e.id)).toEqual(["2"]);
 });
+
+test("le compte A ouvre 3 matchs, le compte B en ouvre 2 autres : l'historique de A contient EXACTEMENT ses 3, celui de B EXACTEMENT ses 2, aucun croisement", async () => {
+  mockSession = SESSION_A;
+  await add({ id: 101, homeTeam: { id: 1, name: "Équipe A1", crest: "" } });
+  await add({ id: 102, homeTeam: { id: 2, name: "Équipe A2", crest: "" } });
+  await add({ id: 103, homeTeam: { id: 3, name: "Équipe A3", crest: "" } });
+
+  mockSession = SESSION_B;
+  await add({ id: 201, homeTeam: { id: 4, name: "Équipe B1", crest: "" } });
+  await add({ id: 202, homeTeam: { id: 5, name: "Équipe B2", crest: "" } });
+
+  mockSession = SESSION_A;
+  const aItems = await list();
+  expect(aItems).toHaveLength(3);
+  expect(new Set(aItems.map((e) => e.id))).toEqual(new Set(["101", "102", "103"]));
+
+  mockSession = SESSION_B;
+  const bItems = await list();
+  expect(bItems).toHaveLength(2);
+  expect(new Set(bItems.map((e) => e.id))).toEqual(new Set(["201", "202"]));
+
+  // Aucun croisement dans un sens ou dans l'autre.
+  expect(bItems.some((e) => ["101", "102", "103"].includes(e.id))).toBe(false);
+  expect(aItems.some((e) => ["201", "202"].includes(e.id))).toBe(false);
+});
+
+test("deux appareils connectés sur le MÊME email (deux sessions indépendantes, même profile_id) : historique identique des deux côtés", async () => {
+  const DEVICE_1_SESSION = { id: "profile-a", email: "alice@example.com" };
+  const DEVICE_2_SESSION = { id: "profile-a", email: "alice@example.com" };
+
+  mockSession = DEVICE_1_SESSION;
+  await add({ id: 301, homeTeam: { id: 6, name: "Vu depuis le téléphone", crest: "" } });
+
+  mockSession = DEVICE_2_SESSION;
+  await add({ id: 302, homeTeam: { id: 7, name: "Vu depuis la tablette", crest: "" } });
+
+  // Chaque appareil, indépendamment, voit bien les DEUX entrées (le même compte,
+  // jamais un historique séparé par appareil) — les deux "sessions" ne sont que
+  // deux jetons signés distincts qui pointent vers le même profile_id.
+  mockSession = DEVICE_1_SESSION;
+  const seenFromDevice1 = (await list()).map((e) => e.id).sort();
+  mockSession = DEVICE_2_SESSION;
+  const seenFromDevice2 = (await list()).map((e) => e.id).sort();
+
+  expect(seenFromDevice1).toEqual(["301", "302"]);
+  expect(seenFromDevice2).toEqual(["301", "302"]);
+  expect(seenFromDevice1).toEqual(seenFromDevice2);
+});

@@ -126,6 +126,26 @@ test("50 connexions avec 50 emails DISTINCTS : toutes réussissent, jamais 429, 
   expect(profilesByEmail.size).toBe(TOTAL);
 });
 
+test("200 connexions consécutives avec 200 emails différents : toutes réussissent, aucun message de limitation", async () => {
+  const TOTAL = 200;
+  const statusCodes = [];
+  const bodies = [];
+
+  for (let i = 0; i < TOTAL; i++) {
+    const { req, res } = mockReqRes({ email: `compte${i}@example.com` });
+    // eslint-disable-next-line no-await-in-loop
+    await handler(req, res);
+    statusCodes.push(res.statusCode);
+    bodies.push(res.body);
+  }
+
+  expect(statusCodes).toEqual(Array(TOTAL).fill(200));
+  expect(bodies.every((b) => b?.ok === true)).toBe(true);
+  expect(statusCodes.some((c) => c === 429)).toBe(false);
+  expect(JSON.stringify(bodies)).not.toMatch(/trop de tentatives|réessaie dans quelques minutes/i);
+  expect(profilesByEmail.size).toBe(TOTAL);
+});
+
 test("2000 emails distincts (volume d'une journée) : aucune 429, aucun email bloqué", async () => {
   const TOTAL = 2000;
   const statusCodes = [];
