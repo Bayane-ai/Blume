@@ -1,5 +1,6 @@
 import React from 'react';
 import '../styles/globals.css';
+import CookieBanner from '../components/CookieBanner';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -35,6 +36,7 @@ export default function App({ Component, pageProps }) {
   return (
     <ErrorBoundary>
       <Component {...pageProps} />
+      <CookieBanner />
     </ErrorBoundary>
   );
 }

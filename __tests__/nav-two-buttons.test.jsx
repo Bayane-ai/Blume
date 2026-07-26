@@ -85,13 +85,13 @@ beforeEach(() => {
   mockFetchRouter();
 });
 
-test('exactement sept boutons de navigation existent : "Live", "Matchs à venir", "Combiné Vision", "News", "Historique", "Probabilités réussies" et "Probabilités échouées", et rien d\'autre', async () => {
+test('exactement huit boutons de navigation existent : "Live", "Matchs à venir", "Combiné Vision", "News", "Historique", "Probabilités réussies", "Probabilités échouées" et "Réglages", et rien d\'autre', async () => {
   mockPathname = "/";
   render(<Home />);
 
   const nav = await screen.findByTestId("main-nav");
   const links = within(nav).getAllByRole("link");
-  expect(links).toHaveLength(7);
+  expect(links).toHaveLength(8);
   expect(links[0]).toHaveTextContent("Live");
   expect(links[1]).toHaveTextContent("Matchs à venir");
   expect(links[2]).toHaveTextContent("Combiné Vision");
@@ -99,6 +99,7 @@ test('exactement sept boutons de navigation existent : "Live", "Matchs à venir"
   expect(links[4]).toHaveTextContent("Historique");
   expect(links[5]).toHaveTextContent("Probabilités réussies");
   expect(links[6]).toHaveTextContent("Probabilités échouées");
+  expect(links[7]).toHaveTextContent("Réglages");
   expect(links[0]).toHaveAttribute("href", "/");
   expect(links[1]).toHaveAttribute("href", "/a-venir");
   expect(links[2]).toHaveAttribute("href", "/combine-vision");
@@ -106,6 +107,7 @@ test('exactement sept boutons de navigation existent : "Live", "Matchs à venir"
   expect(links[4]).toHaveAttribute("href", "/historique");
   expect(links[5]).toHaveAttribute("href", "/probabilites-reussies");
   expect(links[6]).toHaveAttribute("href", "/probabilites-echouees");
+  expect(links[7]).toHaveAttribute("href", "/reglages");
 
   // Aucun autre bouton de NAVIGATION (ancien onglet "Tous", ancien onglet
   // "Compétitions" isolé, "Analyse IA") — le bouton "Toutes les compétitions" du

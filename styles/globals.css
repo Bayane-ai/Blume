@@ -25,6 +25,31 @@
   --warning-soft: color-mix(in srgb, var(--warning) 18%, transparent);
 }
 
+/* Thème clair (voir PROMPT Partie 2 : "le thème choisi (clair / sombre)") — posé via
+   data-theme="light" sur <html> par pages/_document.js (avant tout rendu, aucun
+   clignotement) ou par le sélecteur dans pages/reglages.js. Même vert d'accent que le
+   thème sombre (identité de marque inchangée) : seul --on-accent est fixé à une
+   teinte sombre (au lieu de dériver de --bg comme en sombre) pour que le texte des
+   boutons accent reste lisible quel que soit le thème.  */
+:root[data-theme="light"] {
+  --bg: #F3F4EC;
+  --card-bg: #FFFFFF;
+  --accent: #A6F520;
+  --accent-rgb: 166, 245, 32;
+  --text-primary: #1B1D15;
+  --text-secondary: #5B6259;
+  --negative: #C4323A;
+  --negative-rgb: 196, 50, 58;
+
+  --border: rgba(27, 29, 21, 0.14);
+  --on-accent: #14150F;
+  --surface: color-mix(in srgb, var(--accent) 8%, var(--card-bg));
+  --accent-soft: rgba(var(--accent-rgb), 0.18);
+  --negative-soft: rgba(var(--negative-rgb), 0.12);
+  --warning: color-mix(in srgb, var(--accent) 55%, var(--negative) 45%);
+  --warning-soft: color-mix(in srgb, var(--warning) 18%, transparent);
+}
+
 * { box-sizing: border-box; }
 html, body { padding: 0; margin: 0; }
 body {

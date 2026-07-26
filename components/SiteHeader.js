@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
+import { writePrefs } from "../lib/prefsCookie";
+
+// Les 4 onglets dont le PROMPT (Partie 2) demande explicitement de retenir le dernier
+// consulté ("Live, Matchs à venir, News, Combiné Vision") — volontairement PAS les
+// sept liens de navigation au complet (Historique/Probabilités n'en font pas partie).
+// Simple mémorisation dans le cookie blume_prefs : aucune redirection automatique
+// n'est ajoutée ici (revenir sur "/" affiche toujours "Live", jamais une page
+// surprise) — la préférence est juste prête à être exploitée si besoin plus tard.
+const TRACKED_TABS = ["/", "/a-venir", "/news", "/combine-vision"];
 
 // Navigation du site, partagée par toutes les pages : "Live", "Matchs à venir",
 // "Combiné Vision", "News", "Historique", "Probabilités réussies" et "Probabilités
@@ -48,6 +57,13 @@ export default function SiteHeader({ session }) {
       active = false;
     };
   }, [userId]);
+
+  // Mémorise le dernier onglet consulté parmi TRACKED_TABS (voir PROMPT Partie 2).
+  useEffect(() => {
+    if (TRACKED_TABS.includes(router.pathname)) {
+      writePrefs({ lastTab: router.pathname });
+    }
+  }, [router.pathname]);
 
   // "Se déconnecter" (voir PROMPT) efface le cookie de session côté serveur puis
   // renvoie explicitement vers /connexion — sans attendre le mécanisme réactif de
@@ -127,6 +143,12 @@ export default function SiteHeader({ session }) {
             Admin
           </a>
         )}
+        <a
+          href="/reglages"
+          style={{ ...st.navBtn, ...(router.pathname === "/reglages" ? st.navBtnActive : {}) }}
+        >
+          Réglages
+        </a>
       </nav>
     </header>
   );

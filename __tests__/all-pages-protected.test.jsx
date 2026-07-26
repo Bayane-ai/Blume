@@ -20,6 +20,7 @@ import MatchPage from "../pages/match/[id]";
 import Historique from "../pages/historique";
 import ProbabilitesReussies from "../pages/probabilites-reussies";
 import ProbabilitesEchouees from "../pages/probabilites-echouees";
+import Reglages from "../pages/reglages";
 
 const replaceMock = jest.fn();
 const pushMock = jest.fn();
@@ -51,6 +52,7 @@ const pages = [
   ["/historique", Historique],
   ["/probabilites-reussies", ProbabilitesReussies],
   ["/probabilites-echouees", ProbabilitesEchouees],
+  ["/reglages", Reglages],
 ];
 
 describe.each(pages)("%s : visiteur non connecté", (path, Page) => {
