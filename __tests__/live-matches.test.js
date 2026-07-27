@@ -35,13 +35,26 @@ function fixtureMatch(id, code) {
   };
 }
 
+test("FOOTBALL_DATA_TOKEN absente : message de configuration explicite nommant la variable exacte, jamais un appel à l'API", async () => {
+  delete process.env.FOOTBALL_DATA_TOKEN;
+  global.fetch = jest.fn();
+
+  const { default: handler } = await import("../pages/api/live-matches.js");
+  const res = mockRes();
+  await handler({}, res);
+
+  expect(global.fetch).not.toHaveBeenCalled();
+  expect(res.body.error).toContain("FOOTBALL_DATA_TOKEN");
+  expect(res.body.error).toMatch(/vercel/i);
+});
+
 test("interroge la vraie API avec tous les statuts \"en cours\" et une fenêtre de dates explicite, sans filtre de compétition dans l'URL", async () => {
   global.fetch = jest.fn((url) => {
     const parsed = new URL(url);
     expect(parsed.origin + parsed.pathname).toBe("https://api.football-data.org/v4/matches");
     // Les vrais statuts "en cours" (pas seulement le raccourci "LIVE", potentiellement
     // non fiable) — voir le bug corrigé où /api/live-matches ne remontait jamais rien.
-    expect(parsed.searchParams.get("status")).toBe("LIVE,IN_PLAY,PAUSED");
+    expect(parsed.searchParams.get("status")).toBe("LIVE,IN_PLAY,PAUSED,EXTRA_TIME,PENALTY_SHOOTOUT");
     // Fenêtre de dates explicite (hier → demain) : sans elle, l'API applique une
     // fenêtre par défaut qui peut exclure un match pourtant en cours.
     expect(parsed.searchParams.get("dateFrom")).toBeTruthy();
@@ -78,6 +91,26 @@ test("ne garde que les matchs réellement en cours (IN_PLAY/PAUSED/LIVE), même 
 
   expect(res.body.matches).toHaveLength(1);
   expect(res.body.matches[0].id).toBe(1);
+});
+
+test('un match en prolongations (EXTRA_TIME) ou aux tirs au but (PENALTY_SHOOTOUT) est bien considéré "en direct" (voir PROMPT : "ne te limite pas à un seul statut")', async () => {
+  const extraTimeMatch = { ...fixtureMatch(1, "PL"), status: "EXTRA_TIME" };
+  const penaltyMatch = { ...fixtureMatch(2, "CL"), status: "PENALTY_SHOOTOUT" };
+  const scheduledMatch = { ...fixtureMatch(3, "PL"), status: "SCHEDULED" };
+
+  global.fetch = jest.fn((url) => {
+    if (url.includes("/v4/matches?")) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ matches: [extraTimeMatch, penaltyMatch, scheduledMatch] }) });
+    }
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [] }) });
+  });
+
+  const { default: handler } = await import("../pages/api/live-matches.js");
+  const res = mockRes();
+  await handler({}, res);
+
+  expect(res.body.matches).toHaveLength(2);
+  expect(res.body.matches.map((m) => m.id).sort()).toEqual([1, 2]);
 });
 
 test("renvoie un en-tête Cache-Control pour que le réseau Vercel mutualise les réponses entre toutes les instances", async () => {
@@ -247,7 +280,9 @@ describe("BLOC 3 — le pronostic d'un match en direct suit le vrai score/la vra
 });
 
 test("propage une vraie erreur API (ex: quota) au lieu de la masquer", async () => {
-  global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 429 }));
+  global.fetch = jest.fn(() =>
+    Promise.resolve({ ok: false, status: 429, json: () => Promise.resolve({ message: "You have exceeded your request limit" }) })
+  );
 
   const { default: handler } = await import("../pages/api/live-matches.js");
   const res = mockRes();
@@ -255,6 +290,9 @@ test("propage une vraie erreur API (ex: quota) au lieu de la masquer", async () 
 
   expect(res.body.matches).toBeUndefined();
   expect(res.body.error).toEqual(expect.stringContaining("429"));
+  // Le motif technique réel (voir PROMPT : "clé invalide, quota dépassé, service
+  // indisponible") doit apparaître explicitement, pas juste un code.
+  expect(res.body.error).toMatch(/quota/i);
 });
 
 test("plusieurs visiteurs qui actualisent en même temps ne déclenchent qu'un seul appel réel à l'API en amont", async () => {

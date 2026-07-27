@@ -2,9 +2,8 @@ import { getStandingsTable } from "../../lib/standingsCache";
 import { getLiveMatchesList } from "../../lib/liveListCache";
 import { getAllLiveFixtures, normalizeTeamName, mapFixtureToLiveMatch } from "../../lib/apiFootball";
 import { computePronostic, computeLiveOutcome, buildSelectionCandidates } from "../../lib/pronostic";
-import { isBettableCompetitionName } from "../../lib/bettableFilter";
-
-const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
+import { LIVE_STATUSES } from "../../lib/liveStatuses";
+import { describeFootballDataError } from "../../lib/apiErrorMessages";
 
 function attachPronostic(m, table) {
   const homeRow = table?.find((row) => String(row.team.id) === String(m.homeTeam?.id));
@@ -52,24 +51,31 @@ function attachPronostic(m, table) {
 export default async function handler(req, res) {
   const token = process.env.FOOTBALL_DATA_TOKEN;
   const apiFootballKey = process.env.API_FOOTBALL_KEY;
-  if (!token) return res.status(500).json({ error: "Clé API manquante" });
+  if (!token) {
+    return res.status(500).json({
+      error: "Configuration serveur manquante : FOOTBALL_DATA_TOKEN est vide dans ce déploiement. Vérifie les variables d'environnement sur Vercel (Production) et redéploie ensuite.",
+    });
+  }
 
   try {
-    // Tous les matchs en direct (IN_PLAY + PAUSED via le pseudo-statut LIVE de
-    // football-data.org), sans filtrer par compétition ni par pays, et sans plafond
-    // artificiel : on affiche exactement ce que l'API renvoie, jamais plus, jamais moins.
-    // getLiveMatchesList mutualise l'appel en amont entre tous les visiteurs (quelques
-    // secondes de cache partagé), pour pouvoir actualiser souvent côté client sans
-    // dépasser le quota de l'API, même si plusieurs personnes regardent en même temps.
+    // Tous les matchs en direct dans le monde (toute fédération, tout pays, toute
+    // compétition, y compris U20 et catégories jeunes — voir PROMPT, "aucune ligue
+    // exclue" : plus de filtre "parieur" ici), sans plafond artificiel : on affiche
+    // exactement ce que l'API renvoie, jamais plus, jamais moins. getLiveMatchesList
+    // mutualise l'appel en amont entre tous les visiteurs (quelques secondes de cache
+    // partagé), pour pouvoir actualiser souvent côté client sans dépasser le quota de
+    // l'API, même si plusieurs personnes regardent en même temps.
     const listResult = await getLiveMatchesList(token);
-    if (listResult.errorStatus) {
-      return res.status(listResult.errorStatus).json({ error: `Erreur API football-data (code ${listResult.errorStatus})` });
+    if (listResult.errorStatus || listResult.networkError) {
+      const message = describeFootballDataError({
+        status: listResult.errorStatus,
+        bodyMessage: listResult.errorMessage,
+        networkError: listResult.networkError,
+      });
+      console.error("Erreur /api/live-matches (football-data.org) :", message);
+      return res.status(listResult.errorStatus || 502).json({ error: message });
     }
-    // "Les matchs sur lesquels on peut parier" : on retire les catégories jeunes,
-    // réserves et amateurs (voir lib/bettableFilter.js) — un bookmaker n'en propose
-    // quasiment jamais — pour ne garder que les compétitions seniors professionnelles,
-    // de n'importe quelle fédération ou pays.
-    const fdMatches = (listResult.matches || []).filter((m) => isBettableCompetitionName(m.competition?.name));
+    const fdMatches = listResult.matches || [];
 
     // football-data.org (plan gratuit) ne couvre qu'un nombre limité de compétitions —
     // API-Football (voir lib/apiFootball.js, mis en place au bloc 1 pour les événements)
@@ -86,7 +92,6 @@ export default async function handler(req, res) {
           fdMatches.map((m) => `${normalizeTeamName(m.homeTeam?.name)}|${normalizeTeamName(m.awayTeam?.name)}`)
         );
         afMatches = fixtures
-          .filter((f) => isBettableCompetitionName(f?.league?.name))
           .filter((f) => !known.has(`${normalizeTeamName(f?.teams?.home?.name)}|${normalizeTeamName(f?.teams?.away?.name)}`))
           .map(mapFixtureToLiveMatch)
           .filter((m) => m.homeTeam.name && m.awayTeam.name);

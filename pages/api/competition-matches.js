@@ -1,6 +1,7 @@
 import { COMPETITIONS } from "../../lib/competitions";
 import { getStandingsTable } from "../../lib/standingsCache";
 import { computePronostic } from "../../lib/pronostic";
+import { LIVE_STATUS_QUERY } from "../../lib/liveStatuses";
 
 const BASE = "https://api.football-data.org/v4";
 
@@ -22,7 +23,7 @@ export default async function handler(req, res) {
   const isResults = view === "results";
   const dateFrom = isResults ? isoDate(new Date(Date.now() - 90 * 24 * 3600000)) : isoDate(new Date());
   const dateTo = isResults ? isoDate(new Date()) : isoDate(new Date(Date.now() + 90 * 24 * 3600000));
-  const status = isResults ? "FINISHED" : "SCHEDULED,TIMED,LIVE,IN_PLAY,PAUSED";
+  const status = isResults ? "FINISHED" : `SCHEDULED,TIMED,${LIVE_STATUS_QUERY}`;
 
   try {
     const [r, table] = await Promise.all([

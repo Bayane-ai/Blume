@@ -69,7 +69,9 @@ test("/api/matches n'invente jamais de matchs : la réponse contient exactement 
 });
 
 test("/api/matches ne masque pas les erreurs de l'API réelle derrière des matchs inventés", async () => {
-  global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 429 }));
+  global.fetch = jest.fn(() =>
+    Promise.resolve({ ok: false, status: 429, json: () => Promise.resolve({ message: "You have exceeded your request limit" }) })
+  );
 
   const { default: handler } = await import("../pages/api/matches.js");
   const res = mockRes();

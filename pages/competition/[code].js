@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { useRequireAuth } from "../../lib/useRequireAuth";
 import { COMPETITIONS } from "../../lib/competitions";
+import { LIVE_STATUSES as LIVE_STATUSES_LIST } from "../../lib/liveStatuses";
 import MatchCard from "../../components/MatchCard";
 
-const LIVE_STATUSES = ["IN_PLAY", "PAUSED", "LIVE"];
+const LIVE_STATUSES = [...LIVE_STATUSES_LIST, "LIVE"];
 const REFRESH_MS = 60000;
 
 export default function CompetitionPage() {

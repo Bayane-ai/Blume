@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRequireAuth } from "../lib/useRequireAuth";
-import { presentCompetitions, presentMatchdays } from "../lib/matchFilters";
+import { presentCompetitions, presentMatchdays, groupByLocalDay } from "../lib/matchFilters";
 import MatchCard from "../components/MatchCard";
 import SiteHeader from "../components/SiteHeader";
 import FilterCarousel from "../components/FilterCarousel";
@@ -46,7 +46,7 @@ export default function UpcomingMatches() {
       })
       .catch((e) => {
         console.error("Erreur /api/matches:", e);
-        if (!silent) setWeekData({ error: true, competitions: [] });
+        if (!silent) setWeekData({ error: "Impossible de contacter le serveur. Vérifie ta connexion internet et réessaie.", competitions: [] });
       })
       .finally(() => setWeekLoading(false));
   }, []);
@@ -112,6 +112,11 @@ export default function UpcomingMatches() {
     return rows;
   }, [weekData, searchQuery, compFilter, matchdayFilter]);
 
+  // Groupés jour par jour, en heure LOCALE du visiteur (voir PROMPT et
+  // lib/matchFilters.js#groupByLocalDay — jamais UTC en dur), toutes compétitions
+  // confondues au sein d'un même jour.
+  const dayGroups = useMemo(() => groupByLocalDay(weekFeed, (row) => row.m.utcDate), [weekFeed]);
+
   if (!sessionChecked) {
     return (
       <div style={st.page}>
@@ -163,8 +168,11 @@ export default function UpcomingMatches() {
         </div>
 
         {weekLoading && <p style={st.hint}>Chargement des matchs…</p>}
-        {!weekLoading && (!weekData || weekData?.error) && (
-          <p style={st.hint}>Les matchs ne sont pas disponibles pour le moment. Réessaie dans quelques minutes.</p>
+        {!weekLoading && weekData?.error && (
+          <p style={st.hint} data-testid="week-error">{weekData.error}</p>
+        )}
+        {!weekLoading && !weekData && (
+          <p style={st.hint} data-testid="week-error">Impossible de contacter le serveur. Vérifie ta connexion internet et réessaie.</p>
         )}
         {!weekLoading && weekData && !weekData.error && weekFeed.length === 0 && (
           <p style={st.hint}>
@@ -176,9 +184,16 @@ export default function UpcomingMatches() {
           </p>
         )}
 
-        <div data-testid="match-list">
-          {weekFeed.map(({ m, comp }) => (
-            <MatchCard key={m.id} m={m} comp={comp} />
+        <div data-testid="match-list" style={st.matchList}>
+          {dayGroups.map((group) => (
+            <section key={group.dateKey} style={st.daySection} data-testid="day-group">
+              <h2 style={st.dayHeading}>{group.label}</h2>
+              <div style={st.dayMatches}>
+                {group.items.map(({ m, comp }) => (
+                  <MatchCard key={m.id} m={m} comp={comp} />
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       </main>
@@ -193,6 +208,10 @@ const st = {
   heroTitle: { fontSize: 21, fontWeight: 800, margin: "0 0 8px", lineHeight: 1.25 },
   heroSubtitle: { fontSize: 12, color: "var(--text-secondary)", margin: 0, lineHeight: 1.5 },
   hint: { fontSize: 12.5, color: "var(--text-secondary)" },
+  matchList: { display: "flex", flexDirection: "column", gap: 22 },
+  daySection: { display: "flex", flexDirection: "column", gap: 10 },
+  dayHeading: { fontSize: 14, fontWeight: 800, margin: 0, color: "var(--text-primary)" },
+  dayMatches: { display: "flex", flexDirection: "column", gap: 10 },
   searchRow: { display: "flex", gap: 8 },
   searchInput: {
     flex: 1, background: "var(--card-bg)", border: "1px solid var(--border)", color: "var(--text-primary)",

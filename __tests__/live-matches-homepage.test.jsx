@@ -117,6 +117,11 @@ test("aucun match fictif : la page n'affiche que ce que l'API a réellement renv
 });
 
 test("se rafraîchit automatiquement (sans rechargement) : un nouveau score apparaît au cycle suivant", async () => {
+  // Fake timers AVANT le rendu : l'intervalle de rafraîchissement (setInterval, 30s —
+  // voir PROMPT) doit être créé directement avec les timers simulés pour pouvoir être
+  // avancé ensuite (jest.advanceTimersByTime) — un setInterval déjà programmé avec les
+  // VRAIS timers avant l'activation des faux timers ne serait jamais intercepté.
+  jest.useFakeTimers({ doNotFake: ["queueMicrotask"] });
   let call = 0;
   global.fetch = jest.fn((url) => {
     if (url.startsWith("/api/live-matches")) {
@@ -143,12 +148,19 @@ test("se rafraîchit automatiquement (sans rechargement) : un nouveau score appa
   });
 
   render(<Home />);
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
   await waitFor(() => expect(screen.getAllByText("0 - 0").length).toBeGreaterThan(0));
   expect(screen.getAllByTestId("card-minute")[0]).toHaveTextContent("11’");
 
   await act(async () => {
-    await new Promise((r) => setTimeout(r, 2200)); // laisse un cycle de 2s se déclencher
+    jest.advanceTimersByTime(30200); // laisse le cycle de 30s (voir PROMPT) se déclencher
+    await Promise.resolve();
+    await Promise.resolve();
   });
+  jest.useRealTimers();
 
   expect(call).toBeGreaterThan(1);
   expect(screen.getAllByText("1 - 0").length).toBeGreaterThan(0);
