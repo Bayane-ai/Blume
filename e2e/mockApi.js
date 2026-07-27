@@ -3,6 +3,7 @@ const { COMPETITIONS } = require("../lib/competitions");
 const { computePronostic, computeLiveOutcome } = require("../lib/pronostic");
 const { classifyOutcome, toPredictionSnapshot } = require("../lib/pronosticHistory");
 const { verifyPredictionLines } = require("../lib/pronosticVerification");
+const { isBettableCompetitionName } = require("../lib/bettableFilter");
 const { buildProbableScorers } = require("../lib/probableScorers");
 
 // Historique "Probabilités réussies/échouées" : le VRAI classifyOutcome de
@@ -92,13 +93,13 @@ async function installApiMocks(page) {
 
     if (path === "/api/matches") {
       // Reflète pages/api/matches.js : toute compétition réellement présente dans les
-      // matchs apparaît (pas seulement celles de lib/competitions.js), aucune exclue
-      // (plus de filtre "parieur" — voir PROMPT, "toutes compétitions confondues") —
-      // les compétitions majeures connues d'abord, dans leur ordre habituel, les
-      // autres ensuite, triées alphabétiquement.
+      // matchs apparaît (pas seulement celles de lib/competitions.js), sauf les
+      // catégories jeunes/réserves/amateurs ("les matchs sur lesquels on peut parier",
+      // voir lib/bettableFilter.js) — les compétitions majeures connues d'abord, dans
+      // leur ordre habituel, les autres ensuite, triées alphabétiquement.
       const priorityCodes = COMPETITIONS.map((c) => c.code);
       const codes = Object.keys(upcomingByCompetition).filter(
-        (code) => (upcomingByCompetition[code] || []).length > 0
+        (code) => (upcomingByCompetition[code] || []).length > 0 && isBettableCompetitionName(upcomingByCompetition[code][0].competition.name)
       );
       const orderedCodes = [
         ...priorityCodes.filter((code) => codes.includes(code)),

@@ -2,18 +2,10 @@ import { COMPETITIONS } from "../../lib/competitions";
 import { getStandingsTable } from "../../lib/standingsCache";
 import { computePronostic } from "../../lib/pronostic";
 import { getFixturesByDate, mapFixtureToUpcomingMatch, normalizeTeamName } from "../../lib/apiFootball";
-import { LIVE_STATUS_QUERY } from "../../lib/liveStatuses";
-import { describeFootballDataError } from "../../lib/apiErrorMessages";
+import { isBettableCompetitionName } from "../../lib/bettableFilter";
 
 const BASE = "https://api.football-data.org/v4";
-// "Aujourd'hui" + 7 jours pour le visiteur, mais le fuseau horaire réel n'est connu
-// que du NAVIGATEUR (voir PROMPT : "utilise le fuseau horaire de l'utilisateur pour
-// le calcul des dates, pas UTC en dur") : le groupement par jour se fait donc côté
-// client (voir lib/matchFilters.js#groupMatchesByLocalDay), et cette fenêtre de
-// requête ajoute juste 1 jour de marge de chaque côté (hier → +8 jours) pour ne
-// jamais couper un match qui, dans le fuseau LOCAL du visiteur, tombe encore dans les
-// 7 prochains jours alors qu'il est déjà hors de la fenêtre en UTC (ou l'inverse).
-const NUM_DAYS = 10; // hier (-1) à +8 inclus
+const NUM_DAYS = 8; // aujourd'hui + 7 jours, même fenêtre que dateFrom/dateTo ci-dessous
 
 function isoDate(d) {
   return d.toISOString().slice(0, 10);
@@ -33,46 +25,41 @@ function attachPronostic(m, table) {
 export default async function handler(req, res) {
   const token = process.env.FOOTBALL_DATA_TOKEN;
   const apiFootballKey = process.env.API_FOOTBALL_KEY;
-  if (!token) {
-    return res.status(500).json({
-      error: "Configuration serveur manquante : FOOTBALL_DATA_TOKEN est vide dans ce déploiement. Vérifie les variables d'environnement sur Vercel (Production) et redéploie ensuite.",
-    });
-  }
+  if (!token) return res.status(500).json({ error: "Clé API manquante" });
 
-  const dateFrom = isoDate(new Date(Date.now() - 24 * 3600000));
-  const dateTo = isoDate(new Date(Date.now() + 8 * 24 * 3600000));
+  const dateFrom = isoDate(new Date());
+  const dateTo = isoDate(new Date(Date.now() + 7 * 24 * 3600000));
 
   try {
-    // Un seul appel global (toutes compétitions confondues, sans filtre d'aucune sorte
-    // — voir PROMPT : "toutes compétitions confondues") au lieu d'un appel par
-    // compétition : le plan gratuit football-data.org limite à 10 requêtes/minute, et
-    // 12 appels en parallèle (+ le rafraîchissement automatique) dépassait ce quota, ce
-    // qui faisait disparaître silencieusement tous les matchs.
+    // Un seul appel global (toutes compétitions confondues, sans filtre d'aucune sorte)
+    // au lieu d'un appel par compétition : le plan gratuit football-data.org limite à
+    // 10 requêtes/minute, et 12 appels en parallèle (+ le rafraîchissement automatique)
+    // dépassait ce quota, ce qui faisait disparaître silencieusement tous les matchs.
     const r = await fetch(
-      `${BASE}/matches?dateFrom=${dateFrom}&dateTo=${dateTo}&status=SCHEDULED,TIMED,${LIVE_STATUS_QUERY},FINISHED&limit=100`,
+      `${BASE}/matches?dateFrom=${dateFrom}&dateTo=${dateTo}&status=SCHEDULED,TIMED,LIVE,IN_PLAY,PAUSED,FINISHED&limit=100`,
       { headers: { "X-Auth-Token": token } }
     );
     if (!r.ok) {
-      const errorBody = await r.json().catch(() => null);
-      const message = describeFootballDataError({ status: r.status, bodyMessage: errorBody?.message });
-      console.error("Erreur /api/matches (football-data.org) :", message, errorBody);
-      return res.status(r.status).json({ error: message });
+      return res.status(r.status).json({ error: `Erreur API football-data (code ${r.status})` });
     }
     const data = await r.json();
-    const fdMatches = data.matches || [];
+    // "Les matchs sur lesquels on peut parier" : on retire les catégories jeunes,
+    // réserves et amateurs (voir lib/bettableFilter.js) — un bookmaker n'en propose
+    // quasiment jamais — pour ne garder que les compétitions seniors professionnelles,
+    // de n'importe quelle fédération ou pays.
+    const fdMatches = (data.matches || []).filter((m) => isBettableCompetitionName(m.competition?.name));
 
     // football-data.org (plan gratuit) ne couvre qu'un nombre restreint de
     // compétitions (voir lib/competitions.js) — API-Football comble ce trou pour les
     // matchs À VENIR (jamais commencés, statut "NS") de la même façon que
     // pages/api/live-matches.js le fait déjà pour le direct : toutes fédérations, tous
-    // pays, toute catégorie (y compris jeunes quand API-Football les couvre — voir
-    // PROMPT, plus aucun filtre "parieur" nulle part sur cette route). Une panne
+    // pays (compétitions seniors uniquement, même filtre que ci-dessus). Une panne
     // d'API-Football ne doit jamais vider la liste : on garde alors simplement les
     // matchs football-data.org.
     let afMatches = [];
     if (apiFootballKey) {
       try {
-        const dateStrings = Array.from({ length: NUM_DAYS }, (_, i) => isoDate(new Date(Date.now() + (i - 1) * 24 * 3600000)));
+        const dateStrings = Array.from({ length: NUM_DAYS }, (_, i) => isoDate(new Date(Date.now() + i * 24 * 3600000)));
         const perDate = await Promise.all(dateStrings.map((d) => getFixturesByDate(d, apiFootballKey)));
         const known = new Set(
           fdMatches.map((m) => `${normalizeTeamName(m.homeTeam?.name)}|${normalizeTeamName(m.awayTeam?.name)}`)
@@ -82,6 +69,7 @@ export default async function handler(req, res) {
           // Seuls les matchs pas encore commencés : le direct est déjà couvert
           // ailleurs, inutile (et risqué) de mélanger un statut différent ici.
           .filter((f) => f?.fixture?.status?.short === "NS")
+          .filter((f) => isBettableCompetitionName(f?.league?.name))
           .filter((f) => !known.has(`${normalizeTeamName(f?.teams?.home?.name)}|${normalizeTeamName(f?.teams?.away?.name)}`))
           .map(mapFixtureToUpcomingMatch)
           .filter((m) => m.homeTeam.name && m.awayTeam.name && m.utcDate);

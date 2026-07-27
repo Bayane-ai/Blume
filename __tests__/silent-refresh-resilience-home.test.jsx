@@ -45,10 +45,6 @@ function liveMatchesFixture() {
 }
 
 test("un incident passager pendant l'actualisation silencieuse (direct) ne fait pas disparaître les matchs déjà affichés", async () => {
-  // Fake timers AVANT le rendu (voir __tests__/live-matches-homepage.test.jsx) : le
-  // setInterval de rafraîchissement (30s, voir PROMPT) doit être créé directement
-  // avec les timers simulés pour pouvoir être avancé ensuite.
-  jest.useFakeTimers({ doNotFake: ["queueMicrotask"] });
   let liveCallCount = 0;
   global.fetch = jest.fn((url) => {
     if (url.startsWith("/api/live-matches")) {
@@ -65,20 +61,13 @@ test("un incident passager pendant l'actualisation silencieuse (direct) ne fait 
   });
 
   render(<Home />);
-  await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-  });
   await waitFor(() => expect(screen.getAllByText("Arsenal FC").length).toBeGreaterThan(0));
 
-  // Laisse le temps à au moins un cycle d'actualisation silencieuse (toutes les 30s,
-  // voir PROMPT) de se déclencher et d'échouer.
+  // Laisse le temps à au moins un cycle d'actualisation silencieuse (toutes les 2s) de
+  // se déclencher et d'échouer.
   await act(async () => {
-    jest.advanceTimersByTime(30200);
-    await Promise.resolve();
-    await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 2200));
   });
-  jest.useRealTimers();
 
   expect(liveCallCount).toBeGreaterThan(1);
   expect(screen.getAllByText("Arsenal FC").length).toBeGreaterThan(0);

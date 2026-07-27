@@ -8,11 +8,12 @@ import MatchInfoBlock from "../components/MatchInfoBlock";
 import SiteHeader from "../components/SiteHeader";
 import FilterCarousel from "../components/FilterCarousel";
 
-// Rafraîchissement automatique toutes les 30 secondes (voir PROMPT) — le cache
-// partagé côté serveur (lib/liveListCache.js) reste bien plus court (2,5s) pour que
-// plusieurs visiteurs mutualisent le même appel en amont, mais le client, lui,
-// n'interroge /api/live-matches qu'une fois toutes les 30s.
-const LIVE_REFRESH_ACTIVE_MS = 30000;
+// Grâce au cache partagé côté serveur (lib/liveListCache.js, actualisé toutes les
+// 2,5s), on peut interroger /api/live-matches très souvent depuis le client sans
+// multiplier les appels en amont : la plupart des requêtes retombent sur le cache,
+// et dès qu'un but est marqué, la requête suivante (au plus 2s après) le reflète.
+const LIVE_REFRESH_ACTIVE_MS = 2000;
+const LIVE_REFRESH_BACKGROUND_MS = 45000;
 
 // Exemples illustratifs pour la barre de recherche (rien n'est envoyé/affiché comme
 // résultat réel tant que la personne n'a rien tapé) — juste une aide visuelle.
@@ -74,7 +75,7 @@ export default function Home() {
       })
       .catch((e) => {
         console.error("Erreur /api/live-matches:", e);
-        if (!silent) setLiveData({ error: "Impossible de contacter le serveur. Vérifie ta connexion internet et réessaie.", matches: [] });
+        if (!silent) setLiveData({ error: true, matches: [] });
       })
       .finally(() => setLiveLoading(false));
   }, []);
@@ -132,10 +133,9 @@ export default function Home() {
     [liveData, compFilter]
   );
 
-  // Matchs en direct (voir lib/liveStatuses.js — tous les statuts réellement en
-  // cours : 1ère/2e mi-temps, mi-temps, prolongations, tirs au but) : exactement ce
-  // que l'API renvoie, jamais de matchs inventés pour compléter la liste, filtré par
-  // compétition/journée (carrousels) puis par la recherche texte.
+  // Matchs en direct (statut LIVE/IN_PLAY/PAUSED) : exactement ce que l'API renvoie,
+  // jamais de matchs inventés pour compléter la liste, filtré par compétition/journée
+  // (carrousels) puis par la recherche texte.
   const liveFeed = useMemo(() => {
     if (!liveData?.matches) return [];
     let matches = liveData.matches.filter((m) => m?.homeTeam && m?.awayTeam && m?.utcDate);
@@ -246,11 +246,8 @@ export default function Home() {
         )}
 
         {liveLoading && <p style={st.hint}>Chargement des matchs…</p>}
-        {!liveLoading && liveData?.error && (
-          <p style={st.hint} data-testid="live-error">{liveData.error}</p>
-        )}
-        {!liveLoading && !liveData && (
-          <p style={st.hint} data-testid="live-error">Impossible de contacter le serveur. Vérifie ta connexion internet et réessaie.</p>
+        {!liveLoading && (!liveData || liveData?.error) && (
+          <p style={st.hint}>Les matchs ne sont pas disponibles pour le moment. Réessaie dans quelques minutes.</p>
         )}
         {!liveLoading && liveData && !liveData.error && liveFeed.length === 0 && (
           <p style={st.hint}>

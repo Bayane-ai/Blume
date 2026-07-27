@@ -1,4 +1,4 @@
-import { LIVE_STATUSES } from "../lib/liveStatuses";
+const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
 
 function formatKickoff(iso) {
   if (!iso) return "";

@@ -10,7 +10,8 @@ import {
   getAllLiveFixtures, findLiveFixtureByTeams, getFixtureEvents, mapApiFootballEvents, mapFixtureToLiveState,
   findApiFootballTeamId, getTeamCardProneness,
 } from "../../lib/apiFootball";
-import { LIVE_STATUSES } from "../../lib/liveStatuses";
+
+const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
 
 // Base de calcul du pronostic : la performance RÉCENTE et RÉELLE de chaque club
 // (ses derniers matchs joués — forme, buts marqués/encaissés, résultats), pas une

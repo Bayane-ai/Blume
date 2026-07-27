@@ -342,13 +342,12 @@ describe("Bloc 1.4 — 15 à 20 matchs en direct : tous s'affichent, sans plafon
 });
 
 // ---------------------------------------------------------------------------
-// 5) "Recherche mondiale, sans filtre : toutes les fédérations, tous les pays,
-//    toutes les compétitions, y compris U20 et catégories jeunes. Aucune ligue
-//    exclue." (voir PROMPT) — plus aucun filtre "parieur" sur le direct : une
-//    compétition U20 (football-data.org) et une compétition amateur (API-Football)
-//    apparaissent désormais AU MÊME TITRE qu'une compétition senior.
+// 5) "Les matchs sur lesquels on peut parier" : les catégories jeunes/réserves/
+//    amateurs sont écartées, en direct comme à venir — un bookmaker n'en propose
+//    quasiment jamais. Toutes les compétitions seniors professionnelles, elles,
+//    restent affichées, quelle que soit la fédération ou le pays.
 // ---------------------------------------------------------------------------
-describe("Bloc 1.5 — le direct n'exclut plus aucune compétition, y compris U20/jeunes/amateurs", () => {
+describe("Bloc 1.5 — le direct n'affiche que des compétitions seniors « pariables », jeunes/réserves/amateurs écartées", () => {
   beforeEach(() => {
     jest.resetModules();
     process.env.FOOTBALL_DATA_TOKEN = FD_TOKEN;
@@ -359,7 +358,7 @@ describe("Bloc 1.5 — le direct n'exclut plus aucune compétition, y compris U2
     delete process.env.API_FOOTBALL_KEY;
   });
 
-  test("côté API (/api/live-matches) : une compétition U20 (football-data.org) et une compétition amateur (API-Football) sont conservées, comme la compétition senior", async () => {
+  test("côté API (/api/live-matches) : une compétition U20 (football-data.org) et une compétition amateur (API-Football) sont écartées, la compétition senior reste", async () => {
     const fetchMock = jest.fn((url) => {
       if (url.includes("/v4/matches?")) {
         return Promise.resolve({
@@ -384,8 +383,7 @@ describe("Bloc 1.5 — le direct n'exclut plus aucune compétition, y compris U2
     const res = mockRes();
     await handler({}, res);
 
-    expect(res.body.matches).toHaveLength(3);
-    const names = res.body.matches.map((m) => m.competition.name).sort();
-    expect(names).toEqual(["Amateur Cup", "Coupe du Monde U20", "Premier League"]);
+    expect(res.body.matches).toHaveLength(1);
+    expect(res.body.matches[0].competition.name).toBe("Premier League");
   });
 });

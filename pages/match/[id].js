@@ -11,7 +11,8 @@ import LiveStatBlock from "../../components/LiveStatBlock";
 import MatchOutcomeRecap from "../../components/MatchOutcomeRecap";
 import { useRequireAuth } from "../../lib/useRequireAuth";
 import { addMatchToHistory } from "../../lib/matchHistory";
-import { LIVE_STATUSES } from "../../lib/liveStatuses";
+
+const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
 // 2s : rendu possible sans dépasser le quota de l'API grâce au cache partagé côté
 // serveur (lib/liveMatchCache.js, actualisé toutes les 2,5s), qui mutualise les appels
 // entre tous les visiteurs suivant ce match. Dès qu'un but est marqué, la requête
