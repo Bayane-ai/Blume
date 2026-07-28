@@ -2,7 +2,6 @@ import { getStandingsTable } from "../../lib/standingsCache";
 import { getLiveMatchesList } from "../../lib/liveListCache";
 import { getAllLiveFixtures, normalizeTeamName, mapFixtureToLiveMatch } from "../../lib/apiFootball";
 import { computePronostic, computeLiveOutcome, buildSelectionCandidates } from "../../lib/pronostic";
-import { isBettableCompetitionName } from "../../lib/bettableFilter";
 
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
 
@@ -65,11 +64,10 @@ export default async function handler(req, res) {
     if (listResult.errorStatus) {
       return res.status(listResult.errorStatus).json({ error: `Erreur API football-data (code ${listResult.errorStatus})` });
     }
-    // "Les matchs sur lesquels on peut parier" : on retire les catégories jeunes,
-    // réserves et amateurs (voir lib/bettableFilter.js) — un bookmaker n'en propose
-    // quasiment jamais — pour ne garder que les compétitions seniors professionnelles,
-    // de n'importe quelle fédération ou pays.
-    const fdMatches = (listResult.matches || []).filter((m) => isBettableCompetitionName(m.competition?.name));
+    // Aucune restriction par ligue, pays, fédération ou catégorie d'âge : toute
+    // compétition renvoyée par l'API (y compris jeunes, réserves, petits championnats
+    // nationaux) est affichée telle quelle.
+    const fdMatches = listResult.matches || [];
 
     // football-data.org (plan gratuit) ne couvre qu'un nombre limité de compétitions —
     // API-Football (voir lib/apiFootball.js, mis en place au bloc 1 pour les événements)
@@ -86,7 +84,6 @@ export default async function handler(req, res) {
           fdMatches.map((m) => `${normalizeTeamName(m.homeTeam?.name)}|${normalizeTeamName(m.awayTeam?.name)}`)
         );
         afMatches = fixtures
-          .filter((f) => isBettableCompetitionName(f?.league?.name))
           .filter((f) => !known.has(`${normalizeTeamName(f?.teams?.home?.name)}|${normalizeTeamName(f?.teams?.away?.name)}`))
           .map(mapFixtureToLiveMatch)
           .filter((m) => m.homeTeam.name && m.awayTeam.name);

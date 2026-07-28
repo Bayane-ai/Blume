@@ -2,7 +2,6 @@ import { COMPETITIONS } from "../../lib/competitions";
 import { getStandingsTable } from "../../lib/standingsCache";
 import { computePronostic } from "../../lib/pronostic";
 import { getFixturesByDate, mapFixtureToUpcomingMatch, normalizeTeamName } from "../../lib/apiFootball";
-import { isBettableCompetitionName } from "../../lib/bettableFilter";
 
 const BASE = "https://api.football-data.org/v4";
 const NUM_DAYS = 8; // aujourd'hui + 7 jours, même fenêtre que dateFrom/dateTo ci-dessous
@@ -43,19 +42,17 @@ export default async function handler(req, res) {
       return res.status(r.status).json({ error: `Erreur API football-data (code ${r.status})` });
     }
     const data = await r.json();
-    // "Les matchs sur lesquels on peut parier" : on retire les catégories jeunes,
-    // réserves et amateurs (voir lib/bettableFilter.js) — un bookmaker n'en propose
-    // quasiment jamais — pour ne garder que les compétitions seniors professionnelles,
-    // de n'importe quelle fédération ou pays.
-    const fdMatches = (data.matches || []).filter((m) => isBettableCompetitionName(m.competition?.name));
+    // Aucune restriction par ligue, pays, fédération ou catégorie d'âge : toute
+    // compétition renvoyée par l'API (y compris jeunes, réserves, petits championnats
+    // nationaux) est affichée telle quelle.
+    const fdMatches = data.matches || [];
 
     // football-data.org (plan gratuit) ne couvre qu'un nombre restreint de
     // compétitions (voir lib/competitions.js) — API-Football comble ce trou pour les
     // matchs À VENIR (jamais commencés, statut "NS") de la même façon que
     // pages/api/live-matches.js le fait déjà pour le direct : toutes fédérations, tous
-    // pays (compétitions seniors uniquement, même filtre que ci-dessus). Une panne
-    // d'API-Football ne doit jamais vider la liste : on garde alors simplement les
-    // matchs football-data.org.
+    // pays, sans restriction. Une panne d'API-Football ne doit jamais vider la liste :
+    // on garde alors simplement les matchs football-data.org.
     let afMatches = [];
     if (apiFootballKey) {
       try {
@@ -69,7 +66,6 @@ export default async function handler(req, res) {
           // Seuls les matchs pas encore commencés : le direct est déjà couvert
           // ailleurs, inutile (et risqué) de mélanger un statut différent ici.
           .filter((f) => f?.fixture?.status?.short === "NS")
-          .filter((f) => isBettableCompetitionName(f?.league?.name))
           .filter((f) => !known.has(`${normalizeTeamName(f?.teams?.home?.name)}|${normalizeTeamName(f?.teams?.away?.name)}`))
           .map(mapFixtureToUpcomingMatch)
           .filter((m) => m.homeTeam.name && m.awayTeam.name && m.utcDate);

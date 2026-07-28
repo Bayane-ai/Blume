@@ -161,7 +161,7 @@ test("avec API_FOOTBALL_KEY, les vrais matchs à venir supplémentaires (autres 
   expect(comp.matches[0].id).toBe("af-5001");
 });
 
-test('"les matchs sur lesquels on peut parier" : les catégories jeunes/réserves/amateurs sont écartées, aussi bien côté football-data.org que côté API-Football', async () => {
+test("aucune restriction par catégorie d'âge : les compétitions U20/réserves/amateurs sont affichées comme n'importe quelle autre, aussi bien côté football-data.org que côté API-Football", async () => {
   process.env.API_FOOTBALL_KEY = AF_KEY;
   global.fetch = jest.fn((url) => {
     if (url.includes("/v4/matches?")) {
@@ -197,10 +197,9 @@ test('"les matchs sur lesquels on peut parier" : les catégories jeunes/réserve
   await handler({}, res);
 
   const names = res.body.competitions.map((c) => c.name);
-  expect(names).toEqual(["Premier League"]);
+  expect(names).toEqual(expect.arrayContaining(["Premier League", "Coupe du Monde U20", "Reserve League", "Copa Sub-20", "Amateur Cup"]));
   const allMatches = res.body.competitions.flatMap((c) => c.matches);
-  expect(allMatches).toHaveLength(1);
-  expect(allMatches[0].id).toBe(1);
+  expect(allMatches).toHaveLength(5);
 });
 
 test("un match API-Football qui correspond déjà à un match football-data.org (mêmes équipes) n'est jamais dupliqué", async () => {
