@@ -53,6 +53,12 @@ test("le module admin n'est utilisé que par les routes d'administration et /api
   const files = output.split("\n").filter(Boolean).map((f) => f.replace(/\\/g, "/"));
   expect(files.length).toBeGreaterThan(0);
   for (const f of files) {
-    expect(f === "pages/api/admin/recompute.js" || f === "pages/admin.js" || f === "pages/api/whoami.js" || f === "lib/auth/admin.js").toBe(true);
+    expect(
+      f === "pages/api/admin/recompute.js" ||
+      f === "pages/api/admin/team-profile.js" ||
+      f === "pages/admin.js" ||
+      f === "pages/api/whoami.js" ||
+      f === "lib/auth/admin.js"
+    ).toBe(true);
   }
 });
