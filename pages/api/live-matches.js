@@ -80,6 +80,12 @@ export default async function handler(req, res) {
     if (apiFootballKey) {
       try {
         const fixtures = await getAllLiveFixtures(apiFootballKey);
+        // Visibilité serveur (logs Vercel) : sans ça, une source qui répond mais ne
+        // renvoie rien (quota épuisé, aucun match en ce moment) est indiscernable
+        // d'une source qui échoue silencieusement — utile pour diagnostiquer
+        // l'absence d'un championnat précis (ex : petite fédération) sans devoir
+        // deviner.
+        console.log(`[API-Football] /fixtures?live=all : ${fixtures.length} match(s) reçu(s)`);
         const known = new Set(
           fdMatches.map((m) => `${normalizeTeamName(m.homeTeam?.name)}|${normalizeTeamName(m.awayTeam?.name)}`)
         );

@@ -58,6 +58,12 @@ export default async function handler(req, res) {
       try {
         const dateStrings = Array.from({ length: NUM_DAYS }, (_, i) => isoDate(new Date(Date.now() + i * 24 * 3600000)));
         const perDate = await Promise.all(dateStrings.map((d) => getFixturesByDate(d, apiFootballKey)));
+        // Visibilité serveur (logs Vercel) : sans ça, une source qui répond mais ne
+        // renvoie rien (quota épuisé, aucun match programmé dans la fenêtre) est
+        // indiscernable d'une source qui échoue silencieusement — utile pour
+        // diagnostiquer l'absence d'un championnat précis (ex : petite fédération)
+        // sans devoir deviner.
+        console.log(`[API-Football] /fixtures?date=... (${NUM_DAYS} jours) : ${perDate.flat().length} match(s) reçu(s) au total`);
         const known = new Set(
           fdMatches.map((m) => `${normalizeTeamName(m.homeTeam?.name)}|${normalizeTeamName(m.awayTeam?.name)}`)
         );
