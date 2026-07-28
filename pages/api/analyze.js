@@ -6,6 +6,8 @@ import { getScorers } from "../../lib/scorersCache";
 import { buildProbableScorers } from "../../lib/probableScorers";
 import { getFrozenPrediction, saveFrozenPrediction, verifyFrozenPrediction, canPersistMatch } from "../../lib/pronosticHistory";
 import { computePronostic, computeLiveOutcome } from "../../lib/pronostic";
+import { computeMatchLinesFromProfiles } from "../../lib/pronosticFromProfiles";
+import { getExistingTeamProfile } from "../../lib/teamStatProfiles";
 import {
   getAllLiveFixtures, findLiveFixtureByTeams, getFixtureEvents, mapApiFootballEvents, mapFixtureToLiveState,
   findApiFootballTeamId, getTeamCardProneness,
@@ -73,7 +75,7 @@ async function computeFreshPrediction({ matchId, competitionCode, homeTeamId, aw
   // affinent ensuite le résultat quand l'API en fournit assez (voir lib/pronostic.js).
   const homeStandingsRow = table?.find((r) => String(r.team.id) === String(homeTeamId));
   const awayStandingsRow = table?.find((r) => String(r.team.id) === String(awayTeamId));
-  const [homeResolved, awayResolved, h2h, scorers, homeCardProneness, awayCardProneness] = await Promise.all([
+  const [homeResolved, awayResolved, h2h, scorers, homeCardProneness, awayCardProneness, homeProfile, awayProfile] = await Promise.all([
     resolveTeamStats(homeTeamId, homeStandingsRow, token),
     resolveTeamStats(awayTeamId, awayStandingsRow, token),
     matchId && !isApiFootballOnlyId ? getHeadToHead(matchId, token) : Promise.resolve(null),
@@ -82,17 +84,34 @@ async function computeFreshPrediction({ matchId, competitionCode, homeTeamId, aw
     isApiFootballOnlyId ? Promise.resolve(null) : getScorers(competitionCode, token),
     resolveCardProneness(homeTeamName, apiFootballKey),
     resolveCardProneness(awayTeamName, apiFootballKey),
+    // BLOC 2 (lib/pronosticFromProfiles.js) : simple LECTURE Supabase, jamais un appel
+    // API-Football ici — cliquer sur "ANALYSER" ne doit jamais attendre le calcul
+    // complet d'un profil (jusqu'à 22 appels API-Football pour les deux équipes, voir
+    // lib/teamStatProfiles.js). Le rafraîchissement des profils reste déclenché
+    // ailleurs (pages/api/admin/team-profile.js), jamais depuis ce clic.
+    getExistingTeamProfile(homeTeamName),
+    getExistingTeamProfile(awayTeamName),
   ]);
 
-  const result = computePronostic({
-    homeRow: homeResolved.stats,
-    awayRow: awayResolved.stats,
-    homeTeamName,
-    awayTeamName,
-    homeSource: homeResolved.source,
-    awaySource: awayResolved.source,
-    h2h,
-  });
+  // BLOC 2 : dès que les DEUX profils d'équipe réels sont disponibles, les lignes de
+  // pronostics (buts, corners, fautes, touches, hors-jeu, tirs, cartons) viennent
+  // ENTIÈREMENT du croisement de ces deux profils — jamais un mélange avec l'ancien
+  // modèle (classement/forme récente) au sein d'un même match. Sans les deux profils,
+  // comportement inchangé : l'ancien modèle reste utilisé, exactement comme avant ce
+  // bloc.
+  const profileLines = computeMatchLinesFromProfiles({ homeProfile, awayProfile, homeTeamName, awayTeamName });
+
+  const result = profileLines.available
+    ? profileLines
+    : computePronostic({
+        homeRow: homeResolved.stats,
+        awayRow: awayResolved.stats,
+        homeTeamName,
+        awayTeamName,
+        homeSource: homeResolved.source,
+        awaySource: awayResolved.source,
+        h2h,
+      });
 
   // "Buteurs probables" : filtré sur les vrais joueurs de CHAQUE équipe (jamais
   // mélangés), à partir du classement des buteurs/passeurs réels de la compétition —

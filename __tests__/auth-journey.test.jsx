@@ -37,7 +37,10 @@ jest.mock("next/router", () => ({
 
 jest.mock("../lib/security/guardMutation", () => ({ guardMutation: () => true }));
 jest.mock("../lib/comboHistory", () => ({ maintainAndGetComboStats: jest.fn(() => Promise.resolve({ successRates: {}, progress: {} })) }));
-jest.mock("../lib/pronosticHistory", () => ({ listAndMaintainHistory: jest.fn(() => Promise.resolve([])) }));
+jest.mock("../lib/pronosticHistory", () => ({
+  listAndMaintainHistory: jest.fn(() => Promise.resolve([])),
+  listRecentPredictionsForDuplicateCheck: jest.fn(() => Promise.resolve([])),
+}));
 
 // lib/session.js n'est mocké que pour la route d'administration, appelée directement
 // (pas via fetch) — voir plus bas, "currentSession" est la même variable qui pilote

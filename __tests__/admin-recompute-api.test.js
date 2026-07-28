@@ -20,6 +20,7 @@ jest.mock("../lib/comboHistory", () => ({
 }));
 jest.mock("../lib/pronosticHistory", () => ({
   listAndMaintainHistory: jest.fn(() => Promise.resolve([{ id: 1 }])),
+  listRecentPredictionsForDuplicateCheck: jest.fn(() => Promise.resolve([])),
 }));
 
 const ORIGINAL_ADMIN_EMAIL = process.env.ADMIN_EMAIL;
@@ -69,6 +70,9 @@ test("3. l'administrateur : autorisé (200)", async () => {
   await handler(req, res);
   expect(res.statusCode).toBe(200);
   expect(res.body).toHaveProperty("comboSuccessRates");
+  // BLOC 2 : vérification automatique obligatoire (lib/lineDuplicateCheck.js) — jamais
+  // masquée, exposée directement dans la réponse de cette route de maintenance.
+  expect(res.body.duplicateLineWarnings).toEqual([]);
 });
 
 test("4. administrateur mais requête d'une origine étrangère : refusée (CSRF)", async () => {
@@ -92,6 +96,26 @@ test("5. ADMIN_EMAIL non définie : jamais d'écriture autorisée, même avec un
   const { req, res } = mockReqRes();
   await handler(req, res);
   expect(res.statusCode).toBe(403);
+});
+
+test("6. BLOC 2 : deux pronostics récents avec des lignes strictement identiques sont signalés, jamais masqués", async () => {
+  const { listRecentPredictionsForDuplicateCheck } = require("../lib/pronosticHistory");
+  const samePronostic = {
+    markets: { totalGoals: { line: 2.5, side: "Plus", lines: [{ line: 2.5, side: "Plus" }] } },
+    matchStats: {},
+    correctScores: [],
+  };
+  listRecentPredictionsForDuplicateCheck.mockResolvedValueOnce([
+    { matchId: "111", pronostic: samePronostic },
+    { matchId: "222", pronostic: samePronostic },
+  ]);
+
+  mockSession = { id: "user-admin", email: "admin@example.com" };
+  const { req, res } = mockReqRes();
+  await handler(req, res);
+
+  expect(res.statusCode).toBe(200);
+  expect(res.body.duplicateLineWarnings).toEqual([["111", "222"]]);
 });
 
 test("méthode autre que POST : refusée (405), avant même le contrôle admin", async () => {
