@@ -342,6 +342,73 @@ describe("getFixturesByDate / mapFixtureToUpcomingMatch — couverture mondiale 
   });
 });
 
+describe("apiFootballFetch — pause après un 429 (quota quotidien dépassé), jamais de martelage inutile", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  test("après un 429, les appels suivants pendant la pause ne déclenchent plus aucun appel réseau (le repli habituel — dernière donnée connue ou liste vide — reste utilisé)", async () => {
+    const { getAllLiveFixtures } = await import("../lib/apiFootball.js");
+    const fetchMock = jest.fn(() => Promise.resolve({ ok: false, status: 429 }));
+    global.fetch = fetchMock;
+
+    expect(await getAllLiveFixtures(TOKEN)).toEqual([]); // 429 -> repli habituel, entre en pause
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    expect(await getAllLiveFixtures(TOKEN)).toEqual([]); // toujours en pause : aucun nouvel appel réseau
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("une fois la pause (~1h) écoulée, un nouvel appel réel est retenté et peut réussir", async () => {
+    const { getAllLiveFixtures } = await import("../lib/apiFootball.js");
+    let call = 0;
+    const fetchMock = jest.fn(() => {
+      call += 1;
+      if (call === 1) return Promise.resolve({ ok: false, status: 429 });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [{ fixture: { id: 1 } }] }) });
+    });
+    global.fetch = fetchMock;
+
+    const nowSpy = jest.spyOn(Date, "now");
+    nowSpy.mockReturnValue(1_000_000);
+    await getAllLiveFixtures(TOKEN); // 429 -> pause jusqu'à 1_000_000 + 1h
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Toujours dans la pause (le cache de 90s aurait de toute façon expiré) : aucun
+    // appel réseau supplémentaire.
+    nowSpy.mockReturnValue(1_000_000 + 40_000);
+    await getAllLiveFixtures(TOKEN);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Pause écoulée (plus d'1h plus tard) : un nouvel appel réel est retenté et réussit.
+    nowSpy.mockReturnValue(1_000_000 + 60 * 60 * 1000 + 1000);
+    const fixtures = await getAllLiveFixtures(TOKEN);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fixtures).toEqual([{ fixture: { id: 1 } }]);
+  });
+
+  test("une erreur autre qu'un 429 (réseau, 500) ne déclenche aucune pause : le prochain appel retente normalement", async () => {
+    const { getAllLiveFixtures } = await import("../lib/apiFootball.js");
+    let call = 0;
+    const fetchMock = jest.fn(() => {
+      call += 1;
+      if (call === 1) return Promise.resolve({ ok: false, status: 500 });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [{ fixture: { id: 2 } }] }) });
+    });
+    global.fetch = fetchMock;
+
+    expect(await getAllLiveFixtures(TOKEN)).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Le cache de 90s empêcherait un nouvel appel immédiat même sans 429 : on avance le
+    // temps pour simuler la fenêtre suivante, comme le ferait un vrai rafraîchissement.
+    jest.spyOn(Date, "now").mockReturnValue(Date.now() + 100_000);
+    const fixtures = await getAllLiveFixtures(TOKEN);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fixtures).toEqual([{ fixture: { id: 2 } }]);
+  });
+});
+
 describe("findApiFootballTeamId / getTeamCardProneness — joueurs susceptibles de prendre un carton (best-effort)", () => {
   test("sans clé API, renvoie null/liste vide sans jamais appeler l'API", async () => {
     const { findApiFootballTeamId, getTeamCardProneness } = await import("../lib/apiFootball.js");
