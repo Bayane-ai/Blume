@@ -1,0 +1,5 @@
+{
+  "crons": [
+    { "path": "/api/cron/settle-predictions", "schedule": "*/10 * * * *" }
+  ]
+}

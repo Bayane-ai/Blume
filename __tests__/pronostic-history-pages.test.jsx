@@ -78,12 +78,16 @@ test('liste vide : message clair, jamais une page blanche', async () => {
   });
 
   render(<ProbabilitesReussies />);
-  expect(await screen.findByText("Aucun pronostic réussi pour le moment.")).toBeInTheDocument();
+  expect(
+    await screen.findByText("Aucun match terminé pour l'instant — l'historique se remplit à la fin de chaque match.")
+  ).toBeInTheDocument();
 });
 
 test('erreur réseau : message clair, ne plante jamais', async () => {
   global.fetch = jest.fn(() => Promise.reject(new Error("network down")));
 
   render(<ProbabilitesEchouees />);
-  expect(await screen.findByText("Aucun pronostic échoué pour le moment.")).toBeInTheDocument();
+  expect(
+    await screen.findByText("Aucun match terminé pour l'instant — l'historique se remplit à la fin de chaque match.")
+  ).toBeInTheDocument();
 });

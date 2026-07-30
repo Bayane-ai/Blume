@@ -8,6 +8,8 @@
 const fs = require("fs");
 const path = require("path");
 
+jest.mock("../lib/pronosticHistory", () => ({ maybeSweepFinishedPredictions: jest.fn() }));
+
 const LIVE_MATCHES_SRC = fs.readFileSync(path.join(__dirname, "../pages/api/live-matches.js"), "utf8");
 const MATCHES_SRC = fs.readFileSync(path.join(__dirname, "../pages/api/matches.js"), "utf8");
 

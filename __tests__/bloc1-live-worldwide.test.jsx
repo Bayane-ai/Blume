@@ -27,6 +27,8 @@ jest.mock("next/router", () => ({
   useRouter: () => ({ pathname: "/", push: jest.fn(), replace: jest.fn() }),
 }));
 
+jest.mock("../lib/pronosticHistory", () => ({ maybeSweepFinishedPredictions: jest.fn() }));
+
 jest.mock("../lib/useRequireAuth", () => ({
   useRequireAuth: () => ({
     session: { id: "u1", email: "test@example.com" },

@@ -5,6 +5,8 @@
  * U17/U19/U20...) — jamais une compétition écartée simplement parce qu'elle n'est pas
  * dans la liste des compétitions majeures connues (lib/competitions.js).
  */
+jest.mock("../lib/pronosticHistory", () => ({ maybeSweepFinishedPredictions: jest.fn() }));
+
 const FD_TOKEN = "test-fd-token";
 const AF_KEY = "test-af-key";
 

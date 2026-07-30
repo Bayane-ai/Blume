@@ -4,6 +4,8 @@
  * aucun plafond artificiel — tous les matchs en direct renvoyés par l'API sont affichés.
  */
 
+jest.mock("../lib/pronosticHistory", () => ({ maybeSweepFinishedPredictions: jest.fn() }));
+
 const TOKEN = "test-token";
 
 function mockRes() {

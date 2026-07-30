@@ -2,10 +2,11 @@ import VerifiedLinesList, { VerifiedRow } from "./VerifiedLines";
 
 // Bloc 4 (parcours vidéo) : quand on appuie sur un match déjà terminé, un
 // récapitulatif s'affiche directement sur sa page — pronostic par pronostic, s'il a
-// été validé (crochet vert) ou raté (croix rouge), y compris le résultat Réussi/Échec
-// de la probabilité de victoire (voir lib/pronosticHistory.js, classifyOutcome : jugé
-// uniquement sur l'équipe favorite désignée avant le match). Réutilise le même
-// composant que les cartes "Probabilités réussies/échouées" (voir
+// été validé (crochet vert) ou raté (croix rouge). Le bilan global (Succès/Échec, tout
+// en haut) juge la MAJORITÉ de toutes ces lignes (voir lib/pronosticHistory.js,
+// classifyByMajority) — "Issue du match" (probabilité de victoire) reste ensuite sa
+// propre ligne individuelle, comme les autres, dans la liste ci-dessous. Réutilise le
+// même composant que les cartes "Probabilités réussies/échouées" (voir
 // components/VerifiedLines.js) — même logique, même donnée (`pronostic.verification`,
 // figée une fois pour toutes en fin de match par lib/pronosticHistory.js).
 export default function MatchOutcomeRecap({ pronostic }) {
@@ -20,11 +21,16 @@ export default function MatchOutcomeRecap({ pronostic }) {
       {hasHistoryStatus && (
         <VerifiedRow
           testId="recap-win-probability"
-          label={`Probabilité de victoire : ${isSuccess ? "Réussi" : "Échec"}`}
+          label={`Bilan global du match (majorité des lignes) : ${isSuccess ? "Succès" : "Échec"}`}
           verified={isSuccess}
         />
       )}
-      <VerifiedLinesList markets={pronostic.markets} matchStats={pronostic.matchStats} verification={pronostic.verification} />
+      <VerifiedLinesList
+        markets={pronostic.markets}
+        matchStats={pronostic.matchStats}
+        verification={pronostic.verification}
+        correctScores={pronostic.correctScores}
+      />
     </section>
   );
 }

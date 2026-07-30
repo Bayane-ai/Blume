@@ -9,15 +9,15 @@ function formatDate(iso) {
 
 // Une carte par match terminé et vérifié (Succès ou Échec) : les deux équipes, le
 // score final, la date, le résumé des probabilités, et — voir PROMPT — CHAQUE ligne de
-// pronostic (fautes, total, Total 1, Total 2, corners, touches, hors-jeu, cartons,
-// tirs...) comparée individuellement au vrai résultat du match, avec son propre
-// indicateur ✓/✗ (voir components/VerifiedLines.js, partagé avec le compte-rendu
-// affiché directement sur la page d'un match terminé — Bloc 4, voir
+// pronostic (issue du match, scores exacts, totaux, fautes, corners, touches,
+// hors-jeu, cartons, tirs...) comparée individuellement au vrai résultat du match,
+// avec son propre indicateur ✓/✗ (voir components/VerifiedLines.js, partagé avec le
+// compte-rendu affiché directement sur la page d'un match terminé — Bloc 4, voir
 // components/MatchOutcomeRecap.js). Le badge global (Succès/Échec, voir
-// lib/pronosticHistory.js, classifyOutcome) reste lui jugé UNIQUEMENT sur l'équipe
-// favorite désignée avant le match (a-t-elle réellement gagné ?) — les indicateurs
-// par ligne sont un complément plus détaillé, pas un remplacement. Utilisée par
-// pages/probabilites-reussies.js et pages/probabilites-echouees.js.
+// lib/pronosticHistory.js, classifyByMajority) juge la MAJORITÉ de ces lignes — les
+// indicateurs par ligne sont donc ce qui détermine directement ce badge, pas un
+// simple complément. Utilisée par pages/probabilites-reussies.js et
+// pages/probabilites-echouees.js.
 export default function PronosticHistoryCard({ item }) {
   if (!item) return null;
 
@@ -58,7 +58,12 @@ export default function PronosticHistoryCard({ item }) {
 
       {verification && markets && (
         <div style={st.verifiedSection}>
-          <VerifiedLinesList markets={markets} matchStats={matchStats} verification={verification} />
+          <VerifiedLinesList
+            markets={markets}
+            matchStats={matchStats}
+            verification={verification}
+            correctScores={item.prediction?.correctScores}
+          />
         </div>
       )}
     </div>

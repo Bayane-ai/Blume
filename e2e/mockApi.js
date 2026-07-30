@@ -1,24 +1,36 @@
 const { liveMatches, upcomingByCompetition, finishedMatch, standingsByCompetition } = require("./fixtures");
 const { COMPETITIONS } = require("../lib/competitions");
 const { computePronostic, computeLiveOutcome } = require("../lib/pronostic");
-const { classifyOutcome, toPredictionSnapshot } = require("../lib/pronosticHistory");
+const { classifyOutcome, classifyByMajority, toPredictionSnapshot } = require("../lib/pronosticHistory");
 const { verifyPredictionLines } = require("../lib/pronosticVerification");
 const { buildProbableScorers } = require("../lib/probableScorers");
 
-// Historique "Probabilités réussies/échouées" : le VRAI classifyOutcome de
+// Historique "Probabilités réussies/échouées" : le VRAI classifyByMajority de
 // lib/pronosticHistory.js (pas une donnée recopiée) tranche chaque match ci-dessous —
 // vérifie en conditions réelles (navigateur) que le bon badge atterrit sur le bon
 // match, à partir d'un vrai pronostic calculé (computePronostic) et d'un score final
 // choisi pour chaque scénario. `verification` (VRAI verifyPredictionLines, voir PROMPT
-// "chaque ligne de pronostic doit porter un indicateur visuel") utilise `realStats:
+// "chaque ligne de pronostic doit porter un indicateur visuel"), complétée par les
+// mêmes lignes "winner"/"correctScores" que pages/api/analyze.js, utilise `realStats:
 // null` — aucune clé API-Football dans cet environnement E2E — ce qui exerce
 // honnêtement le cas le plus courant en production actuelle : seules les lignes de
 // buts (dérivées du vrai score final, toujours connu) restent vérifiables, le reste
 // s'affiche "Indisponible", jamais un résultat inventé.
 function historyFixtureItem({ matchId, homeRow, awayRow, homeTeamName, awayTeamName, matchDate, finalScore }) {
   const prediction = toPredictionSnapshot(computePronostic({ homeRow, awayRow, homeTeamName, awayTeamName }));
-  const status = classifyOutcome(prediction, finalScore);
-  const verification = verifyPredictionLines({ prediction, finalScore, realStats: null });
+  const winnerOutcome = classifyOutcome(prediction, finalScore);
+  const home = Number(finalScore?.home);
+  const away = Number(finalScore?.away);
+  const actualScore = `${home}-${away}`;
+  const correctScores = Array.isArray(prediction.correctScores) && prediction.correctScores.length > 0
+    ? prediction.correctScores.some((s) => s.score === actualScore)
+    : null;
+  const verification = {
+    winner: winnerOutcome == null ? null : winnerOutcome === "success",
+    correctScores,
+    ...verifyPredictionLines({ prediction, finalScore, realStats: null }),
+  };
+  const status = classifyByMajority(verification);
   return {
     match_id: String(matchId), home_team_name: homeTeamName, away_team_name: awayTeamName,
     match_date: matchDate, final_score: finalScore, status, prediction: { ...prediction, verification },
@@ -169,7 +181,7 @@ async function installApiMocks(page) {
       const live = liveMatches.find((m) => m.id === matchId);
       // Bloc 4 (parcours vidéo) : "quand on appuie sur un match déjà terminé" —
       // reproduit ici, pour finishedMatch (voir e2e/fixtures.js), le VRAI calcul de
-      // pages/api/analyze.js (classifyOutcome + verifyPredictionLines) pour que le
+      // pages/api/analyze.js (classifyByMajority + verifyPredictionLines) pour que le
       // compte-rendu (components/MatchOutcomeRecap.js) soit vérifiable en conditions
       // réelles (navigateur), pas seulement en test unitaire.
       const finished = !live && finishedMatch.id === matchId ? finishedMatch : null;
@@ -195,8 +207,17 @@ async function installApiMocks(page) {
         result.matchStatus = finished.status;
         result.matchMinute = finished.minute;
         result.matchScore = finished.score.fullTime;
-        result.historyStatus = classifyOutcome(result, finished.score.fullTime);
-        result.verification = verifyPredictionLines({ prediction: result, finalScore: finished.score.fullTime, realStats: null });
+        const winnerOutcome = classifyOutcome(result, finished.score.fullTime);
+        const actualScore = `${finished.score.fullTime.home}-${finished.score.fullTime.away}`;
+        const correctScores = Array.isArray(result.correctScores) && result.correctScores.length > 0
+          ? result.correctScores.some((s) => s.score === actualScore)
+          : null;
+        result.verification = {
+          winner: winnerOutcome == null ? null : winnerOutcome === "success",
+          correctScores,
+          ...verifyPredictionLines({ prediction: result, finalScore: finished.score.fullTime, realStats: null }),
+        };
+        result.historyStatus = classifyByMajority(result.verification);
       }
       // Retour en arrière partiel (demande explicite de l'utilisateur) : reproduit ici
       // le même recalcul que pages/api/analyze.js — probabilités/scores exacts/totaux

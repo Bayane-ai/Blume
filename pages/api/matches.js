@@ -2,6 +2,7 @@ import { COMPETITIONS } from "../../lib/competitions";
 import { getStandingsTable } from "../../lib/standingsCache";
 import { computePronostic } from "../../lib/pronostic";
 import { getFixturesByDate, mapFixtureToUpcomingMatch, normalizeTeamName } from "../../lib/apiFootball";
+import { maybeSweepFinishedPredictions } from "../../lib/pronosticHistory";
 
 const BASE = "https://api.football-data.org/v4";
 const NUM_DAYS = 8; // aujourd'hui + 7 jours, même fenêtre que dateFrom/dateTo ci-dessous
@@ -25,6 +26,13 @@ export default async function handler(req, res) {
   const token = process.env.FOOTBALL_DATA_TOKEN;
   const apiFootballKey = process.env.API_FOOTBALL_KEY;
   if (!token) return res.status(500).json({ error: "Clé API manquante" });
+
+  // RÈGLEMENT AUTOMATIQUE DE FIN DE MATCH (voir lib/pronosticHistory.js) : cette page
+  // est visitée bien plus souvent que "Probabilités réussies/échouées" — en profiter
+  // (throttlé à un balayage réel toutes les 5 min, jamais attendu) fait que le
+  // classement Succès/Échec d'un match ne dépend plus d'une visite délibérée de ces
+  // deux pages précises.
+  maybeSweepFinishedPredictions(token, apiFootballKey);
 
   const dateFrom = isoDate(new Date());
   const dateTo = isoDate(new Date(Date.now() + 7 * 24 * 3600000));

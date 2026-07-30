@@ -1,13 +1,17 @@
 /**
  * lib/pronosticHistory.js — gel du pronostic affiché (calculé une seule fois, relu tel
  * quel ensuite, jamais recalculé en direct — voir pages/api/analyze.js), vérification
- * automatique à la fin du match (Succès/Échec jugés sur le 1X2 et le Total de buts,
- * contre le VRAI score final), nettoyage des entrées de plus de 5 jours, revérification
- * des matchs encore "pending" à chaque chargement des pages d'historique.
+ * automatique à la fin du match (Succès/Échec jugés sur la MAJORITÉ de toutes les
+ * lignes — issue du match, scores exacts, totaux, corners, hors-jeu, fautes, tirs,
+ * cartons — contre le VRAI score final et les vraies statistiques), nettoyage des
+ * entrées de plus de 5 jours, revérification des matchs encore "pending" à chaque
+ * chargement des pages d'historique ET par balayage opportuniste (trafic normal du
+ * site).
  */
 import {
-  classifyOutcome, toPredictionSnapshot, getFrozenPrediction, saveFrozenPrediction,
+  classifyOutcome, classifyByMajority, toPredictionSnapshot, getFrozenPrediction, saveFrozenPrediction,
   verifyFrozenPrediction, canPersistMatch, listAndMaintainHistory,
+  maybeSweepFinishedPredictions, settleFinishedPredictionsNow, __resetSweepThrottleForTests,
 } from "../lib/pronosticHistory";
 import { supabaseAnon as supabase } from "../lib/supabaseAnon";
 import { getLiveMatch } from "../lib/liveMatchCache";
@@ -100,6 +104,95 @@ describe("classifyOutcome — jugé UNIQUEMENT sur l'équipe favorite désignée
 
   test("pronostic sans probabilités → null (rien à comparer)", () => {
     expect(classifyOutcome({}, { home: 1, away: 0 })).toBeNull();
+  });
+});
+
+// BLOC "correction du bug pages vides" : le classement Succès/Échec d'un match ne
+// juge plus SEULEMENT son issue (voir classifyOutcome ci-dessus, toujours exporté et
+// inchangé) mais la MAJORITÉ de TOUTES ses lignes vérifiables — jamais les lignes
+// "Indisponible" (null), qui ne comptent ni pour ni contre (voir PROMPT point 4).
+describe("classifyByMajority — classe Succès/Échec selon la majorité des lignes réellement vérifiables", () => {
+  test("plus de lignes validées que ratées -> success", () => {
+    const verification = { winner: true, correctScores: false, totalGoals: true, totalHome: true, totalAway: false };
+    expect(classifyByMajority(verification)).toBe("success");
+  });
+
+  test("plus de lignes ratées que validées -> failure", () => {
+    const verification = { winner: false, correctScores: false, totalGoals: true };
+    expect(classifyByMajority(verification)).toBe("failure");
+  });
+
+  test("égalité stricte (autant de validées que de ratées) -> failure (jamais une majorité)", () => {
+    const verification = { winner: true, correctScores: false };
+    expect(classifyByMajority(verification)).toBe("failure");
+  });
+
+  test("les lignes \"Indisponible\" (null) ne comptent ni pour ni contre — seule la majorité des lignes VÉRIFIABLES compte", () => {
+    const verification = {
+      winner: true, correctScores: null, totalGoals: null, totalHome: null, totalAway: null,
+      throwIns: { total: null, home: null, away: null }, // touches : jamais vérifiable
+    };
+    // Une seule ligne vérifiable (winner: true), toutes les autres indisponibles ->
+    // majorité atteinte avec une seule voix.
+    expect(classifyByMajority(verification)).toBe("success");
+  });
+
+  test("descend dans les blocs corners/hors-jeu/fautes (total/home/away) et cartons (safe/risky)", () => {
+    const verification = {
+      corners: { total: true, home: true, away: true },
+      fouls: { total: false, home: false, away: false },
+      yellowCards: { safe: true, risky: true },
+      redCards: { safe: false, risky: false },
+    };
+    // 3 (corners) + 2 (jaunes) = 5 succès ; 3 (fautes) + 2 (rouges) = 5 échecs -> égalité -> failure.
+    expect(classifyByMajority(verification)).toBe("failure");
+    const verificationMoreSuccess = { ...verification, corners: { total: true, home: true, away: true }, offsides: { total: true, home: true, away: null } };
+    // 3 + 2 (offsides réels) + 2 (jaunes) = 7 succès ; 3 (fautes) + 2 (rouges) = 5 échecs -> success.
+    expect(classifyByMajority(verificationMoreSuccess)).toBe("success");
+  });
+
+  test("aucune ligne vérifiable (tout indisponible) -> null, jamais une classification inventée", () => {
+    expect(classifyByMajority({ totalGoals: null, corners: { total: null, home: null, away: null } })).toBeNull();
+    expect(classifyByMajority(null)).toBeNull();
+  });
+});
+
+describe("maybeSweepFinishedPredictions / settleFinishedPredictionsNow — règlement automatique de fin de match, sans visite délibérée des pages de pronostics", () => {
+  beforeEach(() => {
+    __resetSweepThrottleForTests();
+  });
+
+  test("settleFinishedPredictionsNow (route cron) : toujours un vrai balayage, jamais throttlé", async () => {
+    supabase.from = mockSupabaseFrom({ data: [], error: null });
+    await settleFinishedPredictionsNow("test-token", "af-key");
+    expect(supabase.from).toHaveBeenCalledWith("pronostic_history");
+  });
+
+  test("maybeSweepFinishedPredictions : premier appel déclenche un vrai balayage (fire-and-forget, pas attendu par l'appelant)", async () => {
+    const fromCall = mockSupabaseFrom({ data: [], error: null });
+    supabase.from = fromCall;
+    maybeSweepFinishedPredictions("test-token", "af-key");
+    // Laisse la microtask du balayage (fire-and-forget) s'exécuter.
+    await new Promise((r) => setImmediate(r));
+    expect(fromCall).toHaveBeenCalledWith("pronostic_history");
+  });
+
+  test("un deuxième appel immédiat (dans la fenêtre de 5 minutes) ne redéclenche aucun balayage", async () => {
+    supabase.from = mockSupabaseFrom({ data: [], error: null }, { data: [], error: null });
+    maybeSweepFinishedPredictions("test-token", "af-key");
+    await new Promise((r) => setImmediate(r));
+    const callsAfterFirst = supabase.from.mock.calls.length;
+
+    maybeSweepFinishedPredictions("test-token", "af-key");
+    await new Promise((r) => setImmediate(r));
+    expect(supabase.from.mock.calls.length).toBe(callsAfterFirst);
+  });
+
+  test("sans token, ne fait jamais rien (aucun appel Supabase)", async () => {
+    supabase.from = jest.fn();
+    maybeSweepFinishedPredictions(null, "af-key");
+    await new Promise((r) => setImmediate(r));
+    expect(supabase.from).not.toHaveBeenCalled();
   });
 });
 
@@ -271,7 +364,14 @@ describe("saveFrozenPrediction — fige le pronostic la toute première fois, ja
       homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC", matchDate: "2026-01-01T00:00:00Z", apiFootballKey: "af-key",
     });
     expect(verifyPredictionLines).toHaveBeenCalledWith({ prediction: basePrediction, finalScore: { home: 3, away: 0 }, realStats });
-    expect(upsertCall.mock.calls[0][0].prediction).toEqual({ ...basePrediction, verification });
+    // "winner" (issue du match) et "correctScores" sont désormais calculés et fusionnés
+    // dans `verification` au même titre que les autres lignes (voir PROMPT point 5) —
+    // l'équipe favorite (home, 60%) a bien gagné 3-0 -> winner: true ; basePrediction
+    // n'a pas de correctScores -> null.
+    expect(upsertCall.mock.calls[0][0].prediction).toEqual({
+      ...basePrediction,
+      verification: { ...verification, winner: true, correctScores: null },
+    });
   });
 
   test("match pas encore terminé : jamais de vérification ligne par ligne (le match n'a pas de résultat réel)", async () => {
@@ -305,7 +405,10 @@ describe("saveFrozenPrediction — fige le pronostic la toute première fois, ja
       finalScore: { home: 3, away: 0 },
     });
 
-    expect(returned).toEqual({ status: "success", prediction: { ...basePrediction, verification } });
+    expect(returned).toEqual({
+      status: "success",
+      prediction: { ...basePrediction, verification: { ...verification, winner: true, correctScores: null } },
+    });
   });
 
   test("match pas encore terminé : ne renvoie rien (pas de compte-rendu à afficher, le match n'est pas fini)", async () => {
@@ -371,7 +474,12 @@ describe("verifyFrozenPrediction — compte-rendu de fin de match : compare le p
       homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC", matchDate: "2026-01-01T00:00:00Z", apiFootballKey: "af-key",
     });
     expect(verifyPredictionLines).toHaveBeenCalledWith({ prediction: basePrediction, finalScore: { home: 2, away: 1 }, realStats });
-    expect(updateCall.mock.calls[0][0].prediction).toEqual({ ...basePrediction, verification });
+    // L'équipe favorite (home, 60%) a bien gagné 2-1 -> winner: true ; basePrediction
+    // n'a pas de correctScores -> null.
+    expect(updateCall.mock.calls[0][0].prediction).toEqual({
+      ...basePrediction,
+      verification: { ...verification, winner: true, correctScores: null },
+    });
   });
 
   test("ignoré pour un match identifié uniquement par API-Football (\"af-...\"), aucun appel Supabase", async () => {
@@ -395,7 +503,10 @@ describe("verifyFrozenPrediction — compte-rendu de fin de match : compare le p
 
     const returned = await verifyFrozenPrediction("101", { home: 2, away: 1 });
 
-    expect(returned).toEqual({ status: "success", prediction: { ...basePrediction, verification } });
+    expect(returned).toEqual({
+      status: "success",
+      prediction: { ...basePrediction, verification: { ...verification, winner: true, correctScores: null } },
+    });
   });
 
   test("match déjà classé (idempotent) : ne renvoie rien (déjà affiché depuis le pronostic figé relu normalement)", async () => {
@@ -517,7 +628,12 @@ describe("listAndMaintainHistory — nettoyage (5 jours) + revérification des \
       homeTeamName: "Real Madrid", awayTeamName: "FC Barcelona", matchDate: "2026-01-01T00:00:00Z", apiFootballKey: "af-key",
     });
     expect(verifyPredictionLines).toHaveBeenCalledWith({ prediction, finalScore: { home: 3, away: 0 }, realStats });
-    expect(updateCall.mock.calls[0][0].prediction).toEqual({ ...prediction, verification });
+    // L'équipe favorite (home, 60%) a bien gagné 3-0 -> winner: true ; `prediction` n'a
+    // pas de correctScores -> null.
+    expect(updateCall.mock.calls[0][0].prediction).toEqual({
+      ...prediction,
+      verification: { ...verification, winner: true, correctScores: null },
+    });
   });
 
   test("sans token football-data.org, ne tente aucune revérification (pas d'appel getLiveMatch)", async () => {

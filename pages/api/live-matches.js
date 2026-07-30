@@ -2,6 +2,7 @@ import { getStandingsTable } from "../../lib/standingsCache";
 import { getLiveMatchesList } from "../../lib/liveListCache";
 import { getAllLiveFixtures, normalizeTeamName, mapFixtureToLiveMatch } from "../../lib/apiFootball";
 import { computePronostic, computeLiveOutcome, buildSelectionCandidates } from "../../lib/pronostic";
+import { maybeSweepFinishedPredictions } from "../../lib/pronosticHistory";
 
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
 
@@ -52,6 +53,11 @@ export default async function handler(req, res) {
   const token = process.env.FOOTBALL_DATA_TOKEN;
   const apiFootballKey = process.env.API_FOOTBALL_KEY;
   if (!token) return res.status(500).json({ error: "Clé API manquante" });
+
+  // RÈGLEMENT AUTOMATIQUE DE FIN DE MATCH (voir lib/pronosticHistory.js) : la route la
+  // plus fréquemment interrogée du site (page d'accueil, actualisée en continu) — un
+  // simple appel throttlé (5 min, jamais attendu), sans le moindre coût perceptible ici.
+  maybeSweepFinishedPredictions(token, apiFootballKey);
 
   try {
     // Tous les matchs en direct (IN_PLAY + PAUSED via le pseudo-statut LIVE de

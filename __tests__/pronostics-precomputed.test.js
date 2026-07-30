@@ -4,6 +4,8 @@
  * sans attendre une action de l'utilisateur (aucun clic déclencheur).
  */
 
+jest.mock("../lib/pronosticHistory", () => ({ maybeSweepFinishedPredictions: jest.fn() }));
+
 const TOKEN = "test-token";
 const HOUR = 3600000;
 const DAY = 24 * HOUR;

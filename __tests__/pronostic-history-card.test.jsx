@@ -30,6 +30,7 @@ function baseItem(overrides = {}) {
     status: "success",
     prediction: {
       probabilities: { home: 60, draw: 25, away: 15 },
+      correctScores: [{ score: "2-0", probability: 15 }, { score: "1-0", probability: 12 }, { score: "2-1", probability: 10 }],
       markets: {
         totalGoals: { line: 2.5, side: "Plus", lines: [{ line: 2.5, side: "Plus" }] },
         totalHome: { line: 1.5, side: "Plus", lines: [{ line: 1.5, side: "Plus" }] },
@@ -46,6 +47,8 @@ function baseItem(overrides = {}) {
         throwIns: statBlock(41.5, 21.5, 19.5),
       },
       verification: {
+        winner: true,
+        correctScores: false,
         totalGoals: true,
         totalHome: false,
         totalAway: true,
@@ -130,6 +133,14 @@ test("la ligne mi-temps de chaque bloc reste toujours \"Indisponible\" (aucun d�
   render(<PronosticHistoryCard item={baseItem()} />);
   const row = screen.getByText(/1ère mi-temps : Plus de 4,75/).closest('[data-testid="verified-line"]');
   expect(row).toHaveTextContent("Indisponible");
+});
+
+test("« Issue du match » et « Scores exacts » apparaissent comme leurs propres lignes, avec crochet/croix — même logique que les autres", () => {
+  render(<PronosticHistoryCard item={baseItem()} />);
+  expect(screen.getByTestId("verified-winner").querySelector('[data-testid="line-icon-success"]')).toBeInTheDocument();
+  const correctScoresRow = screen.getByTestId("verified-correct-scores");
+  expect(correctScoresRow.querySelector('[data-testid="line-icon-failure"]')).toBeInTheDocument();
+  expect(correctScoresRow).toHaveTextContent("2-0");
 });
 
 test("les cartons jaunes/rouges (sûr/risqué) sont vérifiés individuellement", () => {

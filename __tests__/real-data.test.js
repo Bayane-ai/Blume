@@ -5,6 +5,8 @@
  * exactement ce nombre, ni plus ni moins.
  */
 
+jest.mock("../lib/pronosticHistory", () => ({ maybeSweepFinishedPredictions: jest.fn() }));
+
 const TOKEN = "test-token";
 
 function mockRes() {

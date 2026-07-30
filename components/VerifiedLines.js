@@ -60,15 +60,20 @@ function StatBlockVerification({ label, block, verification }) {
 // du match, avec son propre indicateur ✓/✗ — voir PROMPT. `sectionLabel` reste
 // optionnel : la page de match (Bloc 4) affiche son propre titre de section autour de
 // ce bloc, les cartes d'historique (Bloc 3) gardent celui par défaut.
-export default function VerifiedLinesList({ markets, matchStats, verification, sectionLabel = "Pronostics vérifiés ligne par ligne" }) {
+export default function VerifiedLinesList({ markets, matchStats, verification, correctScores, sectionLabel = "Pronostics vérifiés ligne par ligne" }) {
   if (!verification || !markets) return null;
   const yellowCardLabels = markets.yellowCards ? riskLabels(markets.yellowCards) : null;
   const redCardLabels = markets.redCards ? riskLabels(markets.redCards) : null;
+  const correctScoresLabel = Array.isArray(correctScores) && correctScores.length > 0
+    ? correctScores.map((s) => s.score).join(" / ")
+    : "–";
 
   return (
     <div data-testid="verified-lines">
       {sectionLabel && <p style={st.sectionLabel}>{sectionLabel}</p>}
 
+      <VerifiedRow testId="verified-winner" label="Issue du match" verified={verification.winner} />
+      <VerifiedRow testId="verified-correct-scores" label={`Scores exacts : ${correctScoresLabel}`} verified={verification.correctScores} />
       <VerifiedRow label={`Total : ${marketLabel(markets.totalGoals)}`} verified={verification.totalGoals} />
       <VerifiedRow label={`Total 1 : ${marketLabel(markets.totalHome)}`} verified={verification.totalHome} />
       <VerifiedRow label={`Total 2 : ${marketLabel(markets.totalAway)}`} verified={verification.totalAway} />

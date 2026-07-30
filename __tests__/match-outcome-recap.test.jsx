@@ -3,9 +3,9 @@
  *
  * components/MatchOutcomeRecap.js — Bloc 4 du parcours vidéo : quand on appuie sur un
  * match déjà terminé, un récapitulatif s'affiche indiquant, pronostic par pronostic,
- * s'il a été validé (crochet vert) ou raté (croix rouge) — y compris le résultat
- * Réussi/Échec de la probabilité de victoire (voir lib/pronosticHistory.js,
- * classifyOutcome : jugé sur l'équipe favorite désignée avant le match).
+ * s'il a été validé (crochet vert) ou raté (croix rouge) — y compris le bilan global
+ * Succès/Échec (voir lib/pronosticHistory.js, classifyByMajority : jugé sur la
+ * majorité de toutes les lignes du match).
  */
 import { render, screen } from "@testing-library/react";
 import MatchOutcomeRecap from "../components/MatchOutcomeRecap";
@@ -38,6 +38,7 @@ function basePronostic(overrides = {}) {
       throwIns: statBlock(41.5, 21.5, 19.5),
     },
     verification: {
+      winner: true, correctScores: false,
       totalGoals: true, totalHome: false, totalAway: true,
       corners: { total: true, home: false, away: true },
       offsides: { total: null, home: null, away: null },
@@ -51,20 +52,26 @@ function basePronostic(overrides = {}) {
   };
 }
 
-test("affiche \"Réussi\" avec un crochet vert quand l'équipe favorite a gagné", () => {
+test("affiche \"Succès\" avec un crochet vert quand la majorité des lignes est validée", () => {
   render(<MatchOutcomeRecap pronostic={basePronostic({ historyStatus: "success" })} />);
   const row = screen.getByTestId("recap-win-probability");
-  expect(row).toHaveTextContent(/Probabilité de victoire.*Réussi/);
+  expect(row).toHaveTextContent(/Bilan global du match.*Succès/);
   expect(row.querySelector('[data-testid="line-icon-success"]')).toBeInTheDocument();
   expect(row.querySelector('[data-testid="line-icon-failure"]')).not.toBeInTheDocument();
 });
 
-test("affiche \"Échec\" avec une croix rouge quand l'équipe favorite n'a pas gagné", () => {
+test("affiche \"Échec\" avec une croix rouge quand la majorité des lignes est ratée", () => {
   render(<MatchOutcomeRecap pronostic={basePronostic({ historyStatus: "failure" })} />);
   const row = screen.getByTestId("recap-win-probability");
-  expect(row).toHaveTextContent(/Probabilité de victoire.*Échec/);
+  expect(row).toHaveTextContent(/Bilan global du match.*Échec/);
   expect(row.querySelector('[data-testid="line-icon-failure"]')).toBeInTheDocument();
   expect(row.querySelector('[data-testid="line-icon-success"]')).not.toBeInTheDocument();
+});
+
+test("« Issue du match » et « Scores exacts » apparaissent chacune comme leur propre ligne, avec crochet/croix", () => {
+  render(<MatchOutcomeRecap pronostic={basePronostic()} />);
+  expect(screen.getByTestId("verified-winner").querySelector('[data-testid="line-icon-success"]')).toBeInTheDocument();
+  expect(screen.getByTestId("verified-correct-scores").querySelector('[data-testid="line-icon-failure"]')).toBeInTheDocument();
 });
 
 test("affiche aussi chaque autre ligne de pronostic individuellement, avec son propre crochet/croix", () => {

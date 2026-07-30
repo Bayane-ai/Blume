@@ -71,7 +71,7 @@ test("un match déjà terminé, déjà classé : le compte-rendu (Réussi/Échec
 
   await waitFor(() => expect(screen.getByTestId("match-outcome-recap")).toBeInTheDocument());
   const recap = screen.getByTestId("match-outcome-recap");
-  expect(within(recap).getByTestId("recap-win-probability")).toHaveTextContent(/Réussi/);
+  expect(within(recap).getByTestId("recap-win-probability")).toHaveTextContent(/Succès/);
   expect(within(recap).getByText(/^Total : Plus de 2,5$/)).toBeInTheDocument();
 });
 
