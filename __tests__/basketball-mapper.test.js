@@ -59,12 +59,18 @@ describe("mapGameToLiveMatch — même forme que mapFixtureToLiveMatch (football
       id: "bk-12345",
       status: "IN_PLAY",
       minute: "5:23",
+      period: "Q3",
       utcDate: "2026-08-01T19:00:00+00:00",
       competition: { code: "bk-12", name: "NBA", area: "USA", emblem: "https://example.com/nba.png" },
       homeTeam: { id: "bk-132", name: "Lakers", crest: "https://example.com/lal.png" },
       awayTeam: { id: "bk-134", name: "Warriors", crest: "https://example.com/gsw.png" },
       score: { fullTime: { home: 75, away: 68 } },
     });
+  });
+
+  test("`period` ne porte que Q1/Q2/Q3/Q4/OT — jamais renseigné hors quart-temps/prolongation (PROMPT bloc 2)", () => {
+    expect(mapGameToLiveMatch(rawGame({ status: { short: "HT", timer: null } })).period).toBeNull();
+    expect(mapGameToLiveMatch(rawGame({ status: { short: "OT", timer: "2:10" } })).period).toBe("OT");
   });
 
   test("le score utilise le TOTAL officiel, jamais recalculé à partir des quart-temps", () => {

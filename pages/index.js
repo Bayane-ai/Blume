@@ -17,6 +17,13 @@ import SportComingSoon from "../components/SportComingSoon";
 const LIVE_REFRESH_ACTIVE_MS = 2000;
 const LIVE_REFRESH_BACKGROUND_MS = 45000;
 
+// Multi-sport bloc 2 : basket, moins fréquent que le direct football (voir
+// pages/api/basketball/live-matches.js, déjà mis en cache 45s côté serveur) — un
+// rafraîchissement client dans la fourchette demandée (15-30s, voir PROMPT bloc 1)
+// suffit pour une "actualisation continue et automatique du score" sans jamais
+// dépasser le quota réel en amont.
+const BASKETBALL_LIVE_REFRESH_MS = 20000;
+
 // Exemples illustratifs pour la barre de recherche (rien n'est envoyé/affiché comme
 // résultat réel tant que la personne n'a rien tapé) — juste une aide visuelle.
 const SEARCH_PLACEHOLDER_EXAMPLES = [
@@ -50,6 +57,9 @@ export default function Home() {
 
   const [liveData, setLiveData] = useState(null);
   const [liveLoading, setLiveLoading] = useState(true);
+
+  const [bkLiveData, setBkLiveData] = useState(null);
+  const [bkLiveLoading, setBkLiveLoading] = useState(true);
 
   // Placeholder de recherche qui change régulièrement (simple indication visuelle,
   // pas une donnée réelle).
@@ -100,6 +110,38 @@ export default function Home() {
     const id = setInterval(() => loadLiveMatches(true), LIVE_REFRESH_ACTIVE_MS);
     return () => clearInterval(id);
   }, [authorized, sport, loadLiveMatches]);
+
+  // Multi-sport bloc 2 : mêmes principes que le football ci-dessus (silent=true ne
+  // doit jamais effacer des matchs déjà affichés lors d'un incident passager), pour
+  // /api/basketball/live-matches (voir pages/api/basketball/live-matches.js).
+  const loadBkLiveMatches = useCallback((silent = false) => {
+    if (!silent) setBkLiveLoading(true);
+    return fetch("/api/basketball/live-matches")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.error) {
+          console.error("Erreur /api/basketball/live-matches:", d.error);
+          if (silent) return;
+        }
+        setBkLiveData(d);
+      })
+      .catch((e) => {
+        console.error("Erreur /api/basketball/live-matches:", e);
+        if (!silent) setBkLiveData({ error: true, matches: [] });
+      })
+      .finally(() => setBkLiveLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (!authorized || sport !== "basketball") return;
+    loadBkLiveMatches();
+  }, [authorized, sport, loadBkLiveMatches]);
+
+  useEffect(() => {
+    if (!authorized || sport !== "basketball") return;
+    const id = setInterval(() => loadBkLiveMatches(true), BASKETBALL_LIVE_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [authorized, sport, loadBkLiveMatches]);
 
   // Historique de recherche : personnel à chaque compte, filtré côté serveur par
   // profile_id (voir pages/api/search-history.js), jamais partagé entre deux comptes.
@@ -161,6 +203,16 @@ export default function Home() {
 
   const liveCount = liveData?.matches?.length || 0;
 
+  // Multi-sport bloc 2 : TOUS les matchs basket en direct, toutes ligues confondues,
+  // sans exception (voir PROMPT bloc 2, point 1) — aucun filtre, contrairement au
+  // football ci-dessus (non demandé pour le basket dans ce bloc).
+  const bkFeed = useMemo(() => {
+    if (!bkLiveData?.matches) return [];
+    return bkLiveData.matches
+      .filter((m) => m?.homeTeam && m?.awayTeam && m?.utcDate)
+      .map((m) => ({ m, comp: m.competition }));
+  }, [bkLiveData]);
+
   // Match phare : le premier match réellement en direct, jamais un match inventé.
   // Calculé à partir des données brutes (pas de la liste déjà filtrée par la
   // recherche) : une recherche en cours ne doit pas faire changer ce qui est mis en
@@ -189,7 +241,36 @@ export default function Home() {
       <SiteHeader session={session} sport={sport} onSportChange={setSport} />
 
       <main style={st.main}>
-        {sport !== "football" ? (
+        {sport === "basketball" ? (
+          <>
+            <section style={st.hero}>
+              <h1 style={st.heroTitle}>Basket en direct</h1>
+              <p style={st.heroSubtitle}>
+                Scores en direct, quart-temps par quart-temps, sur toutes les ligues suivies par
+                Blume — NBA, EuroLeague, WNBA, NCAA, championnats nationaux et plus.
+              </p>
+            </section>
+
+            <div style={st.chipsInfoRow}>
+              <span style={st.chip}>Basket</span>
+              <span style={{ ...st.chip, ...st.chipLive }}>Live : {bkFeed.length}</span>
+            </div>
+
+            {bkLiveLoading && <p style={st.hint}>Chargement des matchs…</p>}
+            {!bkLiveLoading && (!bkLiveData || bkLiveData?.error) && (
+              <p style={st.hint}>Les matchs ne sont pas disponibles pour le moment. Réessaie dans quelques minutes.</p>
+            )}
+            {!bkLiveLoading && bkLiveData && !bkLiveData.error && bkFeed.length === 0 && (
+              <p style={st.hint}>Aucun match en direct actuellement.</p>
+            )}
+
+            <div data-testid="match-list">
+              {bkFeed.map(({ m, comp }) => (
+                <MatchCard key={m.id} m={m} comp={comp} />
+              ))}
+            </div>
+          </>
+        ) : sport !== "football" ? (
           <SportComingSoon sport={sport} pageLabel="Matchs en direct" />
         ) : (
           <>

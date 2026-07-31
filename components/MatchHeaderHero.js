@@ -1,4 +1,5 @@
 import { useRouter } from "next/router";
+import { formatLiveClock } from "../lib/liveClockFormat";
 
 function formatKickoffTime(iso) {
   if (!iso) return "";
@@ -24,6 +25,7 @@ export default function MatchHeaderHero({ m, comp, isLive }) {
   const scoreAway = m?.score?.fullTime?.away;
   const hasScore =
     scoreHome !== null && scoreHome !== undefined && scoreAway !== null && scoreAway !== undefined;
+  const liveClock = formatLiveClock(m);
 
   // Revient à la page précédente (liste des matchs en ligne ou à venir, selon
   // d'où la personne est arrivée), plutôt qu'une destination fixe.
@@ -61,7 +63,7 @@ export default function MatchHeaderHero({ m, comp, isLive }) {
           )}
           {isLive && (isPaused || m?.minute != null) && (
             <span style={st.liveMinute} data-testid="live-minute">
-              {isPaused ? "MT" : `${m.minute}’`}
+              {isPaused ? (m?.period ? "Pause" : "MT") : liveClock}
             </span>
           )}
         </div>

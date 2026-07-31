@@ -1,3 +1,5 @@
+import { formatLiveClock } from "../lib/liveClockFormat";
+
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
 
 function formatKickoff(iso) {
@@ -27,6 +29,10 @@ export default function MatchInfoBlock({ m, comp }) {
   const scoreAway = m.score?.fullTime?.away;
   const hasScore =
     scoreHome !== null && scoreHome !== undefined && scoreAway !== null && scoreAway !== undefined;
+  // Football : "34’" (minute écoulée, comme avant). Basket : "Q3 · 5:23" (quart-temps
+  // + chrono officiel, voir lib/liveClockFormat.js et PROMPT bloc 2) — même champ `m`,
+  // seul le sport d'origine change la forme du texte.
+  const liveClock = formatLiveClock(m);
 
   return (
     <div>
@@ -37,7 +43,7 @@ export default function MatchInfoBlock({ m, comp }) {
           )}
           <span style={st.compName}>{competitionName}</span>
         </div>
-        {isLive && <span style={st.liveTag}>LIVE{m.minute ? ` · ${m.minute}’` : ""}</span>}
+        {isLive && <span style={st.liveTag}>LIVE{liveClock ? ` · ${liveClock}` : ""}</span>}
         {isFinished && <span style={st.finishedTag}>Terminé</span>}
       </div>
 
@@ -66,7 +72,7 @@ export default function MatchInfoBlock({ m, comp }) {
         </span>
         {isLive && (
           <span style={st.cardMinute} data-testid="card-minute">
-            {isPaused ? "MT" : m.minute != null ? `${m.minute}’` : ""}
+            {isPaused ? (m.period ? "Pause" : "MT") : liveClock}
           </span>
         )}
       </div>

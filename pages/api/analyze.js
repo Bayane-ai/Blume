@@ -138,6 +138,17 @@ async function computeFreshPrediction({ matchId, competitionCode, homeTeamId, aw
 export default async function handler(req, res) {
   const token = process.env.FOOTBALL_DATA_TOKEN;
   const { matchId, competitionCode, homeTeamId, awayTeamId, homeTeamName, awayTeamName } = req.query;
+
+  // Multi-sport (bloc 2) : un match basket porte un id préfixé "bk-" (voir
+  // lib/sports/basketball/mapper.js) — jamais envoyé à football-data.org, dont les
+  // ids/codes de compétition sont numérotés indépendamment et pourraient par
+  // coïncidence désigner un tout autre match/une autre compétition. Les pronostics
+  // basket ne sont pas encore branchés (bloc 3) : réponse honnête plutôt qu'une
+  // estimation football appliquée à tort à un match de basket.
+  if (typeof matchId === "string" && matchId.startsWith("bk-")) {
+    return res.status(200).json({ available: false, message: "Les pronostics basket arrivent bientôt sur Blume." });
+  }
+
   if (!token) return res.status(500).json({ error: "Clé API manquante" });
   if (!competitionCode || !homeTeamId || !awayTeamId) {
     return res.status(400).json({ error: "Paramètres manquants" });

@@ -21,6 +21,26 @@ function normalize(str) {
     .toLowerCase();
 }
 
+// Multi-sport bloc 2 : "Matchs groupés JOUR PAR JOUR (une section par date)" pour le
+// basket — clé de jour calendaire LOCALE (jamais la date UTC brute, qui ferait
+// basculer un match de 23h dans le mauvais jour pour une bonne partie des visiteurs).
+function localDayKey(utcDateIso) {
+  const d = new Date(utcDateIso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function dayLabel(key) {
+  const [y, m, d] = key.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((date - today) / 86400000);
+  if (diffDays === 0) return "Aujourd'hui";
+  if (diffDays === 1) return "Demain";
+  const label = date.toLocaleDateString("fr-FR", { weekday: "long", day: "2-digit", month: "long" });
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 // Page "Matchs à venir" (PROMPT 2 du plan) : deuxième et dernier bouton de
 // navigation du site. Vraies données API (/api/matches, mêmes compétitions que
 // PROMPT 1), jamais de match inventé.
@@ -33,6 +53,9 @@ export default function UpcomingMatches() {
   const [weekLoading, setWeekLoading] = useState(true);
   const [compFilter, setCompFilter] = useState("all");
   const [matchdayFilter, setMatchdayFilter] = useState("all");
+
+  const [bkWeekData, setBkWeekData] = useState(null);
+  const [bkWeekLoading, setBkWeekLoading] = useState(true);
 
   // silent=true (rafraîchissement automatique) : une erreur passagère ne doit jamais
   // effacer des matchs déjà affichés — on réessaie simplement au prochain cycle.
@@ -66,6 +89,37 @@ export default function UpcomingMatches() {
     const id = setInterval(() => loadWeekMatches(true), WEEK_REFRESH_MS);
     return () => clearInterval(id);
   }, [authorized, sport, loadWeekMatches]);
+
+  // Multi-sport bloc 2 : mêmes principes que le football ci-dessus, pour
+  // /api/basketball/matches (voir pages/api/basketball/matches.js).
+  const loadBkWeekMatches = useCallback((silent = false) => {
+    if (!silent) setBkWeekLoading(true);
+    return fetch("/api/basketball/matches")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.error) {
+          console.error("Erreur /api/basketball/matches:", d.error);
+          if (silent) return;
+        }
+        setBkWeekData(d);
+      })
+      .catch((e) => {
+        console.error("Erreur /api/basketball/matches:", e);
+        if (!silent) setBkWeekData({ error: true, competitions: [] });
+      })
+      .finally(() => setBkWeekLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (!authorized || sport !== "basketball") return;
+    loadBkWeekMatches();
+  }, [authorized, sport, loadBkWeekMatches]);
+
+  useEffect(() => {
+    if (!authorized || sport !== "basketball") return;
+    const id = setInterval(() => loadBkWeekMatches(true), WEEK_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [authorized, sport, loadBkWeekMatches]);
 
   const searchQuery = search.trim();
 
@@ -117,6 +171,23 @@ export default function UpcomingMatches() {
     return rows;
   }, [weekData, searchQuery, compFilter, matchdayFilter]);
 
+  // Multi-sport bloc 2 : "Matchs groupés JOUR PAR JOUR (une section par date), toutes
+  // compétitions confondues" — jamais de filtre par compétition pour le basket dans
+  // ce bloc (contrairement au football ci-dessus, pas demandé ici).
+  const bkByDay = useMemo(() => {
+    const all = (bkWeekData?.competitions || [])
+      .flatMap((c) => c.matches || [])
+      .filter((m) => m?.homeTeam && m?.awayTeam && m?.utcDate);
+    all.sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate));
+    const groups = new Map(); // "YYYY-MM-DD" locale -> matchs[]
+    for (const m of all) {
+      const key = localDayKey(m.utcDate);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(m);
+    }
+    return [...groups.entries()].map(([key, matches]) => ({ key, label: dayLabel(key), matches }));
+  }, [bkWeekData]);
+
   if (!sessionChecked || !sportReady) {
     return (
       <div style={st.page}>
@@ -131,7 +202,38 @@ export default function UpcomingMatches() {
       <SiteHeader session={session} sport={sport} onSportChange={setSport} />
 
       <main style={st.main}>
-        {sport !== "football" ? (
+        {sport === "basketball" ? (
+          <>
+            <section style={st.hero}>
+              <h1 style={st.heroTitle}>Basket à venir</h1>
+              <p style={st.heroSubtitle}>
+                Les prochains matchs programmés sur les ligues suivies par Blume, jour par jour —
+                NBA, EuroLeague, WNBA, NCAA, championnats nationaux et plus.
+              </p>
+            </section>
+
+            {bkWeekLoading && <p style={st.hint}>Chargement des matchs…</p>}
+            {!bkWeekLoading && (!bkWeekData || bkWeekData?.error) && (
+              <p style={st.hint}>Les matchs ne sont pas disponibles pour le moment. Réessaie dans quelques minutes.</p>
+            )}
+            {!bkWeekLoading && bkWeekData && !bkWeekData.error && bkByDay.length === 0 && (
+              <p style={st.hint}>Aucun match à venir pour le moment.</p>
+            )}
+
+            <div data-testid="match-list" style={st.dayList}>
+              {bkByDay.map((day) => (
+                <div key={day.key} style={st.daySection} data-testid="day-section">
+                  <h2 style={st.dayLabel}>{day.label}</h2>
+                  <div style={st.dayCards}>
+                    {day.matches.map((m) => (
+                      <MatchCard key={m.id} m={m} comp={m.competition} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : sport !== "football" ? (
           <SportComingSoon sport={sport} pageLabel="Matchs à venir" />
         ) : (
           <>
@@ -213,4 +315,12 @@ const st = {
     background: "var(--accent)", border: "none", color: "var(--on-accent)", fontWeight: 700,
     borderRadius: 999, padding: "0 18px", fontSize: 13, cursor: "pointer",
   },
+  // Multi-sport bloc 2 : une section par jour (voir PROMPT bloc 2, point 2) — même
+  // espacement (16) que le reste des blocs de la page (st.main), une carte de match
+  // gardant, elle, le même espacement (10) que les listes de cartes ailleurs sur le
+  // site (voir components/ProbableScorers.js, AssistsProbables.js...).
+  dayList: { display: "flex", flexDirection: "column", gap: 16 },
+  daySection: { display: "flex", flexDirection: "column", gap: 10 },
+  dayLabel: { fontSize: 13, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 2px", textTransform: "capitalize" },
+  dayCards: { display: "flex", flexDirection: "column", gap: 10 },
 };
