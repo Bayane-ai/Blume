@@ -121,6 +121,40 @@ export default function UpcomingMatches() {
     return () => clearInterval(id);
   }, [authorized, sport, loadBkWeekMatches]);
 
+  const [tnWeekData, setTnWeekData] = useState(null);
+  const [tnWeekLoading, setTnWeekLoading] = useState(true);
+
+  // Multi-sport bloc 5 : mêmes principes que football/basket ci-dessus, pour
+  // /api/tennis/matches (voir pages/api/tennis/matches.js).
+  const loadTnWeekMatches = useCallback((silent = false) => {
+    if (!silent) setTnWeekLoading(true);
+    return fetch("/api/tennis/matches")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.error) {
+          console.error("Erreur /api/tennis/matches:", d.error);
+          if (silent) return;
+        }
+        setTnWeekData(d);
+      })
+      .catch((e) => {
+        console.error("Erreur /api/tennis/matches:", e);
+        if (!silent) setTnWeekData({ error: true, competitions: [] });
+      })
+      .finally(() => setTnWeekLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (!authorized || sport !== "tennis") return;
+    loadTnWeekMatches();
+  }, [authorized, sport, loadTnWeekMatches]);
+
+  useEffect(() => {
+    if (!authorized || sport !== "tennis") return;
+    const id = setInterval(() => loadTnWeekMatches(true), WEEK_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [authorized, sport, loadTnWeekMatches]);
+
   const searchQuery = search.trim();
 
   // Choisir une compétition réinitialise la journée sélectionnée (une journée n'a de
@@ -188,6 +222,23 @@ export default function UpcomingMatches() {
     return [...groups.entries()].map(([key, matches]) => ({ key, label: dayLabel(key), matches }));
   }, [bkWeekData]);
 
+  // Multi-sport bloc 5 : "Matchs groupés JOUR PAR JOUR", toutes catégories confondues
+  // (ATP, WTA, Grand Chelem, Masters 1000, ATP 250/500, Challengers, ITF — voir
+  // PROMPT bloc 5, point 3), jamais un filtre.
+  const tnByDay = useMemo(() => {
+    const all = (tnWeekData?.competitions || [])
+      .flatMap((c) => c.matches || [])
+      .filter((m) => m?.homeTeam && m?.awayTeam && m?.utcDate);
+    all.sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate));
+    const groups = new Map();
+    for (const m of all) {
+      const key = localDayKey(m.utcDate);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(m);
+    }
+    return [...groups.entries()].map(([key, matches]) => ({ key, label: dayLabel(key), matches }));
+  }, [tnWeekData]);
+
   if (!sessionChecked || !sportReady) {
     return (
       <div style={st.page}>
@@ -222,6 +273,37 @@ export default function UpcomingMatches() {
 
             <div data-testid="match-list" style={st.dayList}>
               {bkByDay.map((day) => (
+                <div key={day.key} style={st.daySection} data-testid="day-section">
+                  <h2 style={st.dayLabel}>{day.label}</h2>
+                  <div style={st.dayCards}>
+                    {day.matches.map((m) => (
+                      <MatchCard key={m.id} m={m} comp={m.competition} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : sport === "tennis" ? (
+          <>
+            <section style={st.hero}>
+              <h1 style={st.heroTitle}>Tennis à venir</h1>
+              <p style={st.heroSubtitle}>
+                Les prochains matchs programmés sur les circuits suivis par Blume, jour par jour — ATP,
+                WTA, Grand Chelem, Masters 1000, ATP 250/500, Challengers et ITF.
+              </p>
+            </section>
+
+            {tnWeekLoading && <p style={st.hint}>Chargement des matchs…</p>}
+            {!tnWeekLoading && (!tnWeekData || tnWeekData?.error) && (
+              <p style={st.hint}>Les matchs ne sont pas disponibles pour le moment. Réessaie dans quelques minutes.</p>
+            )}
+            {!tnWeekLoading && tnWeekData && !tnWeekData.error && tnByDay.length === 0 && (
+              <p style={st.hint}>Aucun match à venir pour le moment.</p>
+            )}
+
+            <div data-testid="match-list" style={st.dayList}>
+              {tnByDay.map((day) => (
                 <div key={day.key} style={st.daySection} data-testid="day-section">
                   <h2 style={st.dayLabel}>{day.label}</h2>
                   <div style={st.dayCards}>

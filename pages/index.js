@@ -24,6 +24,11 @@ const LIVE_REFRESH_BACKGROUND_MS = 45000;
 // dépasser le quota réel en amont.
 const BASKETBALL_LIVE_REFRESH_MS = 20000;
 
+// Multi-sport bloc 5 : tennis, même principe — cache serveur 20s (voir pages/api/
+// tennis/live-matches.js), rafraîchissement client dans la fourchette demandée par
+// le PROMPT (15-30s), 20s au milieu.
+const TENNIS_LIVE_REFRESH_MS = 20000;
+
 // Exemples illustratifs pour la barre de recherche (rien n'est envoyé/affiché comme
 // résultat réel tant que la personne n'a rien tapé) — juste une aide visuelle.
 const SEARCH_PLACEHOLDER_EXAMPLES = [
@@ -60,6 +65,9 @@ export default function Home() {
 
   const [bkLiveData, setBkLiveData] = useState(null);
   const [bkLiveLoading, setBkLiveLoading] = useState(true);
+
+  const [tnLiveData, setTnLiveData] = useState(null);
+  const [tnLiveLoading, setTnLiveLoading] = useState(true);
 
   // Placeholder de recherche qui change régulièrement (simple indication visuelle,
   // pas une donnée réelle).
@@ -143,6 +151,37 @@ export default function Home() {
     return () => clearInterval(id);
   }, [authorized, sport, loadBkLiveMatches]);
 
+  // Multi-sport bloc 5 : mêmes principes que basket/football ci-dessus, pour
+  // /api/tennis/live-matches (voir pages/api/tennis/live-matches.js).
+  const loadTnLiveMatches = useCallback((silent = false) => {
+    if (!silent) setTnLiveLoading(true);
+    return fetch("/api/tennis/live-matches")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.error) {
+          console.error("Erreur /api/tennis/live-matches:", d.error);
+          if (silent) return;
+        }
+        setTnLiveData(d);
+      })
+      .catch((e) => {
+        console.error("Erreur /api/tennis/live-matches:", e);
+        if (!silent) setTnLiveData({ error: true, matches: [] });
+      })
+      .finally(() => setTnLiveLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (!authorized || sport !== "tennis") return;
+    loadTnLiveMatches();
+  }, [authorized, sport, loadTnLiveMatches]);
+
+  useEffect(() => {
+    if (!authorized || sport !== "tennis") return;
+    const id = setInterval(() => loadTnLiveMatches(true), TENNIS_LIVE_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [authorized, sport, loadTnLiveMatches]);
+
   // Historique de recherche : personnel à chaque compte, filtré côté serveur par
   // profile_id (voir pages/api/search-history.js), jamais partagé entre deux comptes.
   useEffect(() => {
@@ -213,6 +252,16 @@ export default function Home() {
       .map((m) => ({ m, comp: m.competition }));
   }, [bkLiveData]);
 
+  // Multi-sport bloc 5 : TOUS les matchs tennis en direct, toutes catégories
+  // confondues (ATP, WTA, Grand Chelem, Masters 1000, ATP 250/500, Challengers,
+  // ITF — voir PROMPT bloc 5, point 3), aucun filtre.
+  const tnFeed = useMemo(() => {
+    if (!tnLiveData?.matches) return [];
+    return tnLiveData.matches
+      .filter((m) => m?.homeTeam && m?.awayTeam && m?.utcDate)
+      .map((m) => ({ m, comp: m.competition }));
+  }, [tnLiveData]);
+
   // Match phare : le premier match réellement en direct, jamais un match inventé.
   // Calculé à partir des données brutes (pas de la liste déjà filtrée par la
   // recherche) : une recherche en cours ne doit pas faire changer ce qui est mis en
@@ -266,6 +315,35 @@ export default function Home() {
 
             <div data-testid="match-list">
               {bkFeed.map(({ m, comp }) => (
+                <MatchCard key={m.id} m={m} comp={comp} />
+              ))}
+            </div>
+          </>
+        ) : sport === "tennis" ? (
+          <>
+            <section style={st.hero}>
+              <h1 style={st.heroTitle}>Tennis en direct</h1>
+              <p style={st.heroSubtitle}>
+                Scores en direct, set par set, sur tous les circuits suivis par Blume — ATP, WTA, Grand
+                Chelem, Masters 1000, ATP 250/500, Challengers et ITF.
+              </p>
+            </section>
+
+            <div style={st.chipsInfoRow}>
+              <span style={st.chip}>Tennis</span>
+              <span style={{ ...st.chip, ...st.chipLive }}>Live : {tnFeed.length}</span>
+            </div>
+
+            {tnLiveLoading && <p style={st.hint}>Chargement des matchs…</p>}
+            {!tnLiveLoading && (!tnLiveData || tnLiveData?.error) && (
+              <p style={st.hint}>Les matchs ne sont pas disponibles pour le moment. Réessaie dans quelques minutes.</p>
+            )}
+            {!tnLiveLoading && tnLiveData && !tnLiveData.error && tnFeed.length === 0 && (
+              <p style={st.hint}>Aucun match en direct actuellement.</p>
+            )}
+
+            <div data-testid="match-list">
+              {tnFeed.map(({ m, comp }) => (
                 <MatchCard key={m.id} m={m} comp={comp} />
               ))}
             </div>

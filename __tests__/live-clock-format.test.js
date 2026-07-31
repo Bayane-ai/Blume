@@ -1,7 +1,10 @@
 /**
  * lib/liveClockFormat.js — chrono affiché en direct, partagé entre football (pas de
- * champ `period`, comportement "34’" strictement inchangé) et basket (période +
- * chrono officiel, voir PROMPT bloc 2 — "quart-temps en cours et le chrono").
+ * champ `period`, comportement "34’" strictement inchangé), basket (période + chrono
+ * officiel, voir PROMPT bloc 2 — "quart-temps en cours et le chrono") et tennis
+ * (numéro de set + score du jeu en cours, voir PROMPT bloc 5 — lib/sports/tennis/
+ * mapper.js produit déjà `period`/`minute` dans la forme générique attendue ici,
+ * aucun changement nécessaire à ce fichier pour le tennis).
  */
 import { formatLiveClock } from "../lib/liveClockFormat";
 
@@ -25,4 +28,13 @@ test("basket, prolongation : libellé explicite", () => {
 
 test("basket sans chrono connu : seulement le quart-temps", () => {
   expect(formatLiveClock({ period: "Q2", minute: null })).toBe("Q2");
+});
+
+test("tennis : numéro de set + score du jeu en cours (déjà générique, aucun changement de code ici)", () => {
+  expect(formatLiveClock({ period: "Set 2", minute: "40-30" })).toBe("Set 2 · 40-30");
+  expect(formatLiveClock({ period: "Set 1", minute: "3-2" })).toBe("Set 1 · 3-2");
+});
+
+test("tennis sans score de jeu connu : seulement le set en cours", () => {
+  expect(formatLiveClock({ period: "Set 3", minute: null })).toBe("Set 3");
 });

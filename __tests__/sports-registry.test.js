@@ -38,20 +38,25 @@ describe("lib/sports — chaque sport a la même interface", () => {
     expect(SPORT_MODULES.football.routes.live).toBe("/api/live-matches");
   });
 
-  test("tennis (pas encore branché, bloc 5) expose provider/mapper/pronostic, honnêtement non implémenté", async () => {
+  // Tennis (bloc 5) : provider/mapper branchés sur de vraies données (API-Tennis, voir
+  // __tests__/tennis-provider.test.js et __tests__/tennis-mapper.test.js pour la
+  // couverture complète) — les pronostics restent honnêtement indisponibles (bloc 7
+  // pas encore fait).
+  test("tennis expose un provider réel (API-Tennis) et un mapper réel, pronostics pas encore branchés", async () => {
     const mod = SPORT_MODULES.tennis;
     expect(mod.implemented).toBe(false);
     expect(typeof mod.provider.getLiveMatches).toBe("function");
-    expect(typeof mod.provider.getUpcomingMatches).toBe("function");
+    expect(typeof mod.provider.getMatchesByDate).toBe("function");
+    expect(typeof mod.provider.getRankings).toBe("function");
+    expect(typeof mod.provider.getPlayerStatistics).toBe("function");
+    expect(typeof mod.provider.getHeadToHead).toBe("function");
     expect(typeof mod.mapper.mapMatchToLiveState).toBe("function");
-    expect(typeof mod.pronostic.computePronostic).toBe("function");
 
-    // Jamais une donnée fictive : le provider renvoie honnêtement "pas encore
-    // branché", jamais une liste de faux matchs.
-    const live = await mod.provider.getLiveMatches();
-    expect(live).toEqual({ implemented: false, matches: [] });
-    const upcoming = await mod.provider.getUpcomingMatches();
-    expect(upcoming).toEqual({ implemented: false, competitions: [] });
+    // Jamais une donnée fictive : sans clé API, le provider renvoie honnêtement une
+    // liste vide, jamais un faux match (voir __tests__/tennis-provider.test.js pour
+    // la couverture complète avec une vraie clé).
+    const live = await mod.provider.getLiveMatches(null);
+    expect(live).toEqual([]);
 
     // Jamais une ligne de pronostic inventée non plus.
     const pronostic = mod.pronostic.computePronostic();

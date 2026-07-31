@@ -5,10 +5,10 @@
  * le sélecteur de sport : sur CHAQUE page de contenu (Live, Matchs à venir, Combiné
  * Vision, News, Historique, Probabilités réussies, Probabilités échouées), le
  * sélecteur à 3 onglets est présent, football est actif par défaut, et la navigation
- * à 7 liens reste identique quel que soit le sport. Basket (bloc 2) a désormais de
- * VRAIS écrans sur Live et Matchs à venir (voir pages/index.js et pages/a-venir.js) ;
- * les autres pages, et Tennis partout (pas encore branché), affichent toujours un état
- * de chargement propre — jamais une erreur, jamais une page blanche, jamais de lien
+ * à 7 liens reste identique quel que soit le sport. Basket (bloc 2) ET tennis (bloc 5)
+ * ont désormais de VRAIS écrans sur Live et Matchs à venir (voir pages/index.js et
+ * pages/a-venir.js) ; les autres pages affichent toujours un état de chargement propre
+ * pour ces deux sports — jamais une erreur, jamais une page blanche, jamais de lien
  * mort dans la navigation.
  */
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
@@ -48,6 +48,8 @@ function mockFetch() {
     if (url.startsWith("/api/matches")) return Promise.resolve({ json: () => Promise.resolve({ competitions: [] }) });
     if (url.startsWith("/api/basketball/live-matches")) return Promise.resolve({ json: () => Promise.resolve({ matches: [] }) });
     if (url.startsWith("/api/basketball/matches")) return Promise.resolve({ json: () => Promise.resolve({ competitions: [] }) });
+    if (url.startsWith("/api/tennis/live-matches")) return Promise.resolve({ json: () => Promise.resolve({ matches: [] }) });
+    if (url.startsWith("/api/tennis/matches")) return Promise.resolve({ json: () => Promise.resolve({ competitions: [] }) });
     if (url.startsWith("/api/news")) return Promise.resolve({ json: () => Promise.resolve({ articles: [] }) });
     if (url.startsWith("/api/pronostic-history")) return Promise.resolve({ json: () => Promise.resolve({ items: [] }) });
     if (url.startsWith("/api/combo-history")) return Promise.resolve({ json: () => Promise.resolve({ successRates: {}, progress: {} }) });
@@ -89,16 +91,6 @@ describe.each(pages)("%s : sélecteur de sport", (label, Page) => {
       expect(within(nav).getByText(navLabel)).toBeInTheDocument();
     }
   });
-
-  test("passer sur Tennis (pas encore branché) affiche un état de chargement propre, jamais une erreur ni une page blanche", async () => {
-    const { container } = render(<Page />);
-    await waitFor(() => expect(screen.getByTestId("sport-tabs")).toBeInTheDocument());
-
-    fireEvent.click(screen.getByTestId("sport-tab-tennis"));
-    await waitFor(() => expect(screen.getByTestId("sport-coming-soon").textContent).toMatch(/Tennis/));
-    expect(container.textContent).not.toMatch(/erreur/i);
-    expect(container.textContent.trim().length).toBeGreaterThan(0);
-  });
 });
 
 // Basket : Live, Matchs à venir (bloc 2) ET désormais Probabilités réussies/échouées
@@ -125,7 +117,7 @@ describe.each([
 
 // Les autres pages (Combiné Vision, News, Historique — bloc 3+ pour leur contenu
 // basket réel, hors scope de ce bloc) : Basket y affiche encore l'état de chargement
-// propre, comme Tennis.
+// propre.
 describe.each(pages.filter(([label]) => !["Live", "Matchs à venir", "Probabilités réussies", "Probabilités échouées"].includes(label)))(
   "%s : passer sur Basket affiche encore un état de chargement propre (pas encore branché sur cette page)",
   (label, Page) => {
@@ -134,6 +126,42 @@ describe.each(pages.filter(([label]) => !["Live", "Matchs à venir", "Probabilit
       await waitFor(() => expect(screen.getByTestId("sport-tabs")).toBeInTheDocument());
 
       fireEvent.click(screen.getByTestId("sport-tab-basketball"));
+      await waitFor(() => expect(screen.getByTestId("sport-coming-soon")).toBeInTheDocument());
+      expect(container.textContent).not.toMatch(/erreur/i);
+    });
+  }
+);
+
+// Tennis (bloc 5) : Live et Matchs à venir ont désormais de vrais écrans — plus de
+// placeholder sur ces 2 pages (les pronostics/historique tennis restent hors scope de
+// ce bloc, voir la description ci-dessous).
+describe.each([["Live", Home], ["Matchs à venir", UpcomingMatches]])(
+  "%s : passer sur Tennis affiche un vrai écran, jamais un placeholder",
+  (label, Page) => {
+    test("aucune erreur, aucune page blanche, aucun placeholder « bientôt disponible »", async () => {
+      const { container } = render(<Page />);
+      await waitFor(() => expect(screen.getByTestId("sport-tabs")).toBeInTheDocument());
+
+      fireEvent.click(screen.getByTestId("sport-tab-tennis"));
+      await waitFor(() => expect(screen.getByTestId("sport-tab-tennis")).toHaveAttribute("aria-selected", "true"));
+      await waitFor(() => expect(container.textContent).toMatch(/Tennis/));
+      expect(screen.queryByTestId("sport-coming-soon")).not.toBeInTheDocument();
+      expect(container.textContent).not.toMatch(/erreur/i);
+    });
+  }
+);
+
+// Les autres pages (Combiné Vision, News, Historique, Probabilités réussies/échouées
+// — hors scope de ce bloc, qui ne connecte que les données live/à venir) : Tennis y
+// affiche encore l'état de chargement propre.
+describe.each(pages.filter(([label]) => !["Live", "Matchs à venir"].includes(label)))(
+  "%s : passer sur Tennis affiche encore un état de chargement propre (pas encore branché sur cette page)",
+  (label, Page) => {
+    test("jamais une erreur ni une page blanche", async () => {
+      const { container } = render(<Page />);
+      await waitFor(() => expect(screen.getByTestId("sport-tabs")).toBeInTheDocument());
+
+      fireEvent.click(screen.getByTestId("sport-tab-tennis"));
       await waitFor(() => expect(screen.getByTestId("sport-coming-soon")).toBeInTheDocument());
       expect(container.textContent).not.toMatch(/erreur/i);
     });
