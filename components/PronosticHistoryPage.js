@@ -3,22 +3,31 @@ import { useRequireAuth } from "../lib/useRequireAuth";
 import { useSport } from "../lib/useSport";
 import SiteHeader from "./SiteHeader";
 import PronosticHistoryCard from "./PronosticHistoryCard";
+import BasketballPronosticHistoryCard from "./BasketballPronosticHistoryCard";
 import SportComingSoon from "./SportComingSoon";
+
+// Sports dont l'historique Succès/Échec est réellement branché (voir PROMPT bloc 4) —
+// le tennis reste "bientôt disponible" tant que son propre bloc n'est pas fait.
+const SUPPORTED_SPORTS = new Set(["football", "basketball"]);
 
 // Corps partagé par pages/probabilites-reussies.js et pages/probabilites-echouees.js —
 // même structure et même logique pour les deux (voir PROMPT étapes 3/4), seuls le
 // statut interrogé, le titre et le message "liste vide" changent. La liste vient de
-// /api/pronostic-history, qui nettoie les entrées de plus de 5 jours et revérifie les
-// matchs encore "pending" à chaque appel — donc à chaque chargement de cette page.
+// /api/pronostic-history (voir `sport`, multi-sport bloc 4), qui nettoie les entrées
+// de plus de 5 jours et revérifie les matchs encore "pending" à chaque appel — donc à
+// chaque chargement de cette page.
 export default function PronosticHistoryPage({ status, title, subtitle, emptyMessage, testId }) {
   const { session, sessionChecked, authorized } = useRequireAuth();
   const { sport, setSport, sportReady } = useSport();
   const [items, setItems] = useState(null);
   const [loading, setLoading] = useState(true);
+  const isBasketball = sport === "basketball";
+  const supported = SUPPORTED_SPORTS.has(sport);
 
   const load = useCallback(() => {
     setLoading(true);
-    return fetch(`/api/pronostic-history?status=${status}`)
+    const sportParam = isBasketball ? "&sport=basketball" : "";
+    return fetch(`/api/pronostic-history?status=${status}${sportParam}`)
       .then((r) => r.json())
       .then((d) => setItems(Array.isArray(d?.items) ? d.items : []))
       .catch((e) => {
@@ -26,12 +35,12 @@ export default function PronosticHistoryPage({ status, title, subtitle, emptyMes
         setItems([]);
       })
       .finally(() => setLoading(false));
-  }, [status]);
+  }, [status, isBasketball]);
 
   useEffect(() => {
-    if (!authorized) return;
+    if (!authorized || !supported) return;
     load();
-  }, [authorized, load]);
+  }, [authorized, supported, load]);
 
   if (!sessionChecked || !sportReady) {
     return (
@@ -49,7 +58,7 @@ export default function PronosticHistoryPage({ status, title, subtitle, emptyMes
       <SiteHeader session={session} sport={sport} onSportChange={setSport} />
 
       <main style={st.main}>
-        {sport !== "football" ? (
+        {!supported ? (
           <SportComingSoon sport={sport} pageLabel={title} />
         ) : (
           <>
@@ -62,9 +71,11 @@ export default function PronosticHistoryPage({ status, title, subtitle, emptyMes
             {!loading && list.length === 0 && <p style={st.hint}>{emptyMessage}</p>}
 
             <div style={st.list} data-testid={testId}>
-              {list.map((item) => (
-                <PronosticHistoryCard key={item.match_id} item={item} />
-              ))}
+              {list.map((item) =>
+                isBasketball
+                  ? <BasketballPronosticHistoryCard key={item.match_id} item={item} />
+                  : <PronosticHistoryCard key={item.match_id} item={item} />
+              )}
             </div>
           </>
         )}

@@ -101,11 +101,14 @@ describe.each(pages)("%s : sélecteur de sport", (label, Page) => {
   });
 });
 
-// Basket (bloc 2) : Live et Matchs à venir ont désormais de vrais écrans (voir
-// __tests__/sport-selector-integration.test.jsx et __tests__/basketball-upcoming-page
-// .test.jsx pour la couverture détaillée) — plus de placeholder ici.
-describe.each([["Live", Home], ["Matchs à venir", UpcomingMatches]])(
-  "%s : passer sur Basket affiche un vrai écran (bloc 2), jamais un placeholder",
+// Basket : Live, Matchs à venir (bloc 2) ET désormais Probabilités réussies/échouées
+// (bloc 4, voir components/PronosticHistoryPage.js) ont de vrais écrans — plus de
+// placeholder sur ces 4 pages.
+describe.each([
+  ["Live", Home], ["Matchs à venir", UpcomingMatches],
+  ["Probabilités réussies", ProbabilitesReussies], ["Probabilités échouées", ProbabilitesEchouees],
+])(
+  "%s : passer sur Basket affiche un vrai écran, jamais un placeholder",
   (label, Page) => {
     test("aucune erreur, aucune page blanche, aucun placeholder « bientôt disponible »", async () => {
       const { container } = render(<Page />);
@@ -120,9 +123,10 @@ describe.each([["Live", Home], ["Matchs à venir", UpcomingMatches]])(
   }
 );
 
-// Toutes les autres pages (bloc 3+ pour leur contenu basket réel) : Basket y affiche
-// encore l'état de chargement propre, comme Tennis.
-describe.each(pages.filter(([label]) => label !== "Live" && label !== "Matchs à venir"))(
+// Les autres pages (Combiné Vision, News, Historique — bloc 3+ pour leur contenu
+// basket réel, hors scope de ce bloc) : Basket y affiche encore l'état de chargement
+// propre, comme Tennis.
+describe.each(pages.filter(([label]) => !["Live", "Matchs à venir", "Probabilités réussies", "Probabilités échouées"].includes(label)))(
   "%s : passer sur Basket affiche encore un état de chargement propre (pas encore branché sur cette page)",
   (label, Page) => {
     test("jamais une erreur ni une page blanche", async () => {

@@ -9,6 +9,13 @@ jest.mock("../lib/pronosticHistory", () => ({
   settleFinishedPredictionsNow: (...args) => settleFinishedPredictionsNow(...args),
 }));
 
+const settleBasketballPredictionsNow = jest.fn(() => Promise.resolve());
+let basketballApiKey = null;
+jest.mock("../lib/sports/basketball/pronosticHistory", () => ({
+  settleFinishedPredictionsNow: (...args) => settleBasketballPredictionsNow(...args),
+  getBasketballApiKey: () => basketballApiKey,
+}));
+
 function mockRes() {
   const res = {};
   res.status = jest.fn(() => res);
@@ -22,6 +29,8 @@ const ORIGINAL_TOKEN = process.env.FOOTBALL_DATA_TOKEN;
 beforeEach(() => {
   jest.resetModules();
   settleFinishedPredictionsNow.mockClear();
+  settleBasketballPredictionsNow.mockClear();
+  basketballApiKey = null;
   process.env.CRON_SECRET = "test-cron-secret";
   process.env.FOOTBALL_DATA_TOKEN = "test-token";
 });
@@ -74,4 +83,37 @@ test("token football-data.org manquant : erreur claire, jamais un balayage silen
   await handler({ headers: { authorization: "Bearer test-cron-secret" } }, res);
   expect(res.status).toHaveBeenCalledWith(500);
   expect(settleFinishedPredictionsNow).not.toHaveBeenCalled();
+});
+
+test("clé basket configurée : balayage basket ET football déclenchés indépendamment", async () => {
+  basketballApiKey = "basket-key";
+  const { default: handler } = await import("../pages/api/cron/settle-predictions.js");
+  const res = mockRes();
+  await handler({ headers: { authorization: "Bearer test-cron-secret" } }, res);
+  expect(settleFinishedPredictionsNow).toHaveBeenCalledWith("test-token", undefined);
+  expect(settleBasketballPredictionsNow).toHaveBeenCalledWith("basket-key");
+  expect(res.status).toHaveBeenCalledWith(200);
+  expect(res.body).toEqual({ ok: true });
+});
+
+test("token football manquant mais clé basket présente : le basket est quand même réglé (jamais bloqué par l'autre sport)", async () => {
+  delete process.env.FOOTBALL_DATA_TOKEN;
+  basketballApiKey = "basket-key";
+  const { default: handler } = await import("../pages/api/cron/settle-predictions.js");
+  const res = mockRes();
+  await handler({ headers: { authorization: "Bearer test-cron-secret" } }, res);
+  expect(settleFinishedPredictionsNow).not.toHaveBeenCalled();
+  expect(settleBasketballPredictionsNow).toHaveBeenCalledWith("basket-key");
+  expect(res.status).toHaveBeenCalledWith(200);
+});
+
+test("le balayage basket échoue : erreur renvoyée, sans empêcher le balayage football d'avoir eu lieu", async () => {
+  basketballApiKey = "basket-key";
+  settleBasketballPredictionsNow.mockRejectedValueOnce(new Error("boom basket"));
+  const { default: handler } = await import("../pages/api/cron/settle-predictions.js");
+  const res = mockRes();
+  await handler({ headers: { authorization: "Bearer test-cron-secret" } }, res);
+  expect(settleFinishedPredictionsNow).toHaveBeenCalled();
+  expect(res.status).toHaveBeenCalledWith(500);
+  expect(res.body.error).toContain("basketball");
 });

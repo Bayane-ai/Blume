@@ -6,7 +6,7 @@
  * (rebonds/passes/3 points/fautes/ballons perdus/lancers francs) jamais mélangées
  * entre équipes.
  */
-import { computeBasketballPronostic } from "../lib/sports/basketball/pronosticModel";
+import { computeBasketballPronostic, computeBasketballLiveOverlay } from "../lib/sports/basketball/pronosticModel";
 
 function field(value, { available = true, stdDev = null, sampleSize = 5 } = {}) {
   return { value, available, sampleSize, stdDev };
@@ -143,29 +143,49 @@ test("deux matchs différents ne génèrent jamais les mêmes lignes", () => {
   expect(matchA.rebounds).not.toEqual(matchB.rebounds);
 });
 
-describe("figé/live — probabilité, scores et totaux suivent le score réel ; le reste ne bouge jamais", () => {
-  test("sans score en direct (avant-match) : probabilités/totaux basés sur les points attendus purs", () => {
+test("computeBasketballPronostic expose sdHome/sdAway (nécessaires au recalcul en direct sans revenir chercher les profils)", () => {
+  const result = computeBasketballPronostic({ homeProfile: makeProfile(), awayProfile: makeProfile(), homeTeamName: "A", awayTeamName: "B" });
+  expect(result.sdHome).toBeGreaterThan(0);
+  expect(result.sdAway).toBeGreaterThan(0);
+});
+
+// Bloc 4 (PROMPT) : "Recalcul en direct : uniquement probabilité de victoire, scores
+// finaux probables et totaux de points. Tout le reste reste figé." — computeBasketball
+// Pronostic ne calcule plus QUE la version avant-match (pure) ; le recalcul en direct
+// proprement dit est une fonction séparée (computeBasketballLiveOverlay), appelée à
+// chaque actualisation à partir des lambdas/écarts-types déjà FIGÉS — jamais un
+// nouveau passage par les profils d'équipe.
+describe("figé/live — computeBasketballLiveOverlay recalcule uniquement probabilité/scores/totaux, jamais le reste", () => {
+  test("sans liveOffset (avant-match) : équivaut au calcul pur de computeBasketballPronostic", () => {
     const result = computeBasketballPronostic({ homeProfile: makeProfile(), awayProfile: makeProfile(), homeTeamName: "A", awayTeamName: "B" });
-    // Moyenne(attaque domicile=110, défense extérieure=108) = 109.
-    expect(result.goals.expectedHome).toBeCloseTo(109, 0);
+    const overlay = computeBasketballLiveOverlay({
+      lambdaHome: result.goals.expectedHome, lambdaAway: result.goals.expectedAway,
+      sdHome: result.sdHome, sdAway: result.sdAway,
+    });
+    expect(overlay.probabilities).toEqual(result.probabilities);
+    expect(overlay.goals).toEqual(result.goals);
   });
 
-  test("avec un score en direct (liveOffset), la probabilité/les totaux changent ; rebonds/passes/périodes restent identiques", () => {
-    const homeProfile = makeProfile();
-    const awayProfile = makeProfile();
-    const preMatch = computeBasketballPronostic({ homeProfile, awayProfile, homeTeamName: "A", awayTeamName: "B" });
-    const live = computeBasketballPronostic({
-      homeProfile, awayProfile, homeTeamName: "A", awayTeamName: "B",
+  test("avec un score en direct (liveOffset) : probabilité/scores/totaux changent, à partir des lambdas figés seulement", () => {
+    const preMatch = computeBasketballPronostic({ homeProfile: makeProfile(), awayProfile: makeProfile(), homeTeamName: "A", awayTeamName: "B" });
+    const overlay = computeBasketballLiveOverlay({
+      lambdaHome: preMatch.goals.expectedHome, lambdaAway: preMatch.goals.expectedAway,
+      sdHome: preMatch.sdHome, sdAway: preMatch.sdAway,
       liveOffset: { home: 60, away: 40, remainingFraction: 0.25 },
     });
 
-    expect(live.goals.expectedTotal).not.toBe(preMatch.goals.expectedTotal);
-    expect(live.probabilities.home).not.toBe(preMatch.probabilities.home);
-    // Figé : jamais recalculé à partir du score en direct.
-    expect(live.rebounds).toEqual(preMatch.rebounds);
-    expect(live.assists).toEqual(preMatch.assists);
-    expect(live.periods).toEqual(preMatch.periods);
-    expect(live.turnovers).toEqual(preMatch.turnovers);
-    expect(live.freeThrows).toEqual(preMatch.freeThrows);
+    expect(overlay.goals.expectedTotal).not.toBe(preMatch.goals.expectedTotal);
+    expect(overlay.probabilities.home).not.toBe(preMatch.probabilities.home);
+    for (const s of overlay.correctScores) expect(s).toMatch(/^\d+-\d+$/);
+  });
+
+  test("computeBasketballPronostic lui-même ignore tout score en direct : pointSpread/rebonds/passes/périodes toujours figés sur les lambdas pures, jamais affectés par ce qui se passe ailleurs à l'exécution", () => {
+    const homeProfile = makeProfile();
+    const awayProfile = makeProfile();
+    const first = computeBasketballPronostic({ homeProfile, awayProfile, homeTeamName: "A", awayTeamName: "B" });
+    const second = computeBasketballPronostic({ homeProfile, awayProfile, homeTeamName: "A", awayTeamName: "B" });
+    expect(first.pointSpread).toEqual(second.pointSpread);
+    expect(first.rebounds).toEqual(second.rebounds);
+    expect(first.periods).toEqual(second.periods);
   });
 });

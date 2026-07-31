@@ -15,6 +15,8 @@ import BasketballPeriodsBlock from "../../components/BasketballPeriodsBlock";
 import BasketballSecondaryStats from "../../components/BasketballSecondaryStats";
 import BasketballSingleTotals from "../../components/BasketballSingleTotals";
 import BasketballPlayersToWatch from "../../components/BasketballPlayersToWatch";
+import BasketballMatchTimeline from "../../components/BasketballMatchTimeline";
+import BasketballMatchOutcomeRecap from "../../components/BasketballMatchOutcomeRecap";
 import { useRequireAuth } from "../../lib/useRequireAuth";
 import { addMatchToHistory } from "../../lib/matchHistory";
 
@@ -87,7 +89,7 @@ export default function MatchPage() {
         if (result?.matchStatus) {
           setLiveState({
             status: result.matchStatus, minute: result.matchMinute, score: result.matchScore,
-            events: result.events,
+            events: result.events, timelineNote: result.timelineNote,
           });
         }
       })
@@ -188,15 +190,22 @@ export default function MatchPage() {
     <div style={st.page}>
       <MatchHeaderHero m={matchForBlock} isLive={isLiveNow} />
 
-      {!isBasketball && isLiveNow && (
+      {isLiveNow && (
         // Épinglée juste sous le score (position: sticky) : en faisant défiler la page,
         // les moments forts restent visibles en premier, avant le reste du contenu —
         // seule la liste des événements défile en interne (hauteur bornée) une fois
-        // qu'elle dépasse ce qui tient à l'écran.
+        // qu'elle dépasse ce qui tient à l'écran. Bloc 4 (basket) : reste épinglée en
+        // haut EXACTEMENT comme le football (PROMPT : "il reste toujours en haut"),
+        // avec sa propre timeline dérivée du score officiel (jamais "Événement non
+        // disponible", voir components/BasketballMatchTimeline.js).
         <section style={st.pinnedPanel} data-testid="pinned-highlights">
           <h2 style={st.h2}>Moments forts</h2>
           <div style={st.timelineScroll}>
-            <MatchTimeline events={liveState?.events} homeTeamId={homeTeamId} isLive />
+            {isBasketball ? (
+              <BasketballMatchTimeline events={liveState?.events} timelineNote={liveState?.timelineNote} />
+            ) : (
+              <MatchTimeline events={liveState?.events} homeTeamId={homeTeamId} isLive />
+            )}
           </div>
         </section>
       )}
@@ -266,11 +275,26 @@ export default function MatchPage() {
 
         {isBasketball ? (
           <>
+            {/* Bloc 4 (PROMPT point 4) : "En cliquant sur un match terminé, on voit si
+                ses pronostics ont été validés ou non" — même emplacement que le
+                football (tout en premier, avant les cartes de pronostics elles-mêmes).
+                `pronostic.verification` n'existe que pour un match déjà classé (voir
+                pages/api/basketball/analyze.js) ; le composant ne s'affiche donc de
+                lui-même que si cette donnée est là. */}
+            {!loading && hasRequested && isFinishedNow && <BasketballMatchOutcomeRecap pronostic={pronostic} />}
+
             {!loading && hasRequested && <BasketballPronosticResults pronostic={pronostic} />}
             {!loading && hasRequested && pronostic?.available && <BasketballPeriodsBlock pronostic={pronostic} />}
             {!loading && hasRequested && pronostic?.available && <BasketballSecondaryStats pronostic={pronostic} />}
             {!loading && hasRequested && pronostic?.available && <BasketballSingleTotals pronostic={pronostic} />}
             {!loading && hasRequested && pronostic?.available && <BasketballPlayersToWatch pronostic={pronostic} />}
+
+            {!isLiveNow && (
+              <section style={st.panel}>
+                <h2 style={st.h2}>Moments forts</h2>
+                <BasketballMatchTimeline events={liveState?.events} timelineNote={liveState?.timelineNote} />
+              </section>
+            )}
           </>
         ) : (
           <>
