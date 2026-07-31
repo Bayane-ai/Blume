@@ -23,8 +23,8 @@ test("nom du cookie : blume_prefs", () => {
   expect(COOKIE_NAME).toBe("blume_prefs");
 });
 
-test("readPrefs sans cookie : valeurs par défaut (thème sombre, pas d'onglet, aucun favori)", () => {
-  expect(readPrefs()).toEqual({ theme: "dark", lastTab: null, favoriteCompetitions: [] });
+test("readPrefs sans cookie : valeurs par défaut (thème sombre, pas d'onglet, aucun favori, sport football)", () => {
+  expect(readPrefs()).toEqual({ theme: "dark", lastTab: null, favoriteCompetitions: [], sport: "football" });
 });
 
 test("writePrefs pose un cookie non httpOnly (donc lisible immédiatement via document.cookie), Max-Age 1 an, Path=/", () => {
@@ -37,12 +37,24 @@ test("writePrefs fusionne avec les préférences existantes (ne perd pas les aut
   writePrefs({ theme: "light" });
   writePrefs({ lastTab: "/a-venir" });
   writePrefs({ favoriteCompetitions: ["PL"] });
-  expect(readPrefs()).toEqual({ theme: "light", lastTab: "/a-venir", favoriteCompetitions: ["PL"] });
+  expect(readPrefs()).toEqual({ theme: "light", lastTab: "/a-venir", favoriteCompetitions: ["PL"], sport: "football" });
 });
 
 test("readPrefs tolère un cookie corrompu (JSON invalide) sans planter, revient aux valeurs par défaut", () => {
   document.cookie = "blume_prefs=%7Bpas-du-json-valide";
-  expect(readPrefs()).toEqual({ theme: "dark", lastTab: null, favoriteCompetitions: [] });
+  expect(readPrefs()).toEqual({ theme: "dark", lastTab: null, favoriteCompetitions: [], sport: "football" });
+});
+
+// Multi-sport (bloc 0) : le sport sélectionné est mémorisé comme le reste de ce
+// cookie, jamais un id inconnu qui casserait le sélecteur (voir lib/sports/registry.js).
+test("writePrefs mémorise le sport choisi, readPrefs le restaure", () => {
+  writePrefs({ sport: "basketball" });
+  expect(readPrefs().sport).toBe("basketball");
+});
+
+test("un id de sport invalide dans le cookie retombe honnêtement sur football, jamais une exception", () => {
+  document.cookie = `blume_prefs=${encodeURIComponent(JSON.stringify({ sport: "rugby" }))}`;
+  expect(readPrefs().sport).toBe("football");
 });
 
 test("applyTheme pose data-theme sur <html>", () => {

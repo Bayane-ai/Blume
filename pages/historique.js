@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
 import { useRequireAuth } from "../lib/useRequireAuth";
+import { useSport } from "../lib/useSport";
 import { listMatchHistory } from "../lib/matchHistory";
 import SiteHeader from "../components/SiteHeader";
 import MatchHistoryCard from "../components/MatchHistoryCard";
+import SportComingSoon from "../components/SportComingSoon";
 
 // Page "Historique" (voir PROMPT) : les matchs dont CE COMPTE a déjà ouvert l'analyse/
 // les pronostics, du plus récent au plus ancien — voir lib/matchHistory.js (table
@@ -13,6 +15,7 @@ import MatchHistoryCard from "../components/MatchHistoryCard";
 // consulté.
 export default function Historique() {
   const { session, sessionChecked, authorized } = useRequireAuth();
+  const { sport, setSport, sportReady } = useSport();
   const userId = session?.id;
   const [items, setItems] = useState(null);
 
@@ -21,7 +24,7 @@ export default function Historique() {
     listMatchHistory(userId).then(setItems);
   }, [authorized, userId]);
 
-  if (!sessionChecked) {
+  if (!sessionChecked || !sportReady) {
     return (
       <div style={st.page}>
         <p style={st.hint}>Chargement…</p>
@@ -34,27 +37,33 @@ export default function Historique() {
 
   return (
     <div style={st.page}>
-      <SiteHeader session={session} />
+      <SiteHeader session={session} sport={sport} onSportChange={setSport} />
 
       <main style={st.main}>
-        <section style={st.hero}>
-          <h1 style={st.heroTitle}>Historique</h1>
-          <p style={st.heroSubtitle}>
-            Les matchs dont tu as déjà consulté les pronostics, du plus récent au plus ancien — chaque
-            entrée disparaît automatiquement environ 10 jours après avoir été consultée.
-          </p>
-        </section>
+        {sport !== "football" ? (
+          <SportComingSoon sport={sport} pageLabel="Historique" />
+        ) : (
+          <>
+            <section style={st.hero}>
+              <h1 style={st.heroTitle}>Historique</h1>
+              <p style={st.heroSubtitle}>
+                Les matchs dont tu as déjà consulté les pronostics, du plus récent au plus ancien — chaque
+                entrée disparaît automatiquement environ 10 jours après avoir été consultée.
+              </p>
+            </section>
 
-        {items === null && <p style={st.hint}>Chargement…</p>}
-        {items !== null && list.length === 0 && (
-          <p style={st.hint} data-testid="match-history-empty">Aucun match consulté pour le moment.</p>
+            {items === null && <p style={st.hint}>Chargement…</p>}
+            {items !== null && list.length === 0 && (
+              <p style={st.hint} data-testid="match-history-empty">Aucun match consulté pour le moment.</p>
+            )}
+
+            <div style={st.list} data-testid="match-history-list">
+              {list.map((entry) => (
+                <MatchHistoryCard key={entry.id} entry={entry} />
+              ))}
+            </div>
+          </>
         )}
-
-        <div style={st.list} data-testid="match-history-list">
-          {list.map((entry) => (
-            <MatchHistoryCard key={entry.id} entry={entry} />
-          ))}
-        </div>
       </main>
     </div>
   );

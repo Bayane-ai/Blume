@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRequireAuth } from "../lib/useRequireAuth";
+import { useSport } from "../lib/useSport";
 import SiteHeader from "../components/SiteHeader";
 import NewsCard from "../components/NewsCard";
+import SportComingSoon from "../components/SportComingSoon";
 
 // Actualisation automatique régulière (l'onglet "News" doit toujours montrer les
 // actualités les plus récentes) — /api/news est lui-même mis en cache côté serveur
@@ -10,6 +12,7 @@ const NEWS_REFRESH_MS = 60000;
 
 export default function News() {
   const { session, sessionChecked, authorized } = useRequireAuth();
+  const { sport, setSport, sportReady } = useSport();
 
   const [newsData, setNewsData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -29,18 +32,20 @@ export default function News() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Multi-sport (bloc 0) : /api/news ne sert que des actualités football pour
+  // l'instant (voir bloc 9) — pas d'appel tant que l'onglet Basket/Tennis est affiché.
   useEffect(() => {
-    if (!authorized) return;
+    if (!authorized || sport !== "football") return;
     loadNews();
-  }, [authorized, loadNews]);
+  }, [authorized, sport, loadNews]);
 
   useEffect(() => {
-    if (!authorized) return;
+    if (!authorized || sport !== "football") return;
     const id = setInterval(() => loadNews(true), NEWS_REFRESH_MS);
     return () => clearInterval(id);
-  }, [authorized, loadNews]);
+  }, [authorized, sport, loadNews]);
 
-  if (!sessionChecked) {
+  if (!sessionChecked || !sportReady) {
     return (
       <div style={st.page}>
         <p style={st.hint}>Chargement…</p>
@@ -53,29 +58,35 @@ export default function News() {
 
   return (
     <div style={st.page}>
-      <SiteHeader session={session} />
+      <SiteHeader session={session} sport={sport} onSportChange={setSport} />
 
       <main style={st.main}>
-        <section style={st.hero}>
-          <h1 style={st.heroTitle}>Actualités football</h1>
-          <p style={st.heroSubtitle}>
-            Les dernières actualités football, des transferts majeurs aux grandes compétitions.
-          </p>
-        </section>
+        {sport !== "football" ? (
+          <SportComingSoon sport={sport} pageLabel="News" />
+        ) : (
+          <>
+            <section style={st.hero}>
+              <h1 style={st.heroTitle}>Actualités football</h1>
+              <p style={st.heroSubtitle}>
+                Les dernières actualités football, des transferts majeurs aux grandes compétitions.
+              </p>
+            </section>
 
-        {loading && <p style={st.hint}>Chargement des actualités…</p>}
-        {!loading && (!newsData || newsData.error) && (
-          <p style={st.hint}>Les actualités ne sont pas disponibles pour le moment. Réessaie dans quelques minutes.</p>
-        )}
-        {!loading && newsData && !newsData.error && articles.length === 0 && (
-          <p style={st.hint}>Aucune actualité disponible pour le moment.</p>
-        )}
+            {loading && <p style={st.hint}>Chargement des actualités…</p>}
+            {!loading && (!newsData || newsData.error) && (
+              <p style={st.hint}>Les actualités ne sont pas disponibles pour le moment. Réessaie dans quelques minutes.</p>
+            )}
+            {!loading && newsData && !newsData.error && articles.length === 0 && (
+              <p style={st.hint}>Aucune actualité disponible pour le moment.</p>
+            )}
 
-        <div style={st.list} data-testid="news-list">
-          {articles.map((article) => (
-            <NewsCard key={article.link} article={article} />
-          ))}
-        </div>
+            <div style={st.list} data-testid="news-list">
+              {articles.map((article) => (
+                <NewsCard key={article.link} article={article} />
+              ))}
+            </div>
+          </>
+        )}
       </main>
     </div>
   );

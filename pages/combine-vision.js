@@ -1,8 +1,10 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRequireAuth } from "../lib/useRequireAuth";
+import { useSport } from "../lib/useSport";
 import { generateCombos, RISK_LABELS } from "../lib/combinedVision";
 import SiteHeader from "../components/SiteHeader";
 import CombinedVisionTicket from "../components/CombinedVisionTicket";
+import SportComingSoon from "../components/SportComingSoon";
 
 const RISK_ORDER = ["faible", "moyen", "eleve"];
 
@@ -19,6 +21,7 @@ const REFRESH_MS = 45000;
 // supplémentaire à l'API n'est nécessaire ici.
 export default function CombineVision() {
   const { session, sessionChecked, authorized } = useRequireAuth();
+  const { sport, setSport, sportReady } = useSport();
 
   const [upcomingData, setUpcomingData] = useState(null);
   const [liveData, setLiveData] = useState(null);
@@ -52,18 +55,21 @@ export default function CombineVision() {
     }).finally(() => setLoading(false));
   }, []);
 
+  // Multi-sport (bloc 0) : /api/matches et /api/live-matches ne servent que du
+  // football (voir lib/sports/football) — pas d'appel tant que l'onglet Basket/Tennis
+  // est affiché (voir bloc 9 pour Combiné Vision multi-sports).
   useEffect(() => {
-    if (!authorized) return;
+    if (!authorized || sport !== "football") return;
     load();
-  }, [authorized, load]);
+  }, [authorized, sport, load]);
 
   // Actualisation automatique : de nouveaux combinés apparaissent régulièrement, sans
   // que la personne ait besoin de recharger la page (voir PROMPT).
   useEffect(() => {
-    if (!authorized) return;
+    if (!authorized || sport !== "football") return;
     const id = setInterval(() => load(true), REFRESH_MS);
     return () => clearInterval(id);
-  }, [authorized, load]);
+  }, [authorized, sport, load]);
 
   // Toutes les compétitions confondues, à venir ET en direct — un match qui vient de
   // démarrer doit pouvoir alimenter un combiné "En live" sans attendre le prochain
@@ -111,7 +117,7 @@ export default function CombineVision() {
 
   const hasError = (upcomingData?.error && liveData?.error) || (!upcomingData && !liveData);
 
-  if (!sessionChecked) {
+  if (!sessionChecked || !sportReady) {
     return (
       <div style={st.page}>
         <p style={st.hint}>Chargement…</p>
@@ -122,63 +128,69 @@ export default function CombineVision() {
 
   return (
     <div style={st.page}>
-      <SiteHeader session={session} />
+      <SiteHeader session={session} sport={sport} onSportChange={setSport} />
 
       <main style={st.main}>
-        <section style={st.hero}>
-          <h1 style={st.heroTitle}>Combiné Vision</h1>
-          <p style={st.heroSubtitle}>
-            L'app assemble automatiquement des pronostics assez sûrs sur plusieurs matchs pour
-            proposer des combinés à différents niveaux de risque — jamais de cote chiffrée,
-            seulement les sélections détaillées et un niveau de confiance.
-          </p>
-        </section>
+        {sport !== "football" ? (
+          <SportComingSoon sport={sport} pageLabel="Combiné Vision" />
+        ) : (
+          <>
+            <section style={st.hero}>
+              <h1 style={st.heroTitle}>Combiné Vision</h1>
+              <p style={st.heroSubtitle}>
+                L'app assemble automatiquement des pronostics assez sûrs sur plusieurs matchs pour
+                proposer des combinés à différents niveaux de risque — jamais de cote chiffrée,
+                seulement les sélections détaillées et un niveau de confiance.
+              </p>
+            </section>
 
-        <div style={st.refreshRow}>
-          <button type="button" style={st.refreshBtn} onClick={() => load(false)} disabled={loading}>
-            {loading ? "Actualisation…" : "Actualiser"}
-          </button>
-          {/* BLOC 5 — "propositions dynamiques" : indicateur visuel clair que la liste
-              n'est pas figée, se renouvelle automatiquement (voir PROMPT). */}
-          <p style={st.freshnessHint} data-testid="combined-vision-freshness">
-            <span style={st.freshnessDot} aria-hidden="true" />
-            {lastUpdatedAt
-              ? `Mis à jour à ${lastUpdatedAt.toLocaleTimeString("fr-FR")} · se renouvelle automatiquement`
-              : "Se renouvelle automatiquement"}
-          </p>
-        </div>
+            <div style={st.refreshRow}>
+              <button type="button" style={st.refreshBtn} onClick={() => load(false)} disabled={loading}>
+                {loading ? "Actualisation…" : "Actualiser"}
+              </button>
+              {/* BLOC 5 — "propositions dynamiques" : indicateur visuel clair que la liste
+                  n'est pas figée, se renouvelle automatiquement (voir PROMPT). */}
+              <p style={st.freshnessHint} data-testid="combined-vision-freshness">
+                <span style={st.freshnessDot} aria-hidden="true" />
+                {lastUpdatedAt
+                  ? `Mis à jour à ${lastUpdatedAt.toLocaleTimeString("fr-FR")} · se renouvelle automatiquement`
+                  : "Se renouvelle automatiquement"}
+              </p>
+            </div>
 
-        {loading && !upcomingData && !liveData && <p style={st.hint}>Chargement des combinés…</p>}
-        {!loading && hasError && (
-          <p style={st.hint}>Les combinés ne sont pas disponibles pour le moment. Réessaie dans quelques minutes.</p>
+            {loading && !upcomingData && !liveData && <p style={st.hint}>Chargement des combinés…</p>}
+            {!loading && hasError && (
+              <p style={st.hint}>Les combinés ne sont pas disponibles pour le moment. Réessaie dans quelques minutes.</p>
+            )}
+            {/* BLOC 4.D — "aucun combiné fiable disponible : ne rien forcer" : jamais un
+                combiné rempli avec des lignes en dessous du seuil de confiance, juste un
+                message clair invitant à revenir plus tard. */}
+            {!loading && !hasError && combos.length === 0 && (
+              <p style={st.hint} data-testid="combined-vision-empty">
+                Aucun combiné fiable disponible pour le moment — reviens plus tard.
+              </p>
+            )}
+
+            {/* BLOC 4.B — taux de réussite par niveau de risque (autorisé, ce n'est pas
+                une cote — voir PROMPT) : n'apparaît que pour les niveaux ayant déjà au
+                moins un combiné classé Gagné/Perdu. */}
+            {RISK_ORDER.some((level) => successRates[level]) && (
+              <section style={st.statsBox} data-testid="combo-success-rates">
+                {RISK_ORDER.filter((level) => successRates[level]).map((level) => (
+                  <div key={level} style={st.statsRow} data-testid={`success-rate-${level}`}>
+                    {RISK_LABELS[level]} : {successRates[level].pct} % réussis ({successRates[level].total} combiné{successRates[level].total > 1 ? "s" : ""})
+                  </div>
+                ))}
+              </section>
+            )}
+
+            <div style={st.list} data-testid="combined-vision-list">
+              {combos.map((combo) => (
+                <CombinedVisionTicket key={combo.id} combo={combo} progress={progress[combo.id]} />
+              ))}
+            </div>
+          </>
         )}
-        {/* BLOC 4.D — "aucun combiné fiable disponible : ne rien forcer" : jamais un
-            combiné rempli avec des lignes en dessous du seuil de confiance, juste un
-            message clair invitant à revenir plus tard. */}
-        {!loading && !hasError && combos.length === 0 && (
-          <p style={st.hint} data-testid="combined-vision-empty">
-            Aucun combiné fiable disponible pour le moment — reviens plus tard.
-          </p>
-        )}
-
-        {/* BLOC 4.B — taux de réussite par niveau de risque (autorisé, ce n'est pas
-            une cote — voir PROMPT) : n'apparaît que pour les niveaux ayant déjà au
-            moins un combiné classé Gagné/Perdu. */}
-        {RISK_ORDER.some((level) => successRates[level]) && (
-          <section style={st.statsBox} data-testid="combo-success-rates">
-            {RISK_ORDER.filter((level) => successRates[level]).map((level) => (
-              <div key={level} style={st.statsRow} data-testid={`success-rate-${level}`}>
-                {RISK_LABELS[level]} : {successRates[level].pct} % réussis ({successRates[level].total} combiné{successRates[level].total > 1 ? "s" : ""})
-              </div>
-            ))}
-          </section>
-        )}
-
-        <div style={st.list} data-testid="combined-vision-list">
-          {combos.map((combo) => (
-            <CombinedVisionTicket key={combo.id} combo={combo} progress={progress[combo.id]} />
-          ))}
-        </div>
       </main>
     </div>
   );

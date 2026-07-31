@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRequireAuth } from "../lib/useRequireAuth";
+import { useSport } from "../lib/useSport";
 import { presentCompetitions, presentMatchdays } from "../lib/matchFilters";
 import MatchCard from "../components/MatchCard";
 import SiteHeader from "../components/SiteHeader";
 import FilterCarousel from "../components/FilterCarousel";
+import SportComingSoon from "../components/SportComingSoon";
 
 const UPCOMING_STATUSES = ["SCHEDULED", "TIMED"];
 // Les matchs à venir changent moins vite que le direct, mais un rafraîchissement
@@ -24,6 +26,7 @@ function normalize(str) {
 // PROMPT 1), jamais de match inventé.
 export default function UpcomingMatches() {
   const { session, sessionChecked, authorized } = useRequireAuth();
+  const { sport, setSport, sportReady } = useSport();
 
   const [search, setSearch] = useState("");
   const [weekData, setWeekData] = useState(null);
@@ -51,16 +54,18 @@ export default function UpcomingMatches() {
       .finally(() => setWeekLoading(false));
   }, []);
 
+  // Multi-sport (bloc 0) : /api/matches ne sert que du football (voir
+  // lib/sports/football) — pas d'appel tant que l'onglet Basket/Tennis est affiché.
   useEffect(() => {
-    if (!authorized) return;
+    if (!authorized || sport !== "football") return;
     loadWeekMatches();
-  }, [authorized, loadWeekMatches]);
+  }, [authorized, sport, loadWeekMatches]);
 
   useEffect(() => {
-    if (!authorized) return;
+    if (!authorized || sport !== "football") return;
     const id = setInterval(() => loadWeekMatches(true), WEEK_REFRESH_MS);
     return () => clearInterval(id);
-  }, [authorized, loadWeekMatches]);
+  }, [authorized, sport, loadWeekMatches]);
 
   const searchQuery = search.trim();
 
@@ -112,7 +117,7 @@ export default function UpcomingMatches() {
     return rows;
   }, [weekData, searchQuery, compFilter, matchdayFilter]);
 
-  if (!sessionChecked) {
+  if (!sessionChecked || !sportReady) {
     return (
       <div style={st.page}>
         <p style={st.hint}>Chargement…</p>
@@ -123,64 +128,70 @@ export default function UpcomingMatches() {
 
   return (
     <div style={st.page}>
-      <SiteHeader session={session} />
+      <SiteHeader session={session} sport={sport} onSportChange={setSport} />
 
       <main style={st.main}>
-        <section style={st.hero}>
-          <h1 style={st.heroTitle}>Matchs à venir</h1>
-          <p style={st.heroSubtitle}>
-            Les prochains matchs programmés sur les compétitions suivies par Blume — Coupe du
-            Monde, Ligue des Champions, Premier League, LaLiga, Serie A, Bundesliga, Ligue 1 et
-            plus.
-          </p>
-        </section>
+        {sport !== "football" ? (
+          <SportComingSoon sport={sport} pageLabel="Matchs à venir" />
+        ) : (
+          <>
+            <section style={st.hero}>
+              <h1 style={st.heroTitle}>Matchs à venir</h1>
+              <p style={st.heroSubtitle}>
+                Les prochains matchs programmés sur les compétitions suivies par Blume — Coupe du
+                Monde, Ligue des Champions, Premier League, LaLiga, Serie A, Bundesliga, Ligue 1 et
+                plus.
+              </p>
+            </section>
 
-        <FilterCarousel
-          testId="competition-filter"
-          allLabel="Toutes les compétitions"
-          items={competitionOptions}
-          selected={compFilter}
-          onSelect={selectCompetitionFilter}
-        />
-        <FilterCarousel
-          testId="matchday-filter"
-          allLabel="Toutes les journées"
-          items={matchdayOptions}
-          selected={matchdayFilter}
-          onSelect={setMatchdayFilter}
-        />
+            <FilterCarousel
+              testId="competition-filter"
+              allLabel="Toutes les compétitions"
+              items={competitionOptions}
+              selected={compFilter}
+              onSelect={selectCompetitionFilter}
+            />
+            <FilterCarousel
+              testId="matchday-filter"
+              allLabel="Toutes les journées"
+              items={matchdayOptions}
+              selected={matchdayFilter}
+              onSelect={setMatchdayFilter}
+            />
 
-        <div style={st.searchRow}>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Rechercher une équipe, une compétition…"
-            style={st.searchInput}
-          />
-          {search && (
-            <button style={st.searchBtn} onClick={() => setSearch("")}>✕</button>
-          )}
-        </div>
+            <div style={st.searchRow}>
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Rechercher une équipe, une compétition…"
+                style={st.searchInput}
+              />
+              {search && (
+                <button style={st.searchBtn} onClick={() => setSearch("")}>✕</button>
+              )}
+            </div>
 
-        {weekLoading && <p style={st.hint}>Chargement des matchs…</p>}
-        {!weekLoading && (!weekData || weekData?.error) && (
-          <p style={st.hint}>Les matchs ne sont pas disponibles pour le moment. Réessaie dans quelques minutes.</p>
+            {weekLoading && <p style={st.hint}>Chargement des matchs…</p>}
+            {!weekLoading && (!weekData || weekData?.error) && (
+              <p style={st.hint}>Les matchs ne sont pas disponibles pour le moment. Réessaie dans quelques minutes.</p>
+            )}
+            {!weekLoading && weekData && !weekData.error && weekFeed.length === 0 && (
+              <p style={st.hint}>
+                {searchQuery
+                  ? "Aucun match ne correspond à ta recherche."
+                  : compFilter !== "all"
+                  ? "Aucun match à venir pour ce filtre."
+                  : "Aucun match à venir cette semaine."}
+              </p>
+            )}
+
+            <div data-testid="match-list">
+              {weekFeed.map(({ m, comp }) => (
+                <MatchCard key={m.id} m={m} comp={comp} />
+              ))}
+            </div>
+          </>
         )}
-        {!weekLoading && weekData && !weekData.error && weekFeed.length === 0 && (
-          <p style={st.hint}>
-            {searchQuery
-              ? "Aucun match ne correspond à ta recherche."
-              : compFilter !== "all"
-              ? "Aucun match à venir pour ce filtre."
-              : "Aucun match à venir cette semaine."}
-          </p>
-        )}
-
-        <div data-testid="match-list">
-          {weekFeed.map(({ m, comp }) => (
-            <MatchCard key={m.id} m={m} comp={comp} />
-          ))}
-        </div>
       </main>
     </div>
   );

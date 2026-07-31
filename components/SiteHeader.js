@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { writePrefs } from "../lib/prefsCookie";
+import SportTabs from "./SportTabs";
 
 // Les 4 onglets dont le PROMPT (Partie 2) demande explicitement de retenir le dernier
 // consulté ("Live, Matchs à venir, News, Combiné Vision") — volontairement PAS les
@@ -21,7 +22,15 @@ const TRACKED_TABS = ["/", "/a-venir", "/news", "/combine-vision"];
 // de pseudo (la table "profiles" ne stocke plus qu'un email, voir
 // supabase/migrations/0008_custom_auth.sql) : l'email est affiché directement, sans
 // lecture supplémentaire.
-export default function SiteHeader({ session }) {
+// `sport`/`onSportChange` (multi-sport, bloc 0) : optionnels — seules les pages de
+// CONTENU (Live, Matchs à venir, Combiné Vision, News, Historique, Probabilités...)
+// les transmettent (voir lib/useSport.js, exactement comme `session` l'est déjà) ;
+// les pages de compte (Admin, Réglages) ne les passent pas, donc le sélecteur ne s'y
+// affiche simplement pas — changer de sport n'y aurait aucun sens. Un seul état
+// possédé par la PAGE (jamais par ce composant) : passer `sport`/`onSportChange`
+// depuis la page garantit qu'un changement d'onglet met bien à jour tout le contenu
+// en dessous, dans le même re-rendu.
+export default function SiteHeader({ session, sport, onSportChange }) {
   const router = useRouter();
   const userId = session?.id;
   const [isOwnerAccount, setIsOwnerAccount] = useState(false);
@@ -90,6 +99,8 @@ export default function SiteHeader({ session }) {
           </div>
         )}
       </div>
+
+      {sport && onSportChange && <SportTabs sport={sport} onChange={onSportChange} />}
 
       <nav style={st.nav} data-testid="main-nav">
         <a

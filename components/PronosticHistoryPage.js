@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRequireAuth } from "../lib/useRequireAuth";
+import { useSport } from "../lib/useSport";
 import SiteHeader from "./SiteHeader";
 import PronosticHistoryCard from "./PronosticHistoryCard";
+import SportComingSoon from "./SportComingSoon";
 
 // Corps partagé par pages/probabilites-reussies.js et pages/probabilites-echouees.js —
 // même structure et même logique pour les deux (voir PROMPT étapes 3/4), seuls le
@@ -10,6 +12,7 @@ import PronosticHistoryCard from "./PronosticHistoryCard";
 // matchs encore "pending" à chaque appel — donc à chaque chargement de cette page.
 export default function PronosticHistoryPage({ status, title, subtitle, emptyMessage, testId }) {
   const { session, sessionChecked, authorized } = useRequireAuth();
+  const { sport, setSport, sportReady } = useSport();
   const [items, setItems] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -30,7 +33,7 @@ export default function PronosticHistoryPage({ status, title, subtitle, emptyMes
     load();
   }, [authorized, load]);
 
-  if (!sessionChecked) {
+  if (!sessionChecked || !sportReady) {
     return (
       <div style={st.page}>
         <p style={st.hint}>Chargement…</p>
@@ -43,22 +46,28 @@ export default function PronosticHistoryPage({ status, title, subtitle, emptyMes
 
   return (
     <div style={st.page}>
-      <SiteHeader session={session} />
+      <SiteHeader session={session} sport={sport} onSportChange={setSport} />
 
       <main style={st.main}>
-        <section style={st.hero}>
-          <h1 style={st.heroTitle}>{title}</h1>
-          <p style={st.heroSubtitle}>{subtitle}</p>
-        </section>
+        {sport !== "football" ? (
+          <SportComingSoon sport={sport} pageLabel={title} />
+        ) : (
+          <>
+            <section style={st.hero}>
+              <h1 style={st.heroTitle}>{title}</h1>
+              <p style={st.heroSubtitle}>{subtitle}</p>
+            </section>
 
-        {loading && <p style={st.hint}>Chargement…</p>}
-        {!loading && list.length === 0 && <p style={st.hint}>{emptyMessage}</p>}
+            {loading && <p style={st.hint}>Chargement…</p>}
+            {!loading && list.length === 0 && <p style={st.hint}>{emptyMessage}</p>}
 
-        <div style={st.list} data-testid={testId}>
-          {list.map((item) => (
-            <PronosticHistoryCard key={item.match_id} item={item} />
-          ))}
-        </div>
+            <div style={st.list} data-testid={testId}>
+              {list.map((item) => (
+                <PronosticHistoryCard key={item.match_id} item={item} />
+              ))}
+            </div>
+          </>
+        )}
       </main>
     </div>
   );

@@ -1,12 +1,14 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/router";
 import { useRequireAuth } from "../lib/useRequireAuth";
+import { useSport } from "../lib/useSport";
 import { getRecentSearches, saveSearch } from "../lib/personalization";
 import { presentCompetitions, presentMatchdays } from "../lib/matchFilters";
 import MatchCard, { matchHref } from "../components/MatchCard";
 import MatchInfoBlock from "../components/MatchInfoBlock";
 import SiteHeader from "../components/SiteHeader";
 import FilterCarousel from "../components/FilterCarousel";
+import SportComingSoon from "../components/SportComingSoon";
 
 // Grâce au cache partagé côté serveur (lib/liveListCache.js, actualisé toutes les
 // 2,5s), on peut interroger /api/live-matches très souvent depuis le client sans
@@ -36,6 +38,7 @@ function normalize(str) {
 // vivent désormais sur leur propre page (/a-venir).
 export default function Home() {
   const { session, sessionChecked, authorized } = useRequireAuth();
+  const { sport, setSport, sportReady } = useSport();
   const router = useRouter();
   const userId = session?.id;
 
@@ -81,19 +84,22 @@ export default function Home() {
   }, []);
 
   // Tant que la personne n'est pas connectée, on n'interroge même pas l'API (pas de
-  // données servies avant authentification).
+  // données servies avant authentification). Multi-sport (bloc 0) : /api/live-matches
+  // ne sert que du football (voir lib/sports/football) — inutile d'interroger l'API
+  // (et de consommer son quota) tant que l'onglet Basket/Tennis est affiché, puisque
+  // SportComingSoon s'affiche à la place de toute façon.
   useEffect(() => {
-    if (!authorized) return;
+    if (!authorized || sport !== "football") return;
     loadLiveMatches();
-  }, [authorized, loadLiveMatches]);
+  }, [authorized, sport, loadLiveMatches]);
 
   // Rafraîchissement automatique des matchs en direct (scores, minute de jeu), sans
   // recharger la page.
   useEffect(() => {
-    if (!authorized) return;
+    if (!authorized || sport !== "football") return;
     const id = setInterval(() => loadLiveMatches(true), LIVE_REFRESH_ACTIVE_MS);
     return () => clearInterval(id);
-  }, [authorized, loadLiveMatches]);
+  }, [authorized, sport, loadLiveMatches]);
 
   // Historique de recherche : personnel à chaque compte, filtré côté serveur par
   // profile_id (voir pages/api/search-history.js), jamais partagé entre deux comptes.
@@ -166,8 +172,10 @@ export default function Home() {
 
   // L'accès à l'application nécessite un compte : tant que la session n'a pas été
   // vérifiée, ou si personne n'est connecté (redirection vers /login en cours), on
-  // n'affiche aucune donnée.
-  if (!sessionChecked) {
+  // n'affiche aucune donnée. `sportReady` (multi-sport, bloc 0) : idem pour le sport
+  // mémorisé (voir lib/useSport.js) — jamais un flash "Football" avant la vraie
+  // lecture du cookie.
+  if (!sessionChecked || !sportReady) {
     return (
       <div style={st.page}>
         <p style={st.hint}>Chargement…</p>
@@ -178,92 +186,98 @@ export default function Home() {
 
   return (
     <div style={st.page}>
-      <SiteHeader session={session} />
+      <SiteHeader session={session} sport={sport} onSportChange={setSport} />
 
       <main style={st.main}>
-        <section style={st.hero}>
-          <h1 style={st.heroTitle}>Football en direct</h1>
-          <p style={st.heroSubtitle}>
-            Scores en direct, minute par minute, sur toutes les compétitions suivies par Blume —
-            Coupe du Monde, Ligue des Champions, Premier League, LaLiga, Serie A, Bundesliga, Ligue 1
-            et plus.
-          </p>
-        </section>
+        {sport !== "football" ? (
+          <SportComingSoon sport={sport} pageLabel="Matchs en direct" />
+        ) : (
+          <>
+            <section style={st.hero}>
+              <h1 style={st.heroTitle}>Football en direct</h1>
+              <p style={st.heroSubtitle}>
+                Scores en direct, minute par minute, sur toutes les compétitions suivies par Blume —
+                Coupe du Monde, Ligue des Champions, Premier League, LaLiga, Serie A, Bundesliga, Ligue 1
+                et plus.
+              </p>
+            </section>
 
-        {featuredMatch && (
-          <button
-            type="button"
-            style={st.featuredCard}
-            data-testid="featured-match"
-            onClick={() => router.push(matchHref(featuredMatch.m, featuredMatch.comp))}
-          >
-            <span style={st.featuredBanner}>EN DIRECT</span>
-            <MatchInfoBlock m={featuredMatch.m} comp={featuredMatch.comp} />
-          </button>
-        )}
-
-        <div style={st.chipsInfoRow}>
-          <span style={st.chip}>Les plus populaires</span>
-          <span style={st.chip}>Football</span>
-          <span style={{ ...st.chip, ...st.chipLive }}>Live : {liveCount}</span>
-        </div>
-
-        <FilterCarousel
-          testId="competition-filter"
-          allLabel="Toutes les compétitions"
-          items={competitionOptions}
-          selected={compFilter}
-          onSelect={selectCompetitionFilter}
-        />
-        <FilterCarousel
-          testId="matchday-filter"
-          allLabel="Toutes les journées"
-          items={matchdayOptions}
-          selected={matchdayFilter}
-          onSelect={setMatchdayFilter}
-        />
-
-        <div style={st.searchRow}>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={SEARCH_PLACEHOLDER_EXAMPLES[placeholderIndex]}
-            style={st.searchInput}
-          />
-          {search && (
-            <button style={st.searchBtn} onClick={() => setSearch("")}>✕</button>
-          )}
-        </div>
-
-        {!search && recentSearches.length > 0 && (
-          <div style={st.chipsRow}>
-            {recentSearches.map((q) => (
-              <button key={q} type="button" style={st.chip} onClick={() => setSearch(q)}>
-                {q}
+            {featuredMatch && (
+              <button
+                type="button"
+                style={st.featuredCard}
+                data-testid="featured-match"
+                onClick={() => router.push(matchHref(featuredMatch.m, featuredMatch.comp))}
+              >
+                <span style={st.featuredBanner}>EN DIRECT</span>
+                <MatchInfoBlock m={featuredMatch.m} comp={featuredMatch.comp} />
               </button>
-            ))}
-          </div>
-        )}
+            )}
 
-        {liveLoading && <p style={st.hint}>Chargement des matchs…</p>}
-        {!liveLoading && (!liveData || liveData?.error) && (
-          <p style={st.hint}>Les matchs ne sont pas disponibles pour le moment. Réessaie dans quelques minutes.</p>
-        )}
-        {!liveLoading && liveData && !liveData.error && liveFeed.length === 0 && (
-          <p style={st.hint}>
-            {searchQuery
-              ? "Aucun match ne correspond à ta recherche."
-              : compFilter !== "all"
-              ? "Aucun match en direct actuellement pour ce filtre."
-              : "Aucun match en direct actuellement."}
-          </p>
-        )}
+            <div style={st.chipsInfoRow}>
+              <span style={st.chip}>Les plus populaires</span>
+              <span style={st.chip}>Football</span>
+              <span style={{ ...st.chip, ...st.chipLive }}>Live : {liveCount}</span>
+            </div>
 
-        <div data-testid="match-list">
-          {liveFeed.map(({ m, comp }) => (
-            <MatchCard key={m.id} m={m} comp={comp} />
-          ))}
-        </div>
+            <FilterCarousel
+              testId="competition-filter"
+              allLabel="Toutes les compétitions"
+              items={competitionOptions}
+              selected={compFilter}
+              onSelect={selectCompetitionFilter}
+            />
+            <FilterCarousel
+              testId="matchday-filter"
+              allLabel="Toutes les journées"
+              items={matchdayOptions}
+              selected={matchdayFilter}
+              onSelect={setMatchdayFilter}
+            />
+
+            <div style={st.searchRow}>
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={SEARCH_PLACEHOLDER_EXAMPLES[placeholderIndex]}
+                style={st.searchInput}
+              />
+              {search && (
+                <button style={st.searchBtn} onClick={() => setSearch("")}>✕</button>
+              )}
+            </div>
+
+            {!search && recentSearches.length > 0 && (
+              <div style={st.chipsRow}>
+                {recentSearches.map((q) => (
+                  <button key={q} type="button" style={st.chip} onClick={() => setSearch(q)}>
+                    {q}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {liveLoading && <p style={st.hint}>Chargement des matchs…</p>}
+            {!liveLoading && (!liveData || liveData?.error) && (
+              <p style={st.hint}>Les matchs ne sont pas disponibles pour le moment. Réessaie dans quelques minutes.</p>
+            )}
+            {!liveLoading && liveData && !liveData.error && liveFeed.length === 0 && (
+              <p style={st.hint}>
+                {searchQuery
+                  ? "Aucun match ne correspond à ta recherche."
+                  : compFilter !== "all"
+                  ? "Aucun match en direct actuellement pour ce filtre."
+                  : "Aucun match en direct actuellement."}
+              </p>
+            )}
+
+            <div data-testid="match-list">
+              {liveFeed.map(({ m, comp }) => (
+                <MatchCard key={m.id} m={m} comp={comp} />
+              ))}
+            </div>
+          </>
+        )}
       </main>
     </div>
   );
