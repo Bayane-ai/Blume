@@ -10,6 +10,11 @@ import CardsAndCorners from "../../components/CardsAndCorners";
 import AssistsProbables from "../../components/AssistsProbables";
 import LiveStatBlock from "../../components/LiveStatBlock";
 import MatchOutcomeRecap from "../../components/MatchOutcomeRecap";
+import BasketballPronosticResults from "../../components/BasketballPronosticResults";
+import BasketballPeriodsBlock from "../../components/BasketballPeriodsBlock";
+import BasketballSecondaryStats from "../../components/BasketballSecondaryStats";
+import BasketballSingleTotals from "../../components/BasketballSingleTotals";
+import BasketballPlayersToWatch from "../../components/BasketballPlayersToWatch";
 import { useRequireAuth } from "../../lib/useRequireAuth";
 import { addMatchToHistory } from "../../lib/matchHistory";
 
@@ -39,7 +44,15 @@ export default function MatchPage() {
     competitionCode, competitionName, competitionEmblem, homeTeamId, awayTeamId,
     homeTeamName, awayTeamName, homeCrest, awayCrest,
     status: initialStatus, minute: initialMinute, utcDate, scoreHome, scoreAway,
+    season,
   } = router.query;
+
+  // Multi-sport bloc 3 : un match basket (id préfixé "bk-", voir lib/sports/
+  // basketball/mapper.js) utilise sa propre route d'analyse (pages/api/basketball/
+  // analyze.js) et ses propres cartes de pronostics (métriques basket, voir PROMPT) —
+  // jamais le chemin football ci-dessous, dont les champs (corners, cartons...) n'ont
+  // pas de sens pour ce sport.
+  const isBasketball = typeof matchId === "string" && matchId.startsWith("bk-");
 
   const [pronostic, setPronostic] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -52,19 +65,19 @@ export default function MatchPage() {
   const runAnalysis = useCallback((silent = false) => {
     if (!router.isReady) return;
     setHasRequested(true);
-    if (!competitionCode || !homeTeamId || !awayTeamId) {
+    if (!homeTeamId || !awayTeamId || (!isBasketball && !competitionCode)) {
       setPronostic({ error: "Informations du match manquantes pour calculer les pronostics." });
       return;
     }
-    const params = new URLSearchParams({
-      matchId: matchId || "", competitionCode, homeTeamId, awayTeamId, homeTeamName, awayTeamName,
-    });
+    const endpoint = isBasketball
+      ? `/api/basketball/analyze?${new URLSearchParams({ matchId: matchId || "", homeTeamId, awayTeamId, homeTeamName, awayTeamName, season: season || "" })}`
+      : `/api/analyze?${new URLSearchParams({ matchId: matchId || "", competitionCode, homeTeamId, awayTeamId, homeTeamName, awayTeamName })}`;
     if (!silent) setLoading(true);
-    fetch(`/api/analyze?${params}`)
+    fetch(endpoint)
       .then((r) => r.json())
       .then((result) => {
         if (result?.error) {
-          console.error("Erreur /api/analyze:", result.error);
+          console.error("Erreur analyse:", result.error);
           // Rafraîchissement silencieux (live) : une erreur passagère (quota API,
           // réseau) ne doit pas faire disparaître un pronostic déjà affiché — on
           // garde le dernier résultat connu et on réessaie au prochain cycle.
@@ -79,11 +92,11 @@ export default function MatchPage() {
         }
       })
       .catch((e) => {
-        console.error("Erreur /api/analyze:", e);
+        console.error("Erreur analyse:", e);
         if (!silent) setPronostic({ error: "Erreur lors du calcul des pronostics." });
       })
       .finally(() => setLoading(false));
-  }, [router.isReady, matchId, competitionCode, homeTeamId, awayTeamId, homeTeamName, awayTeamName]);
+  }, [router.isReady, matchId, isBasketball, competitionCode, homeTeamId, awayTeamId, homeTeamName, awayTeamName, season]);
 
   // Lance l'analyse automatiquement dès que le match est chargé, et à chaque fois qu'on
   // navigue vers un AUTRE match (Next.js réutilise ce même composant, seul l'id d'URL
@@ -175,7 +188,7 @@ export default function MatchPage() {
     <div style={st.page}>
       <MatchHeaderHero m={matchForBlock} isLive={isLiveNow} />
 
-      {isLiveNow && (
+      {!isBasketball && isLiveNow && (
         // Épinglée juste sous le score (position: sticky) : en faisant défiler la page,
         // les moments forts restent visibles en premier, avant le reste du contenu —
         // seule la liste des événements défile en interne (hauteur bornée) une fois
@@ -190,7 +203,7 @@ export default function MatchPage() {
 
       <main style={st.main}>
         <section style={st.panel}>
-          {pronostic?.home && pronostic?.away && (
+          {!isBasketball && pronostic?.home && pronostic?.away && (
             <div style={st.formRow}>
               <div style={st.formCell}>
                 <FormBadges form={pronostic.home.form} />
@@ -203,9 +216,9 @@ export default function MatchPage() {
 
           {homeTeamName && awayTeamName && (
             <p style={st.descText}>
-              {homeTeamName} affronte {awayTeamName}
-              {competitionName ? ` en ${competitionName}` : ""}. Retrouve ci-dessous l'analyse statistique :
-              probabilités 1X2, buts/corners/tirs probables et score exact estimé.
+              {isBasketball
+                ? `${homeTeamName} affronte ${awayTeamName}${competitionName ? ` en ${competitionName}` : ""}. Retrouve ci-dessous l'analyse statistique : probabilité de victoire, scores finaux probables et statistiques de match estimées.`
+                : `${homeTeamName} affronte ${awayTeamName}${competitionName ? ` en ${competitionName}` : ""}. Retrouve ci-dessous l'analyse statistique : probabilités 1X2, buts/corners/tirs probables et score exact estimé.`}
             </p>
           )}
 
@@ -214,14 +227,18 @@ export default function MatchPage() {
               <span style={st.infoLabel}>Coup d'envoi</span>
               <span style={st.infoValue}>{kickoff || "Indisponible"}</span>
             </div>
-            <div style={st.infoCell}>
-              <span style={st.infoLabel}>Stade</span>
-              <span style={st.infoValue}>{venue || "Indisponible"}</span>
-            </div>
-            <div style={st.infoCell}>
-              <span style={st.infoLabel}>Arbitre</span>
-              <span style={st.infoValue}>{referee || "Indisponible"}</span>
-            </div>
+            {!isBasketball && (
+              <>
+                <div style={st.infoCell}>
+                  <span style={st.infoLabel}>Stade</span>
+                  <span style={st.infoValue}>{venue || "Indisponible"}</span>
+                </div>
+                <div style={st.infoCell}>
+                  <span style={st.infoLabel}>Arbitre</span>
+                  <span style={st.infoValue}>{referee || "Indisponible"}</span>
+                </div>
+              </>
+            )}
           </div>
 
           <div style={st.divider} />
@@ -236,10 +253,9 @@ export default function MatchPage() {
           )}
           {isLiveNow && (
             <p style={st.liveHint}>
-              Le score, les moments forts, les probabilités de victoire, les scores exacts et les totaux de buts
-              suivent l'évolution du match en direct. Les autres lignes (Corners, Hors-jeu, Fautes, Touches, tirs,
-              cartons...) ont été calculées une seule fois avant le match et restent identiques jusqu'à la fin —
-              une référence stable pour parier dessus.
+              {isBasketball
+                ? "Le score, la probabilité de victoire, les scores finaux probables et les totaux de points suivent l'évolution du match en direct. Les autres lignes (rebonds, passes décisives, tirs à 3 points, fautes, ballons perdus, lancers francs, joueurs à suivre) ont été calculées une seule fois avant le match et restent identiques jusqu'à la fin — une référence stable pour parier dessus."
+                : "Le score, les moments forts, les probabilités de victoire, les scores exacts et les totaux de buts suivent l'évolution du match en direct. Les autres lignes (Corners, Hors-jeu, Fautes, Touches, tirs, cartons...) ont été calculées une seule fois avant le match et restent identiques jusqu'à la fin — une référence stable pour parier dessus."}
             </p>
           )}
 
@@ -248,73 +264,85 @@ export default function MatchPage() {
           </button>
         </section>
 
-        {/* Bloc 4 : sur un match déjà terminé, le compte-rendu (crochet vert/croix
-            rouge par ligne de pronostic, y compris Réussi/Échec de la probabilité de
-            victoire) apparaît en tout premier, avant les cartes de pronostics
-            elles-mêmes — voir components/MatchOutcomeRecap.js. `pronostic.verification`
-            n'existe que pour un match déjà classé (voir pages/api/analyze.js) ; le
-            composant ne s'affiche donc de lui-même que si cette donnée est là. */}
-        {!loading && hasRequested && isFinishedNow && <MatchOutcomeRecap pronostic={pronostic} />}
+        {isBasketball ? (
+          <>
+            {!loading && hasRequested && <BasketballPronosticResults pronostic={pronostic} />}
+            {!loading && hasRequested && pronostic?.available && <BasketballPeriodsBlock pronostic={pronostic} />}
+            {!loading && hasRequested && pronostic?.available && <BasketballSecondaryStats pronostic={pronostic} />}
+            {!loading && hasRequested && pronostic?.available && <BasketballSingleTotals pronostic={pronostic} />}
+            {!loading && hasRequested && pronostic?.available && <BasketballPlayersToWatch pronostic={pronostic} />}
+          </>
+        ) : (
+          <>
+            {/* Bloc 4 : sur un match déjà terminé, le compte-rendu (crochet vert/croix
+                rouge par ligne de pronostic, y compris Réussi/Échec de la probabilité de
+                victoire) apparaît en tout premier, avant les cartes de pronostics
+                elles-mêmes — voir components/MatchOutcomeRecap.js. `pronostic.verification`
+                n'existe que pour un match déjà classé (voir pages/api/analyze.js) ; le
+                composant ne s'affiche donc de lui-même que si cette donnée est là. */}
+            {!loading && hasRequested && isFinishedNow && <MatchOutcomeRecap pronostic={pronostic} />}
 
-        {/* Résumé d'avant-match (PROMPT 2, voir components/PreMatchSummary.js) : en
-            tout premier parmi les cartes de pronostics, avant "Probabilité de
-            victoire" — comparaison du niveau des deux équipes et scénario le plus
-            probable, générés à partir des vrais chiffres de CE match. */}
-        {!loading && hasRequested && <PreMatchSummary pronostic={pronostic} />}
+            {/* Résumé d'avant-match (PROMPT 2, voir components/PreMatchSummary.js) : en
+                tout premier parmi les cartes de pronostics, avant "Probabilité de
+                victoire" — comparaison du niveau des deux équipes et scénario le plus
+                probable, générés à partir des vrais chiffres de CE match. */}
+            {!loading && hasRequested && <PreMatchSummary pronostic={pronostic} />}
 
-        {/* Cartes de pronostics séparées de la section ci-dessus (voir
-            components/PronosticResults.js) : "Probabilité de victoire" en premier,
-            "Statistiques du match" ensuite — chacune sa propre carte visuelle. */}
-        {!loading && hasRequested && <PronosticResults pronostic={pronostic} loading={loading} />}
-        {!loading && hasRequested && <ProbableScorers pronostic={pronostic} />}
+            {/* Cartes de pronostics séparées de la section ci-dessus (voir
+                components/PronosticResults.js) : "Probabilité de victoire" en premier,
+                "Statistiques du match" ensuite — chacune sa propre carte visuelle. */}
+            {!loading && hasRequested && <PronosticResults pronostic={pronostic} loading={loading} />}
+            {!loading && hasRequested && <ProbableScorers pronostic={pronostic} />}
 
-        {!isLiveNow && (
-          <section style={st.panel}>
-            <h2 style={st.h2}>Moments forts</h2>
-            <MatchTimeline events={liveState?.events} homeTeamId={homeTeamId} />
-          </section>
-        )}
+            {!isLiveNow && (
+              <section style={st.panel}>
+                <h2 style={st.h2}>Moments forts</h2>
+                <MatchTimeline events={liveState?.events} homeTeamId={homeTeamId} />
+              </section>
+            )}
 
-        {/* Corners / Hors-jeu / Fautes / Touches (Total match + mi-temps, figés comme
-            le reste des pronostics — voir components/LiveStatBlock.js et
-            lib/pronostic.js:buildMatchStats), puis cartons, puis passes décisives :
-            tout en bas de la page, chacun sa propre carte visuelle, même structure et
-            même logique pour les 4 premiers blocs. */}
-        {!loading && hasRequested && (
-          <LiveStatBlock
-            testId="stat-corners"
-            title="Corners"
-            block={pronostic?.matchStats?.corners}
-            note={pronostic?.liveStatNote}
-            narrative={pronostic?.narrative?.corners}
-          />
+            {/* Corners / Hors-jeu / Fautes / Touches (Total match + mi-temps, figés comme
+                le reste des pronostics — voir components/LiveStatBlock.js et
+                lib/pronostic.js:buildMatchStats), puis cartons, puis passes décisives :
+                tout en bas de la page, chacun sa propre carte visuelle, même structure et
+                même logique pour les 4 premiers blocs. */}
+            {!loading && hasRequested && (
+              <LiveStatBlock
+                testId="stat-corners"
+                title="Corners"
+                block={pronostic?.matchStats?.corners}
+                note={pronostic?.liveStatNote}
+                narrative={pronostic?.narrative?.corners}
+              />
+            )}
+            {!loading && hasRequested && (
+              <LiveStatBlock
+                testId="stat-offsides"
+                title="Hors-jeu"
+                block={pronostic?.matchStats?.offsides}
+                narrative={pronostic?.narrative?.offsides}
+              />
+            )}
+            {!loading && hasRequested && (
+              <LiveStatBlock
+                testId="stat-fouls"
+                title="Fautes"
+                block={pronostic?.matchStats?.fouls}
+                narrative={pronostic?.narrative?.fouls}
+              />
+            )}
+            {!loading && hasRequested && (
+              <LiveStatBlock
+                testId="stat-throwins"
+                title="Touches"
+                block={pronostic?.matchStats?.throwIns}
+                narrative={pronostic?.narrative?.throwIns}
+              />
+            )}
+            {!loading && hasRequested && <CardsAndCorners pronostic={pronostic} />}
+            {!loading && hasRequested && <AssistsProbables pronostic={pronostic} />}
+          </>
         )}
-        {!loading && hasRequested && (
-          <LiveStatBlock
-            testId="stat-offsides"
-            title="Hors-jeu"
-            block={pronostic?.matchStats?.offsides}
-            narrative={pronostic?.narrative?.offsides}
-          />
-        )}
-        {!loading && hasRequested && (
-          <LiveStatBlock
-            testId="stat-fouls"
-            title="Fautes"
-            block={pronostic?.matchStats?.fouls}
-            narrative={pronostic?.narrative?.fouls}
-          />
-        )}
-        {!loading && hasRequested && (
-          <LiveStatBlock
-            testId="stat-throwins"
-            title="Touches"
-            block={pronostic?.matchStats?.throwIns}
-            narrative={pronostic?.narrative?.throwIns}
-          />
-        )}
-        {!loading && hasRequested && <CardsAndCorners pronostic={pronostic} />}
-        {!loading && hasRequested && <AssistsProbables pronostic={pronostic} />}
       </main>
     </div>
   );

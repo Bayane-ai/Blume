@@ -8,6 +8,9 @@ export function matchHref(m, comp) {
       competitionCode: m.competition?.code || comp?.code || "",
       competitionName: m.competition?.name || comp?.name || "",
       competitionEmblem: m.competition?.emblem || "",
+      // Multi-sport bloc 3 : saison réelle du match basket (voir lib/sports/
+      // basketball/mapper.js) — absente pour le football, jamais utilisée par lui.
+      season: m.competition?.season || comp?.season || "",
       homeTeamId: m.homeTeam?.id ?? "",
       awayTeamId: m.awayTeam?.id ?? "",
       homeTeamName: m.homeTeam?.name || "",

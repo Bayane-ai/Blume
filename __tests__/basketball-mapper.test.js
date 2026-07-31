@@ -61,7 +61,7 @@ describe("mapGameToLiveMatch — même forme que mapFixtureToLiveMatch (football
       minute: "5:23",
       period: "Q3",
       utcDate: "2026-08-01T19:00:00+00:00",
-      competition: { code: "bk-12", name: "NBA", area: "USA", emblem: "https://example.com/nba.png" },
+      competition: { code: "bk-12", name: "NBA", area: "USA", emblem: "https://example.com/nba.png", season: "" },
       homeTeam: { id: "bk-132", name: "Lakers", crest: "https://example.com/lal.png" },
       awayTeam: { id: "bk-134", name: "Warriors", crest: "https://example.com/gsw.png" },
       score: { fullTime: { home: 75, away: 68 } },
