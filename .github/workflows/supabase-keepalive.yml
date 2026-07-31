@@ -1,0 +1,44 @@
+name: Anti-pause Supabase
+
+# Supabase (plan gratuit) met un projet en pause après une période d'inactivité sur la
+# base — une simple visite du site ne suffit pas à l'éviter si elle ne touche jamais
+# vraiment la base. Ce workflow envoie une requête très légère (une seule colonne, une
+# seule ligne) vers public.profiles pour compter comme une activité réelle, sans
+# consommer de bande passante. Programmé tous les 2 jours (très en dessous du seuil
+# d'inactivité de Supabase), et lançable à la main (workflow_dispatch) pour un test
+# immédiat. Échoue visiblement (exit 1) si la requête ne renvoie pas 200, pour être
+# notifié (email GitHub par défaut sur un run planifié en échec) si quelque chose casse.
+on:
+  schedule:
+    # "*/2" sur le champ jour-du-mois redémarre le comptage à chaque début de mois
+    # (jours 1, 3, 5, ..., 29, 31, puis 1 à nouveau) : au pire, deux exécutions se
+    # retrouvent espacées d'un seul jour au lieu de deux à cheval sur un changement de
+    # mois — jamais plus de 2 jours, donc sans conséquence pour un anti-pause.
+    - cron: "0 0 */2 * *"
+  workflow_dispatch: {}
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Interroge public.profiles (une seule ligne) pour garder la base active
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::error::Secret SUPABASE_URL ou SUPABASE_ANON_KEY manquant sur ce dépôt"
+            exit 1
+          fi
+
+          url="${SUPABASE_URL%/}/rest/v1/profiles?select=id&limit=1"
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            "$url")
+          echo "Code HTTP Supabase (public.profiles) : $code"
+
+          if [ "$code" != "200" ]; then
+            echo "::error::La requête anti-pause vers Supabase a échoué (code $code)"
+            exit 1
+          fi
