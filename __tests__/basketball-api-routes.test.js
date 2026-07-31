@@ -1,0 +1,130 @@
+/**
+ * pages/api/basketball/live-matches.js + pages/api/basketball/matches.js — bloc 1 :
+ * mêmes garanties que les routes football équivalentes (pages/api/live-matches.js/
+ * matches.js), mais une seule source (API-SPORTS Basketball, pas de football-data.org
+ * pour ce sport) — TOUTES les compétitions sans filtre, message clair en français en
+ * cas d'échec (jamais un texte technique ni une page blanche).
+ */
+function mockRes() {
+  const res = {};
+  res.status = jest.fn(() => res);
+  res.json = jest.fn((body) => { res.body = body; return res; });
+  res.setHeader = jest.fn();
+  return res;
+}
+
+function rawGame({ id, leagueId = 12, leagueName = "NBA", homeId, homeName, awayId, awayName, status = "Q2", date, homeScore = 10, awayScore = 8 }) {
+  return {
+    id,
+    date: date || new Date().toISOString(),
+    status: { long: status, short: status, timer: "5:00" },
+    league: { id: leagueId, name: leagueName, logo: "" },
+    country: { name: "USA" },
+    teams: { home: { id: homeId, name: homeName, logo: "" }, away: { id: awayId, name: awayName, logo: "" } },
+    scores: { home: { total: homeScore }, away: { total: awayScore } },
+  };
+}
+
+beforeEach(() => {
+  jest.resetModules();
+  delete process.env.API_FOOTBALL_KEY;
+  delete process.env.API_BASKETBALL_KEY;
+});
+
+describe("/api/basketball/live-matches", () => {
+  test("sans clé configurée, message clair en français, jamais un texte technique", async () => {
+    const { default: handler } = await import("../pages/api/basketball/live-matches.js");
+    const res = mockRes();
+    await handler({}, res);
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.body.error).toMatch(/basket/i);
+    expect(res.body.error).not.toMatch(/administrateur|undefined|NaN/i);
+  });
+
+  test("réutilise API_FOOTBALL_KEY quand API_BASKETBALL_KEY n'est pas définie, renvoie les vrais matchs mappés", async () => {
+    process.env.API_FOOTBALL_KEY = "shared-key";
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            response: [
+              rawGame({ id: 1, homeId: 10, homeName: "Lakers", awayId: 11, awayName: "Warriors" }),
+              rawGame({ id: 2, leagueId: 20, leagueName: "EuroLeague", homeId: 30, homeName: "Real Madrid", awayId: 31, awayName: "Barcelona" }),
+            ],
+          }),
+      })
+    );
+    const { default: handler } = await import("../pages/api/basketball/live-matches.js");
+    const res = mockRes();
+    await handler({}, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.body.matches).toHaveLength(2);
+    expect(res.body.matches[0].homeTeam.name).toBe("Lakers");
+    expect(res.body.matches[1].competition.name).toBe("EuroLeague");
+    // Toutes compétitions confondues, sans filtre : un seul appel à /games?live=all.
+    expect(global.fetch.mock.calls[0][0]).toBe("https://v1.basketball.api-sports.io/games?live=all");
+    // Pas encore de pronostic (bloc 3) : honnêtement indisponible, jamais inventé.
+    expect(res.body.matches[0].pronostic).toEqual({ available: false });
+  });
+
+  test("panne de l'API : message clair en français (jamais de page blanche ni de texte technique)", async () => {
+    process.env.API_FOOTBALL_KEY = "shared-key";
+    global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 500 }));
+    const { default: handler } = await import("../pages/api/basketball/live-matches.js");
+    const res = mockRes();
+    await handler({}, res);
+
+    expect(res.status).toHaveBeenCalledWith(502);
+    expect(res.body.error).toMatch(/basket/i);
+    expect(res.body.error).not.toMatch(/Error:|undefined|stack/i);
+  });
+});
+
+describe("/api/basketball/matches", () => {
+  test("sans clé configurée, message clair en français", async () => {
+    const { default: handler } = await import("../pages/api/basketball/matches.js");
+    const res = mockRes();
+    await handler({}, res);
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.body.error).toMatch(/basket/i);
+  });
+
+  test("regroupe les matchs par compétition RÉELLEMENT présente, toutes compétitions confondues", async () => {
+    process.env.API_BASKETBALL_KEY = "dedicated-key";
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            response: [
+              rawGame({ id: 1, status: "NS", homeId: 10, homeName: "Lakers", awayId: 11, awayName: "Warriors" }),
+              rawGame({ id: 2, status: "NS", leagueId: 99, leagueName: "WNBA", homeId: 40, homeName: "Aces", awayId: 41, awayName: "Liberty" }),
+            ],
+          }),
+      })
+    );
+    const { default: handler } = await import("../pages/api/basketball/matches.js");
+    const res = mockRes();
+    await handler({}, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    const codes = res.body.competitions.map((c) => c.name);
+    expect(codes).toEqual(expect.arrayContaining(["NBA", "WNBA"]));
+    // Un appel par date sur la fenêtre de 8 jours.
+    expect(global.fetch.mock.calls.length).toBe(8);
+    expect(global.fetch.mock.calls[0][1].headers).toEqual({ "x-apisports-key": "dedicated-key" });
+  });
+
+  test("panne de l'API : message clair, jamais un plantage", async () => {
+    process.env.API_BASKETBALL_KEY = "dedicated-key";
+    global.fetch = jest.fn(() => Promise.reject(new Error("network down")));
+    const { default: handler } = await import("../pages/api/basketball/matches.js");
+    const res = mockRes();
+    await handler({}, res);
+
+    expect(res.status).toHaveBeenCalledWith(502);
+    expect(res.body.error).toMatch(/pas disponibles/i);
+  });
+});

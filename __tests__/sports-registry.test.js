@@ -38,26 +38,44 @@ describe("lib/sports — chaque sport a la même interface", () => {
     expect(SPORT_MODULES.football.routes.live).toBe("/api/live-matches");
   });
 
-  test("basketball et tennis exposent provider/mapper/pronostic, honnêtement non implémentés", async () => {
-    for (const mod of [SPORT_MODULES.basketball, SPORT_MODULES.tennis]) {
-      expect(mod.implemented).toBe(false);
-      expect(typeof mod.provider.getLiveMatches).toBe("function");
-      expect(typeof mod.provider.getUpcomingMatches).toBe("function");
-      expect(typeof mod.mapper.mapMatchToLiveState).toBe("function");
-      expect(typeof mod.pronostic.computePronostic).toBe("function");
+  test("tennis (pas encore branché, bloc 5) expose provider/mapper/pronostic, honnêtement non implémenté", async () => {
+    const mod = SPORT_MODULES.tennis;
+    expect(mod.implemented).toBe(false);
+    expect(typeof mod.provider.getLiveMatches).toBe("function");
+    expect(typeof mod.provider.getUpcomingMatches).toBe("function");
+    expect(typeof mod.mapper.mapMatchToLiveState).toBe("function");
+    expect(typeof mod.pronostic.computePronostic).toBe("function");
 
-      // Jamais une donnée fictive : le provider renvoie honnêtement "pas encore
-      // branché", jamais une liste de faux matchs.
-      const live = await mod.provider.getLiveMatches();
-      expect(live).toEqual({ implemented: false, matches: [] });
-      const upcoming = await mod.provider.getUpcomingMatches();
-      expect(upcoming).toEqual({ implemented: false, competitions: [] });
+    // Jamais une donnée fictive : le provider renvoie honnêtement "pas encore
+    // branché", jamais une liste de faux matchs.
+    const live = await mod.provider.getLiveMatches();
+    expect(live).toEqual({ implemented: false, matches: [] });
+    const upcoming = await mod.provider.getUpcomingMatches();
+    expect(upcoming).toEqual({ implemented: false, competitions: [] });
 
-      // Jamais une ligne de pronostic inventée non plus.
-      const pronostic = mod.pronostic.computePronostic();
-      expect(pronostic.available).toBe(false);
-      expect(typeof pronostic.reason).toBe("string");
-    }
+    // Jamais une ligne de pronostic inventée non plus.
+    const pronostic = mod.pronostic.computePronostic();
+    expect(pronostic.available).toBe(false);
+    expect(typeof pronostic.reason).toBe("string");
+  });
+
+  // Basket (bloc 1) : provider/mapper branchés sur de vraies données (voir
+  // __tests__/basketball-provider.test.js et __tests__/basketball-mapper.test.js
+  // pour la couverture complète) — les pronostics restent honnêtement indisponibles
+  // (bloc 3 pas encore fait).
+  test("basketball expose un provider réel (API-SPORTS) et un mapper réel, pronostics pas encore branchés", () => {
+    const mod = SPORT_MODULES.basketball;
+    expect(typeof mod.provider.getLiveGames).toBe("function");
+    expect(typeof mod.provider.getGamesByDate).toBe("function");
+    expect(typeof mod.provider.getStandings).toBe("function");
+    expect(typeof mod.provider.getTeamStatistics).toBe("function");
+    expect(typeof mod.provider.getPlayerStatistics).toBe("function");
+    expect(typeof mod.provider.getLeagues).toBe("function");
+    expect(typeof mod.mapper.mapGameToLiveMatch).toBe("function");
+
+    const pronostic = mod.pronostic.computePronostic();
+    expect(pronostic.available).toBe(false);
+    expect(typeof pronostic.reason).toBe("string");
   });
 
   test("getSportModule renvoie le bon module, et retombe sur football pour un id inconnu", () => {
