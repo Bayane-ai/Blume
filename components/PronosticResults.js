@@ -20,6 +20,7 @@
 // lib/pronostic.js, calculées à partir des vraies statistiques des deux équipes pour
 // CE match précis — jamais une valeur fixe recopiée d'un match à l'autre.
 import { marketLabel } from "../lib/marketFormat";
+import LineJustification from "./LineJustification";
 
 function formatPercent(pct) {
   if (pct == null) return "–";
@@ -71,14 +72,24 @@ export default function PronosticResults({ pronostic, loading }) {
             </div>
           </div>
         </div>
+        <LineJustification narrative={pronostic.narrative?.winProbability} />
       </section>
 
       <section style={st.card} data-testid="match-stats-card">
         <h3 style={st.cardTitle}>Statistiques du match</h3>
         <div style={st.marketList} data-testid="match-markets">
-          <div style={st.marketRow} data-testid="market-total">Total : {marketLabel(markets?.totalGoals)}</div>
-          <div style={st.marketRow} data-testid="market-total-1">Total 1 : {marketLabel(markets?.totalHome)}</div>
-          <div style={st.marketRow} data-testid="market-total-2">Total 2 : {marketLabel(markets?.totalAway)}</div>
+          <div>
+            <div style={st.marketRow} data-testid="market-total">Total : {marketLabel(markets?.totalGoals)}</div>
+            <LineJustification narrative={pronostic.narrative?.totalGoals} />
+          </div>
+          <div>
+            <div style={st.marketRow} data-testid="market-total-1">Total 1 : {marketLabel(markets?.totalHome)}</div>
+            <LineJustification narrative={pronostic.narrative?.totalHome} />
+          </div>
+          <div>
+            <div style={st.marketRow} data-testid="market-total-2">Total 2 : {marketLabel(markets?.totalAway)}</div>
+            <LineJustification narrative={pronostic.narrative?.totalAway} />
+          </div>
         </div>
 
         {pronostic.correctScores && pronostic.correctScores.length > 0 && (
@@ -92,6 +103,7 @@ export default function PronosticResults({ pronostic, loading }) {
                 </div>
               ))}
             </div>
+            <LineJustification narrative={pronostic.narrative?.correctScores} />
             <p style={st.bettingTip} data-testid="correct-scores-tip">
               (Conseil : misez de petites sommes sur chaque score exact pour limiter le risque de perte, et misez encore moins quand les cotes sont élevées.)
             </p>

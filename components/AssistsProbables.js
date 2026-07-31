@@ -16,7 +16,7 @@ function TeamAssists({ testId, teamName, data }) {
         <div key={p.name} style={st.line} data-testid="assist-row">
           <span style={st.lineName}>{p.name} passe décisive (ou son remplaçant)</span>
           <span style={st.lineStat}>
-            {p.assists} passe{p.assists > 1 ? "s" : ""} décisive{p.assists > 1 ? "s" : ""} cette saison
+            {p.justification || `${p.assists} passe${p.assists > 1 ? "s" : ""} décisive${p.assists > 1 ? "s" : ""} cette saison.`}
           </span>
         </div>
       ))}

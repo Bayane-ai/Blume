@@ -4,6 +4,7 @@ import MatchHeaderHero from "../../components/MatchHeaderHero";
 import MatchTimeline from "../../components/MatchTimeline";
 import FormBadges from "../../components/FormBadges";
 import PronosticResults from "../../components/PronosticResults";
+import PreMatchSummary from "../../components/PreMatchSummary";
 import ProbableScorers from "../../components/ProbableScorers";
 import CardsAndCorners from "../../components/CardsAndCorners";
 import AssistsProbables from "../../components/AssistsProbables";
@@ -255,6 +256,12 @@ export default function MatchPage() {
             composant ne s'affiche donc de lui-même que si cette donnée est là. */}
         {!loading && hasRequested && isFinishedNow && <MatchOutcomeRecap pronostic={pronostic} />}
 
+        {/* Résumé d'avant-match (PROMPT 2, voir components/PreMatchSummary.js) : en
+            tout premier parmi les cartes de pronostics, avant "Probabilité de
+            victoire" — comparaison du niveau des deux équipes et scénario le plus
+            probable, générés à partir des vrais chiffres de CE match. */}
+        {!loading && hasRequested && <PreMatchSummary pronostic={pronostic} />}
+
         {/* Cartes de pronostics séparées de la section ci-dessus (voir
             components/PronosticResults.js) : "Probabilité de victoire" en premier,
             "Statistiques du match" ensuite — chacune sa propre carte visuelle. */}
@@ -279,16 +286,32 @@ export default function MatchPage() {
             title="Corners"
             block={pronostic?.matchStats?.corners}
             note={pronostic?.liveStatNote}
+            narrative={pronostic?.narrative?.corners}
           />
         )}
         {!loading && hasRequested && (
-          <LiveStatBlock testId="stat-offsides" title="Hors-jeu" block={pronostic?.matchStats?.offsides} />
+          <LiveStatBlock
+            testId="stat-offsides"
+            title="Hors-jeu"
+            block={pronostic?.matchStats?.offsides}
+            narrative={pronostic?.narrative?.offsides}
+          />
         )}
         {!loading && hasRequested && (
-          <LiveStatBlock testId="stat-fouls" title="Fautes" block={pronostic?.matchStats?.fouls} />
+          <LiveStatBlock
+            testId="stat-fouls"
+            title="Fautes"
+            block={pronostic?.matchStats?.fouls}
+            narrative={pronostic?.narrative?.fouls}
+          />
         )}
         {!loading && hasRequested && (
-          <LiveStatBlock testId="stat-throwins" title="Touches" block={pronostic?.matchStats?.throwIns} />
+          <LiveStatBlock
+            testId="stat-throwins"
+            title="Touches"
+            block={pronostic?.matchStats?.throwIns}
+            narrative={pronostic?.narrative?.throwIns}
+          />
         )}
         {!loading && hasRequested && <CardsAndCorners pronostic={pronostic} />}
         {!loading && hasRequested && <AssistsProbables pronostic={pronostic} />}

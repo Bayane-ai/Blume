@@ -17,7 +17,7 @@ function TeamScorers({ testId, teamName, data }) {
       {scorers.map((p) => (
         <div key={p.name} style={st.line} data-testid="scorer-row">
           <span style={st.lineName}>{p.name} marque (ou son remplaçant)</span>
-          <span style={st.lineStat}>{p.goals} but{p.goals > 1 ? "s" : ""} cette saison</span>
+          <span style={st.lineStat}>{p.justification || `${p.goals} but${p.goals > 1 ? "s" : ""} cette saison.`}</span>
         </div>
       ))}
     </div>

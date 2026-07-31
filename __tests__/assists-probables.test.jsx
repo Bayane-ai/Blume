@@ -34,7 +34,7 @@ test('chaque passeur décisif probable est présenté comme une ligne de pari ("
 
   const homeCol = screen.getByTestId("assists-home");
   expect(within(homeCol).getByText("Martin Ødegaard passe décisive (ou son remplaçant)")).toBeInTheDocument();
-  expect(within(homeCol).getByText("9 passes décisives cette saison")).toBeInTheDocument();
+  expect(within(homeCol).getByText("9 passes décisives cette saison.")).toBeInTheDocument();
 
   const { container } = render(<AssistsProbables pronostic={pronosticFixture()} />);
   expect(container.textContent).not.toMatch(/\b\d\.\d{2}\b/);

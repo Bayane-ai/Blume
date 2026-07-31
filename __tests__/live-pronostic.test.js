@@ -579,6 +579,149 @@ describe("/api/analyze — corners/hors-jeu/fautes/touches : jamais recalculés 
   });
 });
 
+// PROMPT 2 (lib/matchNarrative.js) : chaque bloc de la page reçoit une justification +
+// une confiance. Les blocs figés (corners, hors-jeu, fautes, touches, tirs, tirs
+// cadrés, cartons, résumé d'avant-match) restent identiques pendant tout le match,
+// exactement comme matchStats ci-dessus. Les blocs qui suivent l'évolution réelle du
+// match (probabilité de victoire, scores exacts, Total/Total 1/Total 2) sont, eux,
+// recalculés à chaque actualisation — même principe que probabilities/goals.
+describe("/api/analyze — narrative (PROMPT 2) : figée pour les blocs statiques, mise à jour en direct pour probabilité/scores/totaux", () => {
+  const TOKEN = "test-token";
+
+  function mockRes() {
+    const res = {};
+    res.status = jest.fn(() => res);
+    res.json = jest.fn((body) => { res.body = body; return res; });
+    res.setHeader = jest.fn();
+    return res;
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    process.env.FOOTBALL_DATA_TOKEN = TOKEN;
+  });
+
+  const baseQuery = { matchId: "777", competitionCode: "PL", homeTeamId: "10", awayTeamId: "11", homeTeamName: "Arsenal FC", awayTeamName: "Chelsea FC" };
+
+  function mockFetch(matchState) {
+    return jest.fn((url) => {
+      if (url.includes("head2head")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ aggregates: { numberOfMatches: 0 } }) });
+      }
+      if (url.includes("/matches/777")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(matchState) });
+      }
+      if (url.includes("/standings")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [{ table: [homeRow, awayRow] }] }) });
+      }
+      return Promise.reject(new Error(`URL inattendue : ${url}`));
+    });
+  }
+
+  test("chaque bloc attendu a une justification non vide (résumé, corners, fautes, hors-jeu, touches, tirs, tirs cadrés, cartons, probabilité, scores, totaux)", async () => {
+    global.fetch = mockFetch({ status: "SCHEDULED", minute: null, score: { fullTime: { home: null, away: null } } });
+    const { default: handler } = await import("../pages/api/analyze.js");
+    const res = mockRes();
+    await handler({ query: baseQuery }, res);
+
+    const n = res.body.narrative;
+    expect(n.preMatchSummary.length).toBeGreaterThan(20);
+    for (const key of ["winProbability", "correctScores", "totalGoals", "totalHome", "totalAway", "corners", "fouls", "offsides", "shots", "shotsOnTarget", "yellowCards", "redCards"]) {
+      expect(n[key].text.length).toBeGreaterThan(5);
+    }
+    // "Touches" (throwIns) n'est jamais fourni par aucune source connectée pour
+    // l'ancien modèle non plus qu'il ne s'agit d'une vraie mesure — mais reste ici une
+    // estimation dérivée (jamais un simple "indisponible" pour l'ancien modèle,
+    // contrairement au Bloc 2, voir lib/matchNarrative.js).
+    expect(n.throwIns.text.length).toBeGreaterThan(5);
+  });
+
+  test("les blocs figés (corners/fautes/hors-jeu/touches/tirs/cartons, résumé d'avant-match) restent identiques après un but en direct", async () => {
+    global.fetch = mockFetch({ status: "IN_PLAY", minute: 60, score: { fullTime: { home: 1, away: 0 } } });
+    const { default: handlerBefore } = await import("../pages/api/analyze.js");
+    const resBefore = mockRes();
+    await handlerBefore({ query: baseQuery }, resBefore);
+
+    const frozenResult = saveFrozenPrediction.mock.calls[0][0].result;
+    getFrozenPrediction.mockResolvedValueOnce({ prediction: frozenResult, status: "pending", final_score: null });
+
+    jest.resetModules();
+    process.env.FOOTBALL_DATA_TOKEN = TOKEN;
+    global.fetch = mockFetch({ status: "IN_PLAY", minute: 75, score: { fullTime: { home: 2, away: 0 } } });
+    const { default: handlerAfter } = await import("../pages/api/analyze.js");
+    const resAfter = mockRes();
+    await handlerAfter({ query: baseQuery }, resAfter);
+
+    expect(resAfter.body.narrative.preMatchSummary).toBe(resBefore.body.narrative.preMatchSummary);
+    for (const key of ["corners", "fouls", "offsides", "throwIns", "shots", "shotsOnTarget", "yellowCards", "redCards"]) {
+      expect(resAfter.body.narrative[key]).toEqual(resBefore.body.narrative[key]);
+    }
+  });
+
+  test("la justification de la probabilité de victoire, des scores exacts et des totaux évolue avec le score réel du match", async () => {
+    global.fetch = mockFetch({ status: "IN_PLAY", minute: 10, score: { fullTime: { home: 0, away: 0 } } });
+    const { default: handlerBefore } = await import("../pages/api/analyze.js");
+    const resBefore = mockRes();
+    await handlerBefore({ query: baseQuery }, resBefore);
+
+    const frozenResult = saveFrozenPrediction.mock.calls[0][0].result;
+    getFrozenPrediction.mockResolvedValueOnce({ prediction: frozenResult, status: "pending", final_score: null });
+
+    jest.resetModules();
+    process.env.FOOTBALL_DATA_TOKEN = TOKEN;
+    // 3 buts d'écart en 10 minutes : un scénario nettement différent du 0-0 initial.
+    global.fetch = mockFetch({ status: "IN_PLAY", minute: 80, score: { fullTime: { home: 3, away: 0 } } });
+    const { default: handlerAfter } = await import("../pages/api/analyze.js");
+    const resAfter = mockRes();
+    await handlerAfter({ query: baseQuery }, resAfter);
+
+    expect(resAfter.body.narrative.winProbability.text).not.toBe(resBefore.body.narrative.winProbability.text);
+    expect(resAfter.body.narrative.correctScores.text).not.toBe(resBefore.body.narrative.correctScores.text);
+  });
+
+  test("deux matchs différents (équipes différentes) ont des résumés d'avant-match et des justifications différentes", async () => {
+    global.fetch = mockFetch({ status: "SCHEDULED", minute: null, score: { fullTime: { home: null, away: null } } });
+    const { default: handler } = await import("../pages/api/analyze.js");
+    const resA = mockRes();
+    await handler({ query: baseQuery }, resA);
+
+    jest.resetModules();
+    process.env.FOOTBALL_DATA_TOKEN = TOKEN;
+    global.fetch = jest.fn((url) => {
+      if (url.includes("head2head")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ aggregates: { numberOfMatches: 0 } }) });
+      if (url.includes("/matches/778")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: "SCHEDULED", minute: null, score: { fullTime: { home: null, away: null } } }) });
+      }
+      if (url.includes("/standings")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              standings: [
+                {
+                  table: [
+                    { position: 1, points: 70, form: "WWWWW", playedGames: 20, goalsFor: 55, goalsAgainst: 12, team: { id: 20 } },
+                    { position: 20, points: 8, form: "LLLLL", playedGames: 20, goalsFor: 10, goalsAgainst: 50, team: { id: 21 } },
+                  ],
+                },
+              ],
+            }),
+        });
+      }
+      return Promise.reject(new Error(`URL inattendue : ${url}`));
+    });
+    const { default: handlerB } = await import("../pages/api/analyze.js");
+    const resB = mockRes();
+    await handlerB(
+      { query: { matchId: "778", competitionCode: "PD", homeTeamId: "20", awayTeamId: "21", homeTeamName: "Real Madrid", awayTeamName: "Alavés" } },
+      resB
+    );
+
+    expect(resA.body.narrative.preMatchSummary).not.toBe(resB.body.narrative.preMatchSummary);
+    expect(resA.body.narrative.corners.text).not.toBe(resB.body.narrative.corners.text);
+  });
+});
+
 describe("/api/analyze — buteurs probables, filtrés sur les vrais joueurs de chaque équipe", () => {
   const TOKEN = "test-token";
 
@@ -626,8 +769,12 @@ describe("/api/analyze — buteurs probables, filtrés sur les vrais joueurs de 
     const res = mockRes();
     await handler({ query: baseQuery }, res);
 
-    expect(res.body.probableScorers.home.scorers).toEqual([{ name: "Bukayo Saka", goals: 12 }]);
-    expect(res.body.probableScorers.away.scorers).toEqual([{ name: "Cole Palmer", goals: 15 }]);
+    expect(res.body.probableScorers.home.scorers).toEqual([
+      { name: "Bukayo Saka", goals: 12, justification: "12 buts cette saison." },
+    ]);
+    expect(res.body.probableScorers.away.scorers).toEqual([
+      { name: "Cole Palmer", goals: 15, justification: "15 buts cette saison." },
+    ]);
     // Le joueur d'une équipe hors de ce match n'apparaît nulle part.
     const allNames = JSON.stringify(res.body.probableScorers);
     expect(allNames).not.toContain("Joueur hors match");

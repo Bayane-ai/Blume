@@ -7,6 +7,7 @@ import { buildProbableScorers } from "../../lib/probableScorers";
 import { getFrozenPrediction, saveFrozenPrediction, verifyFrozenPrediction, canPersistMatch } from "../../lib/pronosticHistory";
 import { computePronostic, computeLiveOutcome } from "../../lib/pronostic";
 import { computeMatchLinesFromProfiles } from "../../lib/pronosticFromProfiles";
+import { buildStaticNarrative, buildLiveNarrative } from "../../lib/matchNarrative";
 import { getExistingTeamProfile } from "../../lib/teamStatProfiles";
 import {
   getAllLiveFixtures, findLiveFixtureByTeams, getFixtureEvents, mapApiFootballEvents, mapFixtureToLiveState,
@@ -122,6 +123,15 @@ async function computeFreshPrediction({ matchId, competitionCode, homeTeamId, aw
   // liste vide et honnête ("Indisponible" côté interface) si la source ne répond pas.
   result.cardProneness = { home: homeCardProneness, away: awayCardProneness };
 
+  // PROMPT 2 (lib/matchNarrative.js) : justification courte + niveau de confiance pour
+  // chaque bloc FIGÉ (corners, hors-jeu, fautes, touches, tirs, tirs cadrés, cartons) et
+  // résumé d'avant-match — calculés ici, une seule fois, puis persistés avec le reste du
+  // pronostic (voir saveFrozenPrediction plus bas). Les blocs qui suivent l'évolution
+  // réelle du match (probabilité de victoire, scores exacts, Total/Total 1/Total 2)
+  // reçoivent leur propre justification plus bas (buildLiveNarrative), recalculée à
+  // chaque actualisation — jamais figée ici.
+  result.narrative = buildStaticNarrative(result, { homeTeamName, awayTeamName });
+
   return result;
 }
 
@@ -236,6 +246,15 @@ export default async function handler(req, res) {
       result.correctScores = live.correctScores;
       result.goals = live.goals;
       result.markets = { ...result.markets, ...live.markets };
+    }
+
+    // PROMPT 2 : justification + confiance des blocs qui suivent l'évolution réelle du
+    // match (probabilité de victoire, scores exacts, Total/Total 1/Total 2) —
+    // recalculées ici à CHAQUE actualisation à partir des chiffres actuels de `result`
+    // (pré-match pour un match qui n'a pas commencé, live sinon, voir juste au-dessus),
+    // jamais lues telles quelles depuis le pronostic figé pour ces trois blocs précis.
+    if (result.available !== false && result.probabilities && result.goals) {
+      result.narrative = { ...result.narrative, ...buildLiveNarrative(result, { homeTeamName, awayTeamName }) };
     }
 
     // La ressource "match" de football-data.org (plan utilisé ici) ne fournit pas de

@@ -59,3 +59,22 @@ test("la ligne mi-temps reflète bien le label du bloc (1ère ou 2ème selon le 
   render(<LiveStatBlock testId="stat-corners" title="Corners" block={pronostic.matchStats.corners} />);
   expect(screen.getByTestId("stat-corners-half")).toHaveTextContent(/^1ère mi-temps :/);
 });
+
+// PROMPT 2 (lib/matchNarrative.js) : justification courte + niveau de confiance,
+// discrète, sous les lignes chiffrées — rien affiché sans narrative fournie.
+test("affiche la justification et la confiance quand `narrative` est fournie, rien sinon", () => {
+  const pronostic = basePronostic();
+  const { rerender } = render(
+    <LiveStatBlock
+      testId="stat-corners"
+      title="Corners"
+      block={pronostic.matchStats.corners}
+      narrative={{ text: "Estimation dérivée des vraies stats des deux équipes.", confidence: "élevé" }}
+    />
+  );
+  expect(screen.getByText(/Estimation dérivée des vraies stats des deux équipes\./)).toBeInTheDocument();
+  expect(screen.getByText(/Confiance : élevé/)).toBeInTheDocument();
+
+  rerender(<LiveStatBlock testId="stat-corners" title="Corners" block={pronostic.matchStats.corners} />);
+  expect(screen.queryByText(/Confiance :/)).not.toBeInTheDocument();
+});

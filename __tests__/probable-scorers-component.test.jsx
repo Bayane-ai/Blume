@@ -34,7 +34,7 @@ test('chaque buteur probable est présenté comme une ligne de pari ("X marque (
 
   const homeCol = screen.getByTestId("scorers-home");
   expect(within(homeCol).getByText("Bukayo Saka marque (ou son remplaçant)")).toBeInTheDocument();
-  expect(within(homeCol).getByText("12 buts cette saison")).toBeInTheDocument();
+  expect(within(homeCol).getByText("12 buts cette saison.")).toBeInTheDocument();
 
   // Aucune cote nulle part (format décimal type 1.85/2.40).
   const { container } = render(<ProbableScorers pronostic={pronosticFixture()} />);

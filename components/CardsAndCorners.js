@@ -1,4 +1,5 @@
 import { riskLabels, marketLabel } from "../lib/marketFormat";
+import LineJustification from "./LineJustification";
 
 // Bloc "Cartons", en bas de la page de pronostics : pour cartons jaunes et cartons
 // rouges, deux options "Plus/Moins de X,5" calculées à partir de la même estimation
@@ -9,7 +10,7 @@ import { riskLabels, marketLabel } from "../lib/marketFormat";
 // saison (API-Football, best-effort — jamais un joueur inventé, "Indisponible" si la
 // source ne répond pas). Les corners ont leur propre bloc dédié, figé comme le reste
 // (voir components/LiveStatBlock.js).
-function RiskMarketRow({ testId, label, market }) {
+function RiskMarketRow({ testId, label, market, narrative }) {
   const { safe, risky } = riskLabels(market);
   return (
     <div style={st.marketGroup} data-testid={testId}>
@@ -22,14 +23,18 @@ function RiskMarketRow({ testId, label, market }) {
           <span style={st.marketOptionTag}>Risqué</span> {risky}
         </span>
       </div>
+      <LineJustification narrative={narrative} />
     </div>
   );
 }
 
-function SingleMarketRow({ testId, label, market }) {
+function SingleMarketRow({ testId, label, market, narrative }) {
   return (
-    <div style={st.marketRow} data-testid={testId}>
-      {label} : {marketLabel(market)}
+    <div>
+      <div style={st.marketRow} data-testid={testId}>
+        {label} : {marketLabel(market)}
+      </div>
+      <LineJustification narrative={narrative} />
     </div>
   );
 }
@@ -68,10 +73,10 @@ export default function CardsAndCorners({ pronostic }) {
     <section style={st.card} data-testid="cards-corners-card">
       <h3 style={st.cardTitle}>Cartons</h3>
       <div style={st.marketList} data-testid="cards-corners-markets">
-        <RiskMarketRow testId="market-yellow-cards" label="Cartons jaunes" market={markets.yellowCards} />
-        <RiskMarketRow testId="market-red-card" label="Cartons rouges" market={markets.redCards} />
-        <SingleMarketRow testId="market-shots" label="Tirs" market={markets.shots} />
-        <SingleMarketRow testId="market-shots-on-target" label="Tirs cadrés" market={markets.shotsOnTarget} />
+        <RiskMarketRow testId="market-yellow-cards" label="Cartons jaunes" market={markets.yellowCards} narrative={pronostic.narrative?.yellowCards} />
+        <RiskMarketRow testId="market-red-card" label="Cartons rouges" market={markets.redCards} narrative={pronostic.narrative?.redCards} />
+        <SingleMarketRow testId="market-shots" label="Tirs" market={markets.shots} narrative={pronostic.narrative?.shots} />
+        <SingleMarketRow testId="market-shots-on-target" label="Tirs cadrés" market={markets.shotsOnTarget} narrative={pronostic.narrative?.shotsOnTarget} />
       </div>
 
       <p style={st.sectionLabel}>Joueurs susceptibles de prendre un carton</p>

@@ -1,4 +1,5 @@
 import { marketLabel } from "../lib/marketFormat";
+import LineJustification from "./LineJustification";
 
 // Bloc de statistiques générique — même structure et même logique pour les 4 blocs
 // demandés (Corners / Hors-jeu / Fautes / Touches, voir lib/pronostic.js,
@@ -8,7 +9,7 @@ import { marketLabel } from "../lib/marketFormat";
 // lib/pronosticHistory.js), jamais recalculées à partir de ce qui se passe en direct.
 // Format paris sportifs partout ("Plus de X,5" / "Moins de X,5"), jamais une cote ni
 // un pourcentage.
-export default function LiveStatBlock({ testId, title, block, note }) {
+export default function LiveStatBlock({ testId, title, block, note, narrative }) {
   if (!block) return null;
 
   return (
@@ -22,6 +23,7 @@ export default function LiveStatBlock({ testId, title, block, note }) {
           {block.half.label} : {marketLabel(block.half.market)}
         </div>
       </div>
+      <LineJustification narrative={narrative} />
       {note && <p style={st.noteText}>{note}</p>}
     </section>
   );
