@@ -51,9 +51,13 @@ function makeSupabaseMock(rows) {
   };
 }
 
-function fixtureEntry(id, { homeId, awayId, homeGoals, awayGoals, status = "FT" }) {
+// `daysAgo` : les tests fixent des dates EXPLICITES (jamais `new Date()` au moment de
+// l'appel) pour que la pondération par récence (voir lib/teamStatProfiles.js,
+// recencyWeight) reste déterministe d'une exécution à l'autre — 0 = aujourd'hui, plus
+// grand = plus ancien.
+function fixtureEntry(id, { homeId, awayId, homeGoals, awayGoals, status = "FT", daysAgo = 0 }) {
   return {
-    fixture: { id, date: new Date().toISOString(), status: { short: status } },
+    fixture: { id, date: new Date(Date.now() - daysAgo * 24 * 3600 * 1000).toISOString(), status: { short: status } },
     teams: { home: { id: homeId, name: `Team ${homeId}` }, away: { id: awayId, name: `Team ${awayId}` } },
     goals: { home: homeGoals, away: awayGoals },
   };
@@ -89,8 +93,8 @@ function mockRealMadridRoutes() {
         json: () =>
           Promise.resolve({
             response: [
-              fixtureEntry(101, { homeId: 200, awayId: 201, homeGoals: 3, awayGoals: 1 }),
-              fixtureEntry(102, { homeId: 202, awayId: 200, homeGoals: 0, awayGoals: 2 }),
+              fixtureEntry(101, { homeId: 200, awayId: 201, homeGoals: 3, awayGoals: 1, daysAgo: 7 }),
+              fixtureEntry(102, { homeId: 202, awayId: 200, homeGoals: 0, awayGoals: 2, daysAgo: 1 }),
             ],
           }),
       });
@@ -138,8 +142,8 @@ function mockBarcelonaRoutes() {
         json: () =>
           Promise.resolve({
             response: [
-              fixtureEntry(301, { homeId: 300, awayId: 401, homeGoals: 5, awayGoals: 0 }),
-              fixtureEntry(302, { homeId: 402, awayId: 300, homeGoals: 1, awayGoals: 1 }),
+              fixtureEntry(301, { homeId: 300, awayId: 401, homeGoals: 5, awayGoals: 0, daysAgo: 7 }),
+              fixtureEntry(302, { homeId: 402, awayId: 300, homeGoals: 1, awayGoals: 2, daysAgo: 1 }),
             ],
           }),
       });
@@ -185,12 +189,15 @@ describe("getOrRefreshTeamProfile — calcul RÉEL à partir des derniers matchs
 
     expect(profile.available).toBe(true);
     expect(profile.matchesUsed).toBe(2);
-    // (3 + 2) / 2 = 2.5 buts marqués en moyenne, vraie moyenne, pas une valeur ronde arbitraire.
-    expect(profile.overall.goalsFor).toEqual({ value: 2.5, estimated: false, sampleSize: 2, available: true });
-    expect(profile.overall.goalsAgainst).toEqual({ value: 0.5, estimated: false, sampleSize: 2, available: true });
-    // Corners obtenus : domicile (8) puis extérieur (9) -> moyenne 8.5.
-    expect(profile.overall.cornersFor.value).toBe(8.5);
-    expect(profile.overall.cornersAgainst.value).toBe(2.5);
+    // Moyenne PONDÉRÉE par récence (match le plus ancien = poids 1, le plus récent =
+    // poids 2, voir recencyWeight) : (3*1 + 2*2) / (1+2) = 7/3 ≈ 2,33 — jamais une
+    // simple moyenne arithmétique (2,5), qui donnerait autant de poids au match le
+    // plus ancien qu'au plus récent.
+    expect(profile.overall.goalsFor).toEqual({ value: 2.33, estimated: false, sampleSize: 2, available: true });
+    expect(profile.overall.goalsAgainst).toEqual({ value: 0.33, estimated: false, sampleSize: 2, available: true });
+    // Corners obtenus : domicile (8, poids 1) puis extérieur (9, poids 2) -> (8+18)/3 ≈ 8,67.
+    expect(profile.overall.cornersFor.value).toBe(8.67);
+    expect(profile.overall.cornersAgainst.value).toBe(2.67);
   });
 
   test("le profil domicile diffère du profil extérieur pour une même équipe", async () => {
@@ -216,9 +223,127 @@ describe("getOrRefreshTeamProfile — calcul RÉEL à partir des derniers matchs
       offsides: { value: 3, estimated: false, sampleSize: 1, available: true },
       yellowCards: { value: 1, estimated: false, sampleSize: 1, available: true },
       redCards: { value: 0, estimated: false, sampleSize: 1, available: true },
+      // PROMPT 1 : taux de conversion réel de ce match (3 buts / 16 tirs) ; clean
+      // sheet raté (1 but encaissé) ; possession jamais fournie par ce fixture mock
+      // (aucun type "Ball Possession" dans statsRow) -> honnêtement indisponible.
+      conversionRate: { value: 0.19, estimated: false, sampleSize: 1, available: true },
+      cleanSheetRate: { value: 0, estimated: false, sampleSize: 1, available: true },
+      possession: { value: null, estimated: true, sampleSize: 0, available: false },
     });
     expect(profile.away.goalsFor.value).toBe(2);
     expect(profile.away.cornersFor.value).toBe(9);
+  });
+
+  test("PROMPT 1 — un match plus récent pèse plus qu'un match ancien dans la moyenne", async () => {
+    const rows = [];
+    jest.doMock("../lib/supabaseAdmin", () => makeSupabaseMock(rows));
+    // 3 matchs à domicile, même adversaire (poids d'adversité neutre, pas de token
+    // football-data.org ici) : seule la récence doit faire varier la moyenne pondérée
+    // par rapport à la simple moyenne arithmétique (2/3 ≈ 0,67).
+    global.fetch = jest.fn((url) => {
+      if (url.includes("/teams?search=")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [{ team: { id: 700, name: "Recency FC" } }] }) });
+      }
+      if (url.includes("/fixtures?team=700")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              response: [
+                fixtureEntry(801, { homeId: 700, awayId: 601, homeGoals: 0, awayGoals: 1, daysAgo: 20 }), // le plus ancien
+                fixtureEntry(802, { homeId: 700, awayId: 602, homeGoals: 0, awayGoals: 1, daysAgo: 10 }),
+                fixtureEntry(803, { homeId: 700, awayId: 603, homeGoals: 3, awayGoals: 1, daysAgo: 1 }), // le plus récent
+              ],
+            }),
+        });
+      }
+      if (url.includes("/fixtures/statistics?")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) });
+      }
+      return Promise.reject(new Error(`URL inattendue dans le test : ${url}`));
+    });
+
+    const { getOrRefreshTeamProfile } = await import("../lib/teamStatProfiles.js");
+    const profile = await getOrRefreshTeamProfile({ teamName: "Recency FC", competitionCode: "PD", apiFootballKey: AF_KEY });
+
+    // Poids 1/2/3 (du plus ancien au plus récent) : (0*1 + 0*2 + 3*3) / 6 = 9/6 = 1,5.
+    // Une simple moyenne arithmétique aurait donné (0+0+3)/3 = 1.
+    expect(profile.overall.goalsFor.value).toBe(1.5);
+  });
+
+  test("PROMPT 1 — un adversaire mieux classé (classement football-data.org) fait peser CE match plus lourd", async () => {
+    // Deux matchs à des buts DIFFÉRENTS (1 but contre le 1er du classement, plus
+    // ancien ; 3 buts contre le dernier du classement, plus récent) : sans classement
+    // exploitable, seule la récence pèse -> (1*1 + 3*2)/3 = 7/3 ≈ 2,33. Avec le
+    // classement, le match contre le 1er (adversaire fort) pèse relativement plus —
+    // preuve réelle que le niveau d'adversité influence le calcul.
+    function mockFetch() {
+      return jest.fn((url) => {
+        if (url.includes("/teams?search=")) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [{ team: { id: 900, name: "Opponent Aware FC" } }] }) });
+        }
+        if (url.includes("/fixtures?team=900")) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                response: [
+                  fixtureEntry(901, { homeId: 900, awayId: 10, homeGoals: 1, awayGoals: 0, daysAgo: 10 }), // vs 1er du classement
+                  fixtureEntry(902, { homeId: 900, awayId: 20, homeGoals: 3, awayGoals: 0, daysAgo: 1 }), // vs dernier du classement
+                ],
+              }),
+          });
+        }
+        if (url.includes("/fixtures/statistics?")) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) });
+        }
+        if (url.includes("/competitions/PD/standings")) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                standings: [
+                  {
+                    table: [
+                      { position: 1, team: { id: 10, name: "Team 10" } },
+                      { position: 2, team: { id: 11, name: "Team 11" } },
+                      { position: 3, team: { id: 12, name: "Team 12" } },
+                      { position: 4, team: { id: 20, name: "Team 20" } },
+                    ],
+                  },
+                ],
+              }),
+          });
+        }
+        return Promise.reject(new Error(`URL inattendue dans le test : ${url}`));
+      });
+    }
+
+    const rows = [];
+    jest.doMock("../lib/supabaseAdmin", () => makeSupabaseMock(rows));
+    global.fetch = mockFetch();
+    const { getOrRefreshTeamProfile } = await import("../lib/teamStatProfiles.js");
+    const profileWithStandings = await getOrRefreshTeamProfile({
+      teamName: "Opponent Aware FC", competitionCode: "PD", apiFootballKey: AF_KEY, token: "fd-token",
+    });
+    // Poids : vs 1er (position 1/4, multiplicateur 1.3) × récence 1 = 1.3 ;
+    // vs dernier (position 4/4, multiplicateur 0.7) × récence 2 = 1.4.
+    // (1*1.3 + 3*1.4) / (1.3+1.4) = 5.5/2.7 ≈ 2.04.
+    expect(profileWithStandings.overall.goalsFor.value).toBe(2.04);
+
+    jest.resetModules();
+    const rows2 = [];
+    jest.doMock("../lib/supabaseAdmin", () => makeSupabaseMock(rows2));
+    global.fetch = mockFetch();
+    const { getOrRefreshTeamProfile: getOrRefreshTeamProfile2 } = await import("../lib/teamStatProfiles.js");
+    // Sans token football-data.org : poids d'adversité neutre partout, seule la
+    // récence compte -> (1*1 + 3*2)/3 = 7/3 ≈ 2,33.
+    const profileWithoutStandings = await getOrRefreshTeamProfile2({
+      teamName: "Opponent Aware FC", competitionCode: "PD", apiFootballKey: AF_KEY, token: null,
+    });
+    expect(profileWithoutStandings.overall.goalsFor.value).toBe(2.33);
+
+    expect(profileWithStandings.overall.goalsFor.value).not.toBe(profileWithoutStandings.overall.goalsFor.value);
   });
 
   test("deux équipes différentes n'ont jamais un profil identique", async () => {
@@ -376,8 +501,9 @@ describe("getOrRefreshTeamProfile — calcul RÉEL à partir des derniers matchs
     const { getOrRefreshTeamProfile } = await import("../lib/teamStatProfiles.js");
     const profile = await getOrRefreshTeamProfile({ teamName: "Real Madrid", competitionCode: "PD", apiFootballKey: AF_KEY });
 
-    // Recalculé à partir des vrais matchs mockés (2.5), plus l'ancienne valeur périmée (99).
-    expect(profile.overall.goalsFor.value).toBe(2.5);
+    // Recalculé à partir des vrais matchs mockés (moyenne pondérée par récence, 2.33),
+    // pas l'ancienne valeur périmée (99).
+    expect(profile.overall.goalsFor.value).toBe(2.33);
     expect(rows.find((r) => r.team_key === "realmadrid").matches_used).toBe(2);
   });
 

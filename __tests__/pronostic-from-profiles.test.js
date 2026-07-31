@@ -168,3 +168,38 @@ test("un champ totalement indisponible pour les deux équipes (jamais réel ni e
   expect(lines.matchStats.corners.total.available).toBe(false);
   expect(lines.matchStats.corners.total.lines).toBeUndefined();
 });
+
+// Contexte (PROMPT 1) : les vraies confrontations directes récentes entre CES deux
+// équipes (lib/headToHead.js) affinent les buts attendus déjà croisés à partir des
+// profils — même mécanisme que l'ancien modèle (lib/pronostic.js#applyHeadToHead),
+// jamais dupliqué ni réinventé ici.
+test("avec assez de confrontations directes réelles, les buts attendus sont affinés par le H2H (h2hUsed=true)", () => {
+  const homeProfile = makeProfile({ homeGoalsFor: 1.5, homeGoalsAgainst: 1 });
+  const awayProfile = makeProfile({ awayGoalsFor: 1, awayGoalsAgainst: 1.2 });
+  const h2h = { numberOfMatches: 5, totalGoals: 20, homeWins: 4, awayWins: 0 }; // domicile a toujours dominé, historique très prolifique
+
+  const withoutH2h = computeMatchLinesFromProfiles({ homeProfile, awayProfile, homeTeamName: "A", awayTeamName: "B" });
+  const withH2h = computeMatchLinesFromProfiles({ homeProfile, awayProfile, homeTeamName: "A", awayTeamName: "B", h2h });
+
+  expect(withH2h.h2hUsed).toBe(true);
+  expect(withoutH2h.h2hUsed).toBe(false);
+  expect(withH2h.goals.expectedHome).not.toBe(withoutH2h.goals.expectedHome);
+  expect(withH2h.goals.expectedAway).not.toBe(withoutH2h.goals.expectedAway);
+});
+
+test("avec trop peu de confrontations directes (moins de 3), le H2H est honnêtement ignoré (h2hUsed=false)", () => {
+  const homeProfile = makeProfile();
+  const awayProfile = makeProfile();
+  const h2h = { numberOfMatches: 2, totalGoals: 6, homeWins: 2, awayWins: 0 };
+
+  const lines = computeMatchLinesFromProfiles({ homeProfile, awayProfile, homeTeamName: "A", awayTeamName: "B", h2h });
+
+  expect(lines.h2hUsed).toBe(false);
+});
+
+test("sans donnée H2H (h2h=null), h2hUsed est explicitement false, jamais absent", () => {
+  const homeProfile = makeProfile();
+  const awayProfile = makeProfile();
+  const lines = computeMatchLinesFromProfiles({ homeProfile, awayProfile, homeTeamName: "A", awayTeamName: "B" });
+  expect(lines.h2hUsed).toBe(false);
+});

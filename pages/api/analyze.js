@@ -99,7 +99,7 @@ async function computeFreshPrediction({ matchId, competitionCode, homeTeamId, aw
   // modèle (classement/forme récente) au sein d'un même match. Sans les deux profils,
   // comportement inchangé : l'ancien modèle reste utilisé, exactement comme avant ce
   // bloc.
-  const profileLines = computeMatchLinesFromProfiles({ homeProfile, awayProfile, homeTeamName, awayTeamName });
+  const profileLines = computeMatchLinesFromProfiles({ homeProfile, awayProfile, homeTeamName, awayTeamName, h2h });
 
   const result = profileLines.available
     ? profileLines

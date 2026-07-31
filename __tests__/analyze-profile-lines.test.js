@@ -171,3 +171,44 @@ test("deux matchs différents (profils différents) analysés séparément ne re
   expect(resA.body.markets).not.toEqual(resB.body.markets);
   expect(resA.body.matchStats).not.toEqual(resB.body.matchStats);
 });
+
+test("les deux profils sont disponibles ET un vrai historique H2H existe pour ce match : le H2H affine aussi les lignes du Bloc 2 (jamais ignoré silencieusement)", async () => {
+  jest.doMock("../lib/teamStatProfiles", () => ({
+    getExistingTeamProfile: (teamName) =>
+      Promise.resolve({
+        available: true,
+        teamName,
+        home: fullSplit({ goalsFor: field(2.2) }),
+        away: fullSplit({ goalsFor: field(1.1) }),
+      }),
+  }));
+
+  global.fetch = jest.fn((url) => {
+    if (url.includes("/head2head")) {
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            aggregates: { numberOfMatches: 5, totalGoals: 20, homeTeam: { wins: 4, draws: 0 }, awayTeam: { wins: 0 } },
+          }),
+      });
+    }
+    return Promise.reject(new Error(`URL inattendue : ${url}`));
+  });
+
+  const { default: handler } = await import("../pages/api/analyze.js");
+  const res = mockRes();
+  await handler(
+    {
+      query: {
+        competitionCode: "PD", matchId: "999", homeTeamId: "100", awayTeamId: "200",
+        homeTeamName: "Real Madrid", awayTeamName: "Barcelona",
+      },
+    },
+    res
+  );
+
+  expect(res.body.available).toBe(true);
+  expect(res.body.home.source).toBe("profil d'équipe (Bloc 1)");
+  expect(res.body.h2hUsed).toBe(true);
+});

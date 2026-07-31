@@ -33,9 +33,13 @@ export default async function handler(req, res) {
   const competitionCode = typeof req.body?.competitionCode === "string" ? req.body.competitionCode : null;
   const competitionName = typeof req.body?.competitionName === "string" ? req.body.competitionName : null;
   const apiFootballKey = process.env.API_FOOTBALL_KEY;
+  // Football-data.org (optionnel) : sert uniquement à évaluer le niveau des
+  // adversaires rencontrés (voir lib/teamStatProfiles.js#loadOpponentStandings) —
+  // son absence ne bloque jamais le calcul du profil.
+  const token = process.env.FOOTBALL_DATA_TOKEN || null;
 
   try {
-    const profile = await getOrRefreshTeamProfile({ teamName, competitionCode, competitionName, apiFootballKey });
+    const profile = await getOrRefreshTeamProfile({ teamName, competitionCode, competitionName, apiFootballKey, token });
     return res.status(200).json(profile);
   } catch (e) {
     return res.status(500).json({ error: e.message });
