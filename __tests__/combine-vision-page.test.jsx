@@ -412,6 +412,43 @@ test("bloc 9 : le filtre de sport local ne montre que les combinés touchant le 
   }
 });
 
+function tennisLiveMatch(id, homeName, awayName) {
+  return {
+    id, status: "IN_PLAY", utcDate: new Date().toISOString(),
+    competition: { code: "tn-1", name: "Wimbledon", surface: "Gazon", category: "ATP" },
+    homeTeam: { id: `tn-${id}0`, name: homeName }, awayTeam: { id: `tn-${id}1`, name: awayName },
+    score: { fullTime: { home: 1, away: 0 } },
+    pronostic: { available: false },
+  };
+}
+
+// Bloc 10 (revue multi-sport) — le tennis est en direct près de 24h/24 dans le monde
+// (voir lib/sports/tennis/provider.js) : un pic de matchs en direct ne doit JAMAIS
+// déclencher un appel d'analyse par match sans limite, même si tous ces matchs sont
+// "en direct" (voir pages/combine-vision.js#selectCandidatesForAnalysis, corrigé pour
+// plafonner le total live+à venir, plus seulement les matchs à venir).
+test("bloc 10 : un grand nombre de matchs tennis EN DIRECT ne déclenche jamais un nombre illimité d'appels d'analyse automatique", async () => {
+  const manyLiveTennisMatches = Array.from({ length: 20 }, (_, i) => tennisLiveMatch(i + 1, `Joueur${i}A`, `Joueur${i}B`));
+  const fetchMock = mockFetchMultiSport({ tennis: manyLiveTennisMatches });
+  global.fetch = fetchMock;
+
+  render(<CombineVision />);
+  await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.startsWith("/api/tennis/matches"))).toBe(true));
+  // Laisse le temps aux analyses en arrière-plan de se déclencher.
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  await waitFor(() => {
+    const analyzeCalls = fetchMock.mock.calls.filter(([url]) => url.startsWith("/api/tennis/analyze"));
+    expect(analyzeCalls.length).toBeGreaterThan(0);
+  });
+
+  const analyzeCalls = fetchMock.mock.calls.filter(([url]) => url.startsWith("/api/tennis/analyze"));
+  expect(analyzeCalls.length).toBeLessThanOrEqual(6);
+});
+
 test("bloc 9 : jamais de placeholder « bientôt disponible » sur cette page (elle mélange les 3 sports, indépendamment du sélecteur global)", async () => {
   global.fetch = mockFetchWithMatches([upcomingMatch(1, "Arsenal FC", "Chelsea FC"), upcomingMatch(2, "Real Madrid", "FC Barcelona")]);
 

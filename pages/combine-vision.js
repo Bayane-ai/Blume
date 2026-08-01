@@ -19,11 +19,15 @@ const REFRESH_MS = 45000;
 // depuis le classement), un pronostic basket/tennis réel exige un profil par équipe/
 // joueur (appels API dédiés, voir lib/sports/basketball/statProfiles.js et lib/
 // sports/tennis/statProfiles.js) — jamais bon marché pour la totalité d'une liste.
-// On borne donc le nombre de matchs basket/tennis analysés automatiquement à CHAQUE
-// cycle de rafraîchissement (tous les matchs déjà en direct, généralement peu
-// nombreux à la fois, puis les N prochains à venir) : exactement ce qui se
-// passerait si une personne cliquait "Analyser" sur ces matchs elle-même — jamais un
-// appel par match de la liste entière, qui viderait le quota d'un coup.
+// On borne donc le nombre TOTAL de matchs basket/tennis analysés automatiquement à
+// CHAQUE cycle de rafraîchissement, live ET à venir confondus (revue bloc 10 : les
+// matchs en direct n'étaient PAS bornés dans la première version — une hypothèse
+// "généralement peu nombreux à la fois" fausse pour le tennis, en direct près de
+// 24h/24 dans le monde, voir lib/sports/tennis/provider.js — un pic de matchs live
+// aurait alors déclenché un appel par match, pour chaque visiteur de cette page, à
+// chaque cycle de 45s, sans aucune limite). Les matchs en direct sont désormais
+// prioritaires dans ce budget commun (plus utiles pour "En live — saisir
+// l'occasion"), le reste du budget comble avec les prochains matchs à venir.
 const MAX_BACKGROUND_ANALYSES_PER_SPORT = 6;
 
 const SPORT_FILTERS = [
@@ -41,15 +45,18 @@ function fetchJson(url) {
 }
 
 // Parmi les matchs basket/tennis actuellement chargés (en direct + à venir), choisit
-// ceux à analyser automatiquement CE cycle — tous les matchs en direct (jamais
-// filtrés : un match en direct doit toujours pouvoir alimenter un combiné "en live"),
-// puis les prochains à venir par ordre chronologique, jusqu'à `cap`.
+// ceux à analyser automatiquement CE cycle — au plus `cap` au total, jamais illimité
+// même quand de nombreux matchs sont en direct en même temps (voir commentaire de
+// MAX_BACKGROUND_ANALYSES_PER_SPORT) : les matchs en direct remplissent le budget en
+// premier, le reste (s'il en reste) va aux prochains matchs à venir par ordre
+// chronologique.
 function selectCandidatesForAnalysis(matches, cap) {
-  const live = matches.filter((m) => LIVE_STATUSES.includes(m.status));
+  const live = matches.filter((m) => LIVE_STATUSES.includes(m.status)).slice(0, cap);
+  const remainingBudget = Math.max(0, cap - live.length);
   const upcoming = matches
     .filter((m) => !LIVE_STATUSES.includes(m.status))
     .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate))
-    .slice(0, cap);
+    .slice(0, remainingBudget);
   return [...live, ...upcoming];
 }
 
