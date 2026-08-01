@@ -90,3 +90,22 @@ test("la flèche de retour revient en arrière dans l'historique", () => {
   fireEvent.click(screen.getByRole("button", { name: "Retour" }));
   expect(backMock).toHaveBeenCalledTimes(1);
 });
+
+test("bloc 8 (tennis) : affiche le détail set par set et l'indicateur du joueur au service", () => {
+  const tennis = liveMatch({
+    homeTeam: { name: "Djokovic", crest: "" }, awayTeam: { name: "Alcaraz", crest: "" },
+    score: { fullTime: { home: 1, away: 0 } }, minute: "40-30", period: "Set 2",
+    sets: [{ home: 6, away: 4 }, { home: 3, away: 2 }], server: "home",
+  });
+  render(<MatchHeaderHero m={tennis} isLive />);
+
+  expect(screen.getByTestId("live-score")).toHaveTextContent("1 - 0");
+  expect(screen.getByTestId("header-sets-line")).toHaveTextContent("6-4 3-2");
+  expect(screen.getByTestId("header-serving-indicator")).toBeInTheDocument();
+});
+
+test("bloc 8 (tennis) : football/basket n'affichent jamais de détail set par set ni d'indicateur de service", () => {
+  render(<MatchHeaderHero m={liveMatch()} isLive />);
+  expect(screen.queryByTestId("header-sets-line")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("header-serving-indicator")).not.toBeInTheDocument();
+});

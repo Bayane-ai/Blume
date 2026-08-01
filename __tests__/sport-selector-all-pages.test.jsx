@@ -132,10 +132,13 @@ describe.each(pages.filter(([label]) => !["Live", "Matchs à venir", "Probabilit
   }
 );
 
-// Tennis (bloc 5) : Live et Matchs à venir ont désormais de vrais écrans — plus de
-// placeholder sur ces 2 pages (les pronostics/historique tennis restent hors scope de
-// ce bloc, voir la description ci-dessous).
-describe.each([["Live", Home], ["Matchs à venir", UpcomingMatches]])(
+// Tennis (bloc 5) : Live et Matchs à venir ont désormais de vrais écrans ; bloc 8 :
+// Probabilités réussies/échouées aussi (voir components/PronosticHistoryPage.js) —
+// plus de placeholder sur ces 4 pages.
+describe.each([
+  ["Live", Home], ["Matchs à venir", UpcomingMatches],
+  ["Probabilités réussies", ProbabilitesReussies], ["Probabilités échouées", ProbabilitesEchouees],
+])(
   "%s : passer sur Tennis affiche un vrai écran, jamais un placeholder",
   (label, Page) => {
     test("aucune erreur, aucune page blanche, aucun placeholder « bientôt disponible »", async () => {
@@ -151,10 +154,9 @@ describe.each([["Live", Home], ["Matchs à venir", UpcomingMatches]])(
   }
 );
 
-// Les autres pages (Combiné Vision, News, Historique, Probabilités réussies/échouées
-// — hors scope de ce bloc, qui ne connecte que les données live/à venir) : Tennis y
-// affiche encore l'état de chargement propre.
-describe.each(pages.filter(([label]) => !["Live", "Matchs à venir"].includes(label)))(
+// Les autres pages (Combiné Vision, News, Historique — hors scope de ce bloc) : Tennis
+// y affiche encore l'état de chargement propre.
+describe.each(pages.filter(([label]) => !["Live", "Matchs à venir", "Probabilités réussies", "Probabilités échouées"].includes(label)))(
   "%s : passer sur Tennis affiche encore un état de chargement propre (pas encore branché sur cette page)",
   (label, Page) => {
     test("jamais une erreur ni une page blanche", async () => {

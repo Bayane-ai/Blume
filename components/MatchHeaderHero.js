@@ -10,6 +10,14 @@ function hideCrest(e) {
   e.target.style.display = "none";
 }
 
+// Score set par set (bloc 8, point 1 : "sets terminés") — n'existe que pour le tennis
+// (voir lib/sports/tennis/mapper.js#mapSets/pages/match/[id].js#matchForBlock.sets) ;
+// ne s'affiche donc jamais pour le football/basket, dont `m.sets` est toujours absent.
+function formatSetsLine(sets) {
+  if (!Array.isArray(sets) || sets.length === 0) return "";
+  return sets.map((s) => `${s.home ?? "–"}-${s.away ?? "–"}`).join("  ");
+}
+
 // En-tête de la page d'un match, façon écran de match en direct : flèche de retour +
 // nom de la compétition centré, puis logo/nom de chaque équipe de part et d'autre du
 // score (gros chiffres blancs "X - X"), et la minute en direct juste en dessous en
@@ -26,6 +34,11 @@ export default function MatchHeaderHero({ m, comp, isLive }) {
   const hasScore =
     scoreHome !== null && scoreHome !== undefined && scoreAway !== null && scoreAway !== undefined;
   const liveClock = formatLiveClock(m);
+  // Tennis uniquement (bloc 8, point 1 : "score détaillé en haut... et indicateur du
+  // joueur au service") — jamais renseignés pour le football/basket.
+  const setsLine = formatSetsLine(m?.sets);
+  const homeServing = isLive && m?.server === "home";
+  const awayServing = isLive && m?.server === "away";
 
   // Revient à la page précédente (liste des matchs en ligne ou à venir, selon
   // d'où la personne est arrivée), plutôt qu'une destination fixe.
@@ -49,6 +62,7 @@ export default function MatchHeaderHero({ m, comp, isLive }) {
             )}
           </span>
           <span style={st.teamName}>{m?.homeTeam?.name}</span>
+          {homeServing && <span style={st.serveDot} data-testid="header-serving-indicator" aria-label="Au service" title="Au service" />}
         </div>
 
         <div style={st.scoreCol}>
@@ -75,8 +89,16 @@ export default function MatchHeaderHero({ m, comp, isLive }) {
             )}
           </span>
           <span style={st.teamName}>{m?.awayTeam?.name}</span>
+          {awayServing && <span style={st.serveDot} data-testid="header-serving-indicator" aria-label="Au service" title="Au service" />}
         </div>
       </div>
+
+      {/* Tennis uniquement (bloc 8, point 1 : "sets terminés") — score détaillé set
+          par set, sous le total de sets gagnés déjà affiché ci-dessus (jamais pour le
+          football/basket, dont `setsLine` reste toujours vide). */}
+      {isLive && setsLine && (
+        <div style={st.setsLine} data-testid="header-sets-line">{setsLine}</div>
+      )}
     </header>
   );
 }
@@ -110,4 +132,14 @@ const st = {
   scoreText: { fontSize: 30, fontWeight: 800, color: "var(--text-primary)", letterSpacing: 0.5, lineHeight: 1 },
   kickoffText: { fontSize: 18, fontWeight: 700, color: "var(--text-primary)" },
   liveMinute: { fontSize: 13, fontWeight: 800, color: "var(--negative)", letterSpacing: 0.3 },
+  // Tennis uniquement : point vert à côté du nom du joueur au service (même style que
+  // components/MatchInfoBlock.js#serveDot, pour rester cohérent) et détail set par set
+  // sous le score principal.
+  serveDot: {
+    width: 7, height: 7, borderRadius: "50%", background: "var(--accent)", flexShrink: 0,
+    boxShadow: "0 0 6px rgba(var(--accent-rgb),0.7)", marginTop: 2,
+  },
+  setsLine: {
+    fontSize: 11.5, color: "var(--text-secondary)", textAlign: "center", marginTop: 10, letterSpacing: 0.3,
+  },
 };

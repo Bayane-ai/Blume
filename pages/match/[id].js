@@ -21,6 +21,8 @@ import TennisPronosticResults from "../../components/TennisPronosticResults";
 import TennisSecondaryStats from "../../components/TennisSecondaryStats";
 import TennisServiceReturnContext from "../../components/TennisServiceReturnContext";
 import TennisMatchScenario from "../../components/TennisMatchScenario";
+import TennisMatchTimeline from "../../components/TennisMatchTimeline";
+import TennisMatchOutcomeRecap from "../../components/TennisMatchOutcomeRecap";
 import { useRequireAuth } from "../../lib/useRequireAuth";
 import { addMatchToHistory } from "../../lib/matchHistory";
 
@@ -113,7 +115,7 @@ export default function MatchPage() {
         if (result?.matchStatus) {
           setLiveState({
             status: result.matchStatus, minute: result.matchMinute, period: result.matchPeriod, score: result.matchScore,
-            events: result.events, timelineNote: result.timelineNote,
+            events: result.events, timelineNote: result.timelineNote, server: result.server, sets: result.sets,
           });
         }
       })
@@ -198,7 +200,10 @@ export default function MatchPage() {
     utcDate: utcDate || "",
     competition: { code: competitionCode || "", name: competitionName || "", emblem: competitionEmblem || "", surface: tennisSurface || "" },
     round: tennisRound || "",
-    sets: tennisSets,
+    // Bloc 8, point 1 : "sets terminés" — dès qu'une analyse en direct a répondu, le
+    // vrai score set par set (liveState.sets) prend le pas sur l'instantané pris au
+    // clic depuis la liste (tennisSets, potentiellement déjà périmé).
+    sets: liveState?.sets ?? tennisSets,
     homeTeam: { name: homeTeamName || "", crest: homeCrest || "", flag: homeFlag || "" },
     awayTeam: { name: awayTeamName || "", crest: awayCrest || "", flag: awayFlag || "" },
     score: {
@@ -207,6 +212,10 @@ export default function MatchPage() {
         away: scoreAway !== "" && scoreAway !== undefined ? scoreAway : null,
       },
     },
+    // Tennis uniquement (bloc 8, point 1 : "indicateur du joueur au service" dans
+    // l'en-tête détaillé) — vient toujours de la dernière analyse (liveState), jamais
+    // deviné ; absent pour le football/basket, qui ne renseignent jamais ce champ.
+    server: liveState?.server || null,
   };
 
   if (!sessionChecked) {
@@ -229,19 +238,19 @@ export default function MatchPage() {
       {/* Épinglée juste sous le score (position: sticky) : en faisant défiler la page,
           les moments forts restent visibles en premier, avant le reste du contenu —
           seule la liste des événements défile en interne (hauteur bornée) une fois
-          qu'elle dépasse ce qui tient à l'écran. Bloc 4 (basket) : reste épinglée en
-          haut EXACTEMENT comme le football (PROMPT : "il reste toujours en haut"),
-          avec sa propre timeline dérivée du score officiel (jamais "Événement non
-          disponible", voir components/BasketballMatchTimeline.js).
-          Tennis : aucun fil d'événements réel n'existe encore pour ce sport (voir
-          lib/sports/tennis/provider.js) — jamais un panneau "Moments forts" vide ou
-          trompeur, on le masque simplement tant que cette donnée n'existe pas. */}
-      {isLiveNow && !isTennis && (
+          qu'elle dépasse ce qui tient à l'écran. Bloc 4 (basket)/Bloc 8 (tennis) :
+          reste épinglée en haut EXACTEMENT comme le football (PROMPT : "il reste
+          toujours en haut"), chacun avec sa propre timeline dérivée du score officiel
+          (jamais "Événement non disponible", voir components/BasketballMatchTimeline.js
+          et components/TennisMatchTimeline.js). */}
+      {isLiveNow && (
         <section style={st.pinnedPanel} data-testid="pinned-highlights">
           <h2 style={st.h2}>Moments forts</h2>
           <div style={st.timelineScroll}>
             {isBasketball ? (
               <BasketballMatchTimeline events={liveState?.events} timelineNote={liveState?.timelineNote} />
+            ) : isTennis ? (
+              <TennisMatchTimeline events={liveState?.events} timelineNote={liveState?.timelineNote} />
             ) : (
               <MatchTimeline events={liveState?.events} homeTeamId={homeTeamId} isLive />
             )}
@@ -330,6 +339,14 @@ export default function MatchPage() {
 
         {isTennis ? (
           <>
+            {/* Bloc 8 (PROMPT point 4) : "Un clic sur un match terminé montre si ses
+                pronostics ont été validés" — même emplacement que le football/basket
+                (tout en premier, avant les cartes de pronostics elles-mêmes).
+                `pronostic.verification` n'existe que pour un match déjà classé (voir
+                pages/api/tennis/analyze.js) ; le composant ne s'affiche donc de
+                lui-même que si cette donnée est là. */}
+            {!loading && hasRequested && isFinishedNow && <TennisMatchOutcomeRecap pronostic={pronostic} />}
+
             {/* Bloc 7 : Probabilité de victoire, scores en sets probables, totaux de
                 jeux, handicap jeux, sets (blocs 1-5) — voir components/
                 TennisPronosticResults.js. */}
@@ -340,6 +357,13 @@ export default function MatchPage() {
             {!loading && hasRequested && pronostic?.available && <TennisServiceReturnContext pronostic={pronostic} />}
             {/* Scénario du match (bloc 11). */}
             {!loading && hasRequested && pronostic?.available && <TennisMatchScenario pronostic={pronostic} />}
+
+            {!isLiveNow && (
+              <section style={st.panel}>
+                <h2 style={st.h2}>Moments forts</h2>
+                <TennisMatchTimeline events={liveState?.events} timelineNote={liveState?.timelineNote} />
+              </section>
+            )}
           </>
         ) : isBasketball ? (
           <>

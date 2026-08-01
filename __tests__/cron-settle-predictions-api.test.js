@@ -16,6 +16,13 @@ jest.mock("../lib/sports/basketball/pronosticHistory", () => ({
   getBasketballApiKey: () => basketballApiKey,
 }));
 
+const settleTennisPredictionsNow = jest.fn(() => Promise.resolve());
+let tennisApiKey = null;
+jest.mock("../lib/sports/tennis/pronosticHistory", () => ({
+  settleFinishedPredictionsNow: (...args) => settleTennisPredictionsNow(...args),
+  getTennisApiKey: () => tennisApiKey,
+}));
+
 function mockRes() {
   const res = {};
   res.status = jest.fn(() => res);
@@ -30,7 +37,9 @@ beforeEach(() => {
   jest.resetModules();
   settleFinishedPredictionsNow.mockClear();
   settleBasketballPredictionsNow.mockClear();
+  settleTennisPredictionsNow.mockClear();
   basketballApiKey = null;
+  tennisApiKey = null;
   process.env.CRON_SECRET = "test-cron-secret";
   process.env.FOOTBALL_DATA_TOKEN = "test-token";
 });
@@ -116,4 +125,39 @@ test("le balayage basket échoue : erreur renvoyée, sans empêcher le balayage 
   expect(settleFinishedPredictionsNow).toHaveBeenCalled();
   expect(res.status).toHaveBeenCalledWith(500);
   expect(res.body.error).toContain("basketball");
+});
+
+test("clé tennis configurée : balayage tennis ET football déclenchés indépendamment", async () => {
+  tennisApiKey = "tennis-key";
+  const { default: handler } = await import("../pages/api/cron/settle-predictions.js");
+  const res = mockRes();
+  await handler({ headers: { authorization: "Bearer test-cron-secret" } }, res);
+  expect(settleFinishedPredictionsNow).toHaveBeenCalledWith("test-token", undefined);
+  expect(settleTennisPredictionsNow).toHaveBeenCalledWith("tennis-key");
+  expect(res.status).toHaveBeenCalledWith(200);
+  expect(res.body).toEqual({ ok: true });
+});
+
+test("le balayage tennis échoue : erreur renvoyée, sans empêcher les autres sports d'avoir été réglés", async () => {
+  basketballApiKey = "basket-key";
+  tennisApiKey = "tennis-key";
+  settleTennisPredictionsNow.mockRejectedValueOnce(new Error("boom tennis"));
+  const { default: handler } = await import("../pages/api/cron/settle-predictions.js");
+  const res = mockRes();
+  await handler({ headers: { authorization: "Bearer test-cron-secret" } }, res);
+  expect(settleFinishedPredictionsNow).toHaveBeenCalled();
+  expect(settleBasketballPredictionsNow).toHaveBeenCalled();
+  expect(res.status).toHaveBeenCalledWith(500);
+  expect(res.body.error).toContain("tennis");
+});
+
+test("aucune clé API du tout (football/basket/tennis) : erreur explicite, aucun balayage", async () => {
+  delete process.env.FOOTBALL_DATA_TOKEN;
+  const { default: handler } = await import("../pages/api/cron/settle-predictions.js");
+  const res = mockRes();
+  await handler({ headers: { authorization: "Bearer test-cron-secret" } }, res);
+  expect(res.status).toHaveBeenCalledWith(500);
+  expect(settleFinishedPredictionsNow).not.toHaveBeenCalled();
+  expect(settleBasketballPredictionsNow).not.toHaveBeenCalled();
+  expect(settleTennisPredictionsNow).not.toHaveBeenCalled();
 });

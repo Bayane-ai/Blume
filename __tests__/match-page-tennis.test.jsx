@@ -6,7 +6,7 @@
  * /api/analyze ni /api/basketball/analyze, conçus pour d'autres sports) et affiche le
  * pronostic complet renvoyé, avec la règle figé/live.
  */
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import MatchPage from "../pages/match/[id]";
 
 let mockRouter;
@@ -108,10 +108,60 @@ test("jamais de contenu conçu pour un autre sport (corners, rebonds...) sur un 
   expect(screen.queryByText("Rebonds")).not.toBeInTheDocument();
 });
 
-test("ne montre pas de panneau \"Moments forts\" (aucun fil d'événements réel pour le tennis)", async () => {
+test("match pas encore en direct (SCHEDULED) : pas de panneau épinglé", async () => {
   render(<MatchPage />);
   await waitFor(() => expect(screen.getByTestId("tennis-win-probability-card")).toBeInTheDocument());
   expect(screen.queryByTestId("pinned-highlights")).not.toBeInTheDocument();
+});
+
+test("bloc 8 : le panneau \"Moments forts\" est épinglé pour un match tennis en direct, jamais \"Événement non disponible\"", async () => {
+  mockRouter = { isReady: true, query: tennisQuery({ status: "IN_PLAY", minute: "40-30" }), back: jest.fn(), replace: jest.fn() };
+  global.fetch = jest.fn(() =>
+    Promise.resolve({
+      json: () => Promise.resolve(analyzeResponse({
+        live: true, matchStatus: "IN_PLAY", matchMinute: "40-30", matchPeriod: "Set 2", server: "home",
+        events: [
+          { id: "start", kind: "START", label: "Début du match" },
+          { id: "break-1", kind: "BREAK", label: "Break pour Novak Djokovic (3-2)", scoreAfter: { home: 3, away: 2 } },
+        ],
+        timelineNote: "Basé sur le score par set/par jeu...",
+      })),
+    })
+  );
+
+  render(<MatchPage />);
+  const pinned = await screen.findByTestId("pinned-highlights");
+  await within(pinned).findByText("Break pour Novak Djokovic (3-2)");
+  expect(within(pinned).getByText("Début du match")).toBeInTheDocument();
+  expect(screen.queryByText(/Événement non disponible/i)).not.toBeInTheDocument();
+});
+
+test("bloc 8 : match tennis terminé, le compte-rendu s'affiche dès l'ouverture, avant les cartes de pronostics", async () => {
+  mockRouter = { isReady: true, query: tennisQuery({ status: "FINISHED" }), back: jest.fn(), replace: jest.fn() };
+  global.fetch = jest.fn(() =>
+    Promise.resolve({
+      json: () => Promise.resolve(analyzeResponse({
+        live: false, matchStatus: "FINISHED", matchScore: { home: 3, away: 0 },
+        historyStatus: "success",
+        verification: {
+          winner: true, correctScores: true, totalGames: true, totalGamesHome: false, totalGamesAway: true,
+          gameHandicap: { safe: true, risky: false },
+          totalSets: true, bothWinASet: null, firstSetWinner: true, firstSetGames: false,
+          aces: { total: true, home: false, away: true },
+          doubleFaults: { total: false, home: false, away: true },
+          breaks: { total: null, home: null, away: null },
+          tiebreak: true,
+        },
+      })),
+    })
+  );
+
+  render(<MatchPage />);
+  const recap = await screen.findByTestId("tennis-match-outcome-recap");
+  expect(recap).toHaveTextContent(/Bilan global du match.*Succès/);
+
+  const winCard = await screen.findByTestId("tennis-win-probability-card");
+  expect(recap.compareDocumentPosition(winCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 test("analyse dégradée mais indisponible : message honnête, jamais une page cassée", async () => {

@@ -1,14 +1,15 @@
 import { settleFinishedPredictionsNow } from "../../../lib/pronosticHistory";
 import { settleFinishedPredictionsNow as settleBasketballPredictionsNow, getBasketballApiKey } from "../../../lib/sports/basketball/pronosticHistory";
+import { settleFinishedPredictionsNow as settleTennisPredictionsNow, getTennisApiKey } from "../../../lib/sports/tennis/pronosticHistory";
 
-// RÈGLEMENT AUTOMATIQUE DE FIN DE MATCH (PROMPT, football ; étendu au basket bloc 4) :
-// point d'entrée dédié pour Vercel Cron (voir vercel.json), qui balaie TOUS les
-// pronostics encore "pending" (football ET basket) et classe ceux dont le match est
-// réellement terminé — indépendamment de toute visite du site (contrairement au
-// balayage opportuniste, voir lib/pronosticHistory.js#maybeSweepFinishedPredictions et
-// son équivalent basket, déclenchés par le trafic normal). Les deux sports sont
-// balayés INDÉPENDAMMENT : la clé API d'un sport manquante ne bloque jamais le
-// règlement de l'autre.
+// RÈGLEMENT AUTOMATIQUE DE FIN DE MATCH (PROMPT, football ; étendu au basket bloc 4,
+// au tennis bloc 8) : point d'entrée dédié pour Vercel Cron (voir vercel.json), qui
+// balaie TOUS les pronostics encore "pending" (football, basket ET tennis) et classe
+// ceux dont le match est réellement terminé — indépendamment de toute visite du site
+// (contrairement au balayage opportuniste, voir lib/pronosticHistory.js#
+// maybeSweepFinishedPredictions et ses équivalents basket/tennis, déclenchés par le
+// trafic normal). Les trois sports sont balayés INDÉPENDAMMENT : la clé API d'un sport
+// manquante ne bloque jamais le règlement des autres.
 //
 // Sécurisé par CRON_SECRET (convention Vercel officielle : Vercel ajoute lui-même
 // l'en-tête "Authorization: Bearer <CRON_SECRET>" à ses propres appels programmés dès
@@ -25,9 +26,10 @@ export default async function handler(req, res) {
   const token = process.env.FOOTBALL_DATA_TOKEN;
   const apiFootballKey = process.env.API_FOOTBALL_KEY;
   const basketballApiKey = getBasketballApiKey();
+  const tennisApiKey = getTennisApiKey();
 
-  if (!token && !basketballApiKey) {
-    return res.status(500).json({ error: "Clé API manquante (football et basket)" });
+  if (!token && !basketballApiKey && !tennisApiKey) {
+    return res.status(500).json({ error: "Clé API manquante (football, basket et tennis)" });
   }
 
   const errors = [];
@@ -43,6 +45,13 @@ export default async function handler(req, res) {
       await settleBasketballPredictionsNow(basketballApiKey);
     } catch (e) {
       errors.push(`basketball: ${e.message}`);
+    }
+  }
+  if (tennisApiKey) {
+    try {
+      await settleTennisPredictionsNow(tennisApiKey);
+    } catch (e) {
+      errors.push(`tennis: ${e.message}`);
     }
   }
 

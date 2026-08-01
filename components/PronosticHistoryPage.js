@@ -4,11 +4,12 @@ import { useSport } from "../lib/useSport";
 import SiteHeader from "./SiteHeader";
 import PronosticHistoryCard from "./PronosticHistoryCard";
 import BasketballPronosticHistoryCard from "./BasketballPronosticHistoryCard";
+import TennisPronosticHistoryCard from "./TennisPronosticHistoryCard";
 import SportComingSoon from "./SportComingSoon";
 
-// Sports dont l'historique Succès/Échec est réellement branché (voir PROMPT bloc 4) —
-// le tennis reste "bientôt disponible" tant que son propre bloc n'est pas fait.
-const SUPPORTED_SPORTS = new Set(["football", "basketball"]);
+// Sports dont l'historique Succès/Échec est réellement branché (voir PROMPT bloc 4,
+// étendu au tennis bloc 8).
+const SUPPORTED_SPORTS = new Set(["football", "basketball", "tennis"]);
 
 // Corps partagé par pages/probabilites-reussies.js et pages/probabilites-echouees.js —
 // même structure et même logique pour les deux (voir PROMPT étapes 3/4), seuls le
@@ -22,11 +23,12 @@ export default function PronosticHistoryPage({ status, title, subtitle, emptyMes
   const [items, setItems] = useState(null);
   const [loading, setLoading] = useState(true);
   const isBasketball = sport === "basketball";
+  const isTennis = sport === "tennis";
   const supported = SUPPORTED_SPORTS.has(sport);
 
   const load = useCallback(() => {
     setLoading(true);
-    const sportParam = isBasketball ? "&sport=basketball" : "";
+    const sportParam = isBasketball ? "&sport=basketball" : isTennis ? "&sport=tennis" : "";
     return fetch(`/api/pronostic-history?status=${status}${sportParam}`)
       .then((r) => r.json())
       .then((d) => setItems(Array.isArray(d?.items) ? d.items : []))
@@ -35,7 +37,7 @@ export default function PronosticHistoryPage({ status, title, subtitle, emptyMes
         setItems([]);
       })
       .finally(() => setLoading(false));
-  }, [status, isBasketball]);
+  }, [status, isBasketball, isTennis]);
 
   useEffect(() => {
     if (!authorized || !supported) return;
@@ -74,6 +76,8 @@ export default function PronosticHistoryPage({ status, title, subtitle, emptyMes
               {list.map((item) =>
                 isBasketball
                   ? <BasketballPronosticHistoryCard key={item.match_id} item={item} />
+                  : isTennis
+                  ? <TennisPronosticHistoryCard key={item.match_id} item={item} />
                   : <PronosticHistoryCard key={item.match_id} item={item} />
               )}
             </div>
