@@ -106,7 +106,9 @@ describe("getFixtureStatistics / mapFixtureStatistics — vraies statistiques FI
   test("interroge /fixtures/statistics?fixture=ID avec la vraie clé API", async () => {
     const { getFixtureStatistics } = await import("../lib/apiFootball.js");
     const fetchMock = jest.fn((url, opts) => {
-      expect(url).toBe("https://v3.football.api-sports.io/fixtures/statistics?fixture=555");
+      const parsed = new URL(url);
+      expect(parsed.origin + parsed.pathname).toBe("https://v3.football.api-sports.io/fixtures/statistics");
+      expect(parsed.searchParams.get("fixture")).toBe("555");
       expect(opts.headers).toEqual({ "x-apisports-key": TOKEN });
       return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) });
     });
@@ -229,7 +231,9 @@ describe("getAllLiveFixtures / getFixtureEvents — cache partagé et déduplica
 
     await Promise.all([getAllLiveFixtures(TOKEN), getAllLiveFixtures(TOKEN), getAllLiveFixtures(TOKEN)]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe("https://v3.football.api-sports.io/fixtures?live=all");
+    const calledUrl = new URL(fetchMock.mock.calls[0][0]);
+    expect(calledUrl.origin + calledUrl.pathname).toBe("https://v3.football.api-sports.io/fixtures");
+    expect(calledUrl.searchParams.get("live")).toBe("all");
     expect(fetchMock.mock.calls[0][1].headers).toEqual({ "x-apisports-key": TOKEN });
   });
 
@@ -252,7 +256,9 @@ describe("getAllLiveFixtures / getFixtureEvents — cache partagé et déduplica
 
     await Promise.all([getFixtureEvents(99, TOKEN), getFixtureEvents(99, TOKEN), getFixtureEvents(99, TOKEN)]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe("https://v3.football.api-sports.io/fixtures/events?fixture=99");
+    const calledUrl = new URL(fetchMock.mock.calls[0][0]);
+    expect(calledUrl.origin + calledUrl.pathname).toBe("https://v3.football.api-sports.io/fixtures/events");
+    expect(calledUrl.searchParams.get("fixture")).toBe("99");
   });
 });
 

@@ -64,14 +64,20 @@ export default async function handler(req, res) {
     let afMatches = [];
     if (apiFootballKey) {
       try {
-        const dateStrings = Array.from({ length: NUM_DAYS }, (_, i) => isoDate(new Date(Date.now() + i * 24 * 3600000)));
+        // Fenêtre élargie d'un jour vers le passé (hier UTC en plus d'aujourd'hui..+7) :
+        // getFixturesByDate interroge désormais explicitement en UTC (timezone=UTC), mais
+        // un match dont l'heure LOCALE tombe "aujourd'hui" pour un visiteur très en avance
+        // sur UTC (ex : Japon, UTC+9, un match tôt le matin) peut avoir un `date` UTC
+        // encore "hier" — sans ce jour supplémentaire, ce match ne serait interrogé par
+        // aucune des dates de la boucle et disparaîtrait entièrement.
+        const dateStrings = Array.from({ length: NUM_DAYS + 1 }, (_, i) => isoDate(new Date(Date.now() + (i - 1) * 24 * 3600000)));
         const perDate = await Promise.all(dateStrings.map((d) => getFixturesByDate(d, apiFootballKey)));
         // Visibilité serveur (logs Vercel) : sans ça, une source qui répond mais ne
         // renvoie rien (quota épuisé, aucun match programmé dans la fenêtre) est
         // indiscernable d'une source qui échoue silencieusement — utile pour
         // diagnostiquer l'absence d'un championnat précis (ex : petite fédération)
         // sans devoir deviner.
-        console.log(`[API-Football] /fixtures?date=... (${NUM_DAYS} jours) : ${perDate.flat().length} match(s) reçu(s) au total`);
+        console.log(`[API-Football] /fixtures?date=... (${dateStrings.length} jours) : ${perDate.flat().length} match(s) reçu(s) au total`);
         const known = new Set(
           fdMatches.map((m) => `${normalizeTeamName(m.homeTeam?.name)}|${normalizeTeamName(m.awayTeam?.name)}`)
         );
