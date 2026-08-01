@@ -17,6 +17,10 @@ import BasketballSingleTotals from "../../components/BasketballSingleTotals";
 import BasketballPlayersToWatch from "../../components/BasketballPlayersToWatch";
 import BasketballMatchTimeline from "../../components/BasketballMatchTimeline";
 import BasketballMatchOutcomeRecap from "../../components/BasketballMatchOutcomeRecap";
+import TennisPronosticResults from "../../components/TennisPronosticResults";
+import TennisSecondaryStats from "../../components/TennisSecondaryStats";
+import TennisServiceReturnContext from "../../components/TennisServiceReturnContext";
+import TennisMatchScenario from "../../components/TennisMatchScenario";
 import { useRequireAuth } from "../../lib/useRequireAuth";
 import { addMatchToHistory } from "../../lib/matchHistory";
 
@@ -49,7 +53,7 @@ export default function MatchPage() {
     season,
     // Tennis uniquement (voir components/MatchCard.js#matchHref) — chaînes vides pour
     // le football/basket, jamais lues par eux.
-    surface: tennisSurface, round: tennisRound, homeFlag, awayFlag, sets: setsJson,
+    surface: tennisSurface, round: tennisRound, homeFlag, awayFlag, sets: setsJson, category: tennisCategory,
   } = router.query;
 
   // Multi-sport bloc 3 : un match basket (id préfixé "bk-", voir lib/sports/
@@ -58,10 +62,11 @@ export default function MatchPage() {
   // jamais le chemin football ci-dessous, dont les champs (corners, cartons...) n'ont
   // pas de sens pour ce sport.
   const isBasketball = typeof matchId === "string" && matchId.startsWith("bk-");
-  // Multi-sport bloc 6 : un match tennis (id préfixé "tn-") n'a pas encore de modèle
-  // de pronostics réel (voir lib/sports/tennis/pronostic.js, bloc 7) — jamais
-  // interrogé via /api/analyze (football) ni /api/basketball/analyze, dont les
-  // paramètres et les champs renvoyés n'ont aucun sens pour ce sport.
+  // Multi-sport bloc 7 : un match tennis (id préfixé "tn-") utilise sa propre route
+  // d'analyse (pages/api/tennis/analyze.js) et ses propres cartes de pronostics
+  // (métriques tennis, voir PROMPT) — jamais /api/analyze (football) ni
+  // /api/basketball/analyze, dont les paramètres et les champs renvoyés n'ont aucun
+  // sens pour ce sport.
   const isTennis = typeof matchId === "string" && matchId.startsWith("tn-");
   const tennisSets = (() => {
     if (!setsJson || typeof setsJson !== "string") return [];
@@ -84,20 +89,14 @@ export default function MatchPage() {
   const runAnalysis = useCallback((silent = false) => {
     if (!router.isReady) return;
     setHasRequested(true);
-    // Tennis : aucun modèle de pronostics réel n'existe encore (voir lib/sports/
-    // tennis/pronostic.js, bloc 7) — jamais un appel réseau vers un endpoint conçu
-    // pour un autre sport, dont les champs (competitionCode football, matchStats...)
-    // n'ont pas de sens ici. La même raison honnête que le module côté serveur.
-    if (isTennis) {
-      setPronostic({ available: false, reason: "Tennis pas encore branché à un modèle de pronostics (bientôt disponible)." });
-      return;
-    }
-    if (!homeTeamId || !awayTeamId || (!isBasketball && !competitionCode)) {
+    if (!homeTeamId || !awayTeamId || (!isBasketball && !isTennis && !competitionCode)) {
       setPronostic({ error: "Informations du match manquantes pour calculer les pronostics." });
       return;
     }
     const endpoint = isBasketball
       ? `/api/basketball/analyze?${new URLSearchParams({ matchId: matchId || "", homeTeamId, awayTeamId, homeTeamName, awayTeamName, season: season || "" })}`
+      : isTennis
+      ? `/api/tennis/analyze?${new URLSearchParams({ matchId: matchId || "", homeTeamId, awayTeamId, homeTeamName, awayTeamName, surface: tennisSurface || "", category: tennisCategory || "" })}`
       : `/api/analyze?${new URLSearchParams({ matchId: matchId || "", competitionCode, homeTeamId, awayTeamId, homeTeamName, awayTeamName })}`;
     if (!silent) setLoading(true);
     fetch(endpoint)
@@ -113,7 +112,7 @@ export default function MatchPage() {
         setPronostic(result);
         if (result?.matchStatus) {
           setLiveState({
-            status: result.matchStatus, minute: result.matchMinute, score: result.matchScore,
+            status: result.matchStatus, minute: result.matchMinute, period: result.matchPeriod, score: result.matchScore,
             events: result.events, timelineNote: result.timelineNote,
           });
         }
@@ -123,7 +122,7 @@ export default function MatchPage() {
         if (!silent) setPronostic({ error: "Erreur lors du calcul des pronostics." });
       })
       .finally(() => setLoading(false));
-  }, [router.isReady, matchId, isBasketball, isTennis, competitionCode, homeTeamId, awayTeamId, homeTeamName, awayTeamName, season]);
+  }, [router.isReady, matchId, isBasketball, isTennis, competitionCode, homeTeamId, awayTeamId, homeTeamName, awayTeamName, season, tennisSurface, tennisCategory]);
 
   // Lance l'analyse automatiquement dès que le match est chargé, et à chaque fois qu'on
   // navigue vers un AUTRE match (Next.js réutilise ce même composant, seul l'id d'URL
@@ -195,7 +194,7 @@ export default function MatchPage() {
     id: matchId || "current",
     status: currentStatus || "",
     minute: liveState?.minute ?? initialMinuteValue,
-    period: initialPeriod || null,
+    period: liveState?.period ?? (initialPeriod || null),
     utcDate: utcDate || "",
     competition: { code: competitionCode || "", name: competitionName || "", emblem: competitionEmblem || "", surface: tennisSurface || "" },
     round: tennisRound || "",
@@ -268,7 +267,7 @@ export default function MatchPage() {
               {isBasketball
                 ? `${homeTeamName} affronte ${awayTeamName}${competitionName ? ` en ${competitionName}` : ""}. Retrouve ci-dessous l'analyse statistique : probabilité de victoire, scores finaux probables et statistiques de match estimées.`
                 : isTennis
-                ? `${homeTeamName} affronte ${awayTeamName}${competitionName ? ` en ${competitionName}` : ""}${tennisRound ? ` (${tennisRound})` : ""}.`
+                ? `${homeTeamName} affronte ${awayTeamName}${competitionName ? ` en ${competitionName}` : ""}${tennisRound ? ` (${tennisRound})` : ""}. Retrouve ci-dessous l'analyse statistique : probabilité de victoire, scores en sets probables et totaux de jeux estimés.`
                 : `${homeTeamName} affronte ${awayTeamName}${competitionName ? ` en ${competitionName}` : ""}. Retrouve ci-dessous l'analyse statistique : probabilités 1X2, buts/corners/tirs probables et score exact estimé.`}
             </p>
           )}
@@ -314,29 +313,35 @@ export default function MatchPage() {
           {isFinishedNow && (
             <p style={st.finishedHint} data-testid="match-finished-tag">Match terminé</p>
           )}
-          {isLiveNow && !isTennis && (
+          {isLiveNow && (
             <p style={st.liveHint}>
               {isBasketball
                 ? "Le score, la probabilité de victoire, les scores finaux probables et les totaux de points suivent l'évolution du match en direct. Les autres lignes (rebonds, passes décisives, tirs à 3 points, fautes, ballons perdus, lancers francs, joueurs à suivre) ont été calculées une seule fois avant le match et restent identiques jusqu'à la fin — une référence stable pour parier dessus."
+                : isTennis
+                ? "Le score, la probabilité de victoire, les scores en sets probables et les totaux de jeux suivent l'évolution du match en direct. Les autres lignes (aces, doubles fautes, breaks, jeu décisif, handicap jeux) ont été calculées une seule fois avant le match et restent identiques jusqu'à la fin — une référence stable pour parier dessus."
                 : "Le score, les moments forts, les probabilités de victoire, les scores exacts et les totaux de buts suivent l'évolution du match en direct. Les autres lignes (Corners, Hors-jeu, Fautes, Touches, tirs, cartons...) ont été calculées une seule fois avant le match et restent identiques jusqu'à la fin — une référence stable pour parier dessus."}
             </p>
           )}
 
-          {isTennis ? (
-            // Le modèle de pronostics tennis n'existe pas encore (voir lib/sports/
-            // tennis/pronostic.js, bloc 7) — un message honnête plutôt qu'un bouton
-            // "Analyser" qui ne déclencherait aucun vrai calcul.
-            <p style={st.hint} data-testid="tennis-pronostic-unavailable">
-              {pronostic?.reason || "Les pronostics automatiques pour le tennis arrivent bientôt."}
-            </p>
-          ) : (
-            <button style={st.analyzeBtn} onClick={() => runAnalysis(false)} disabled={loading}>
-              {loading ? "Analyse en cours…" : hasRequested ? "Actualiser" : "Analyser ce match"}
-            </button>
-          )}
+          <button style={st.analyzeBtn} onClick={() => runAnalysis(false)} disabled={loading}>
+            {loading ? "Analyse en cours…" : hasRequested ? "Actualiser" : "Analyser ce match"}
+          </button>
         </section>
 
-        {isTennis ? null : isBasketball ? (
+        {isTennis ? (
+          <>
+            {/* Bloc 7 : Probabilité de victoire, scores en sets probables, totaux de
+                jeux, handicap jeux, sets (blocs 1-5) — voir components/
+                TennisPronosticResults.js. */}
+            {!loading && hasRequested && <TennisPronosticResults pronostic={pronostic} />}
+            {/* Aces, doubles fautes, breaks, jeu décisif (blocs 6-9). */}
+            {!loading && hasRequested && pronostic?.available && <TennisSecondaryStats pronostic={pronostic} />}
+            {/* Contexte service/retour (bloc 10). */}
+            {!loading && hasRequested && pronostic?.available && <TennisServiceReturnContext pronostic={pronostic} />}
+            {/* Scénario du match (bloc 11). */}
+            {!loading && hasRequested && pronostic?.available && <TennisMatchScenario pronostic={pronostic} />}
+          </>
+        ) : isBasketball ? (
           <>
             {/* Bloc 4 (PROMPT point 4) : "En cliquant sur un match terminé, on voit si
                 ses pronostics ont été validés ou non" — même emplacement que le

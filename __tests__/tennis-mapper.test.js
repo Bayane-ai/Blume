@@ -5,7 +5,7 @@
  * préfixés "tn-" (jamais "af-"/"bk-"), statuts détectés par mot-clé (vocabulaire
  * exact non confirmable en direct depuis cet environnement, voir provider.js).
  */
-import { mapMatchStatusToBlumeStatus, mapMatchToLiveState, mapMatchToUpcoming } from "../lib/sports/tennis/mapper";
+import { mapMatchStatusToBlumeStatus, mapMatchToLiveState, mapMatchToUpcoming, mapGameStatistics } from "../lib/sports/tennis/mapper";
 
 function rawGame(overrides = {}) {
   return {
@@ -176,5 +176,68 @@ describe("joueur au service (PROMPT bloc 6, point 1)", () => {
       rawGame({ status: { long: "Finished", short: "FT" }, scores: { home: { set_1: 6, set_2: 6, serve: true }, away: { set_1: 3, set_2: 2, serve: false } } })
     );
     expect(m.server).toBeNull();
+  });
+});
+
+describe("mapGameStatistics — stats de service/retour réelles d'un match (PROMPT bloc 7)", () => {
+  function raw(overrides = {}) {
+    return [
+      {
+        team: { id: 101 },
+        statistics: [
+          { type: "Aces", value: 8 },
+          { type: "Double Faults", value: 2 },
+          { type: "1st Serve", value: "63%" },
+          { type: "1st Serve Points Won", value: "74%" },
+          { type: "2nd Serve Points Won", value: "51%" },
+          { type: "Break Points Won", value: "3/5" },
+        ],
+      },
+      {
+        team: { id: 102 },
+        statistics: [
+          { type: "Aces", value: 3 },
+          { type: "Double Faults", value: 4 },
+          { type: "1st Serve", value: "58%" },
+          { type: "1st Serve Points Won", value: "66%" },
+          { type: "2nd Serve Points Won", value: "45%" },
+          { type: "Break Points Won", value: "1/4" },
+        ],
+      },
+    ].map((e, i) => (overrides[i] ? { ...e, ...overrides[i] } : e));
+  }
+
+  test("distingue domicile/extérieur par id, jamais mélangés", () => {
+    const m = mapGameStatistics(raw(), 101);
+    expect(m.home.aces.value).toBe(8);
+    expect(m.away.aces.value).toBe(3);
+  });
+
+  test("parse les pourcentages ('63%' -> 63)", () => {
+    const m = mapGameStatistics(raw(), 101);
+    expect(m.home.firstServeInPct.value).toBe(63);
+    expect(m.home.firstServeWonPct.value).toBe(74);
+  });
+
+  test("parse les fractions ('3/5' -> 60 %, garde aussi made/attempted)", () => {
+    const m = mapGameStatistics(raw(), 101);
+    expect(m.home.breakPointsWon.value).toBe(60);
+    expect(m.home.breakPointsWon.made).toBe(3);
+    expect(m.home.breakPointsWon.attempted).toBe(5);
+  });
+
+  test("réponse absente ou incomplète -> null, jamais un objet à moitié rempli", () => {
+    expect(mapGameStatistics(null, 101)).toBeNull();
+    expect(mapGameStatistics([{ team: { id: 101 }, statistics: [] }], 101)).toBeNull();
+  });
+
+  test("un type de statistique absent de la réponse -> honnêtement null, jamais inventé", () => {
+    const partial = [
+      { team: { id: 101 }, statistics: [{ type: "Aces", value: 5 }] },
+      { team: { id: 102 }, statistics: [{ type: "Aces", value: 2 }] },
+    ];
+    const m = mapGameStatistics(partial, 101);
+    expect(m.home.aces.value).toBe(5);
+    expect(m.home.doubleFaults.value).toBeNull();
   });
 });

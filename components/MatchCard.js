@@ -34,6 +34,11 @@ export function matchHref(m, comp) {
       homeFlag: m.homeTeam?.flag || "",
       awayFlag: m.awayTeam?.flag || "",
       sets: Array.isArray(m.sets) && m.sets.length > 0 ? JSON.stringify(m.sets) : "",
+      // Bloc 7 (pronostics tennis) : catégorie réelle du tournoi (ATP/WTA/Grand Slam/
+      // Masters 1000...) — sert à pages/api/tennis/analyze.js pour décider du nombre
+      // de sets gagnants (5 en Grand Chelem masculin, 3 sinon), jamais deviné côté
+      // serveur sans cette info transmise depuis la vraie donnée de compétition.
+      category: m.competition?.category || "",
     },
   };
 }
