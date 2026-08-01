@@ -1,6 +1,7 @@
 import { useRouter } from "next/router";
 import { matchHref } from "./MatchCard";
 import { RISK_LABELS } from "../lib/combinedVision";
+import { getSportMeta } from "../lib/sports/registry";
 
 // BLOC 4.B / BLOC 5 — Gagné/Perdu/En cours (voir lib/comboHistory.js) : `progress`
 // vient de pages/api/combo-history.js — `undefined` (combiné jamais vu, ou pas
@@ -79,7 +80,9 @@ export default function CombinedVisionTicket({ combo, progress }) {
                 onClick={() => router.push(matchHref(leg.match, leg.comp))}
               >
                 <div style={st.legTopRow}>
-                  <span style={st.legComp}>{leg.competitionName}{leg.isLive ? " · LIVE" : ""}</span>
+                  <span style={st.legComp}>
+                    {getSportMeta(leg.sport || "football").icon} {leg.competitionName}{leg.isLive ? " · LIVE" : ""}
+                  </span>
                   <span style={{ ...st.legResult, ...st.legResultByKey[mark.styleKey] }} data-testid="ticket-leg-result">
                     {mark.text}
                   </span>

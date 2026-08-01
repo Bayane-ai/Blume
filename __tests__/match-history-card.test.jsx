@@ -64,3 +64,20 @@ test("la carte est un vrai bouton accessible (pas un <div> muet au clic)", () =>
   render(<MatchHistoryCard entry={baseEntry()} />);
   expect(screen.getByTestId("match-history-card").tagName).toBe("BUTTON");
 });
+
+describe("bloc 9 — badge du sport, déduit du préfixe de l'id", () => {
+  test("id numérique (ou af-...) : badge Football", () => {
+    render(<MatchHistoryCard entry={baseEntry({ id: "1" })} />);
+    expect(screen.getByTestId("match-history-sport-badge")).toHaveTextContent("Football");
+  });
+
+  test("id bk-... : badge Basket", () => {
+    render(<MatchHistoryCard entry={baseEntry({ id: "bk-42" })} />);
+    expect(screen.getByTestId("match-history-sport-badge")).toHaveTextContent("Basket");
+  });
+
+  test("id tn-... : badge Tennis", () => {
+    render(<MatchHistoryCard entry={baseEntry({ id: "tn-7" })} />);
+    expect(screen.getByTestId("match-history-sport-badge")).toHaveTextContent("Tennis");
+  });
+});

@@ -189,3 +189,40 @@ describe("figé/live — computeBasketballLiveOverlay recalcule uniquement proba
     expect(first.periods).toEqual(second.periods);
   });
 });
+
+// Bloc 9 (multi-sport, Combiné Vision) — pool de sélections "assez sûres", même forme
+// que lib/pronostic.js#buildSelectionCandidates (football), pour que
+// lib/combinedVision.js puisse assembler des combinés avec des matchs basket.
+describe("selectionCandidates — pool pour Combiné Vision (bloc 9)", () => {
+  test("contient l'issue du match (jamais \"draw\"/match nul) et les marchés Plus/Moins avec leur vraie confiance", () => {
+    const result = computeBasketballPronostic({
+      homeProfile: makeProfile({ homePointsFor: 118, homePointsAgainst: 95 }),
+      awayProfile: makeProfile({ awayPointsFor: 90, awayPointsAgainst: 115 }),
+      homeTeamName: "Lakers", awayTeamName: "Warriors",
+    });
+    const winner = result.selectionCandidates.find((c) => c.marketLabel === "Issue du match");
+    expect(winner).toBeDefined();
+    expect(["home", "away"]).toContain(winner.verify.key);
+    expect(winner.verify.type).toBe("winner");
+    expect(winner.confidence).toBe(Math.max(result.probabilities.home, result.probabilities.away));
+
+    const total = result.selectionCandidates.find((c) => c.marketLabel === "Total");
+    expect(total.verify).toEqual({ type: "line", statKey: "totalPoints", line: result.markets.totalPoints.line, side: result.markets.totalPoints.side });
+  });
+
+  test("inclut rebonds/passes décisives/tirs à 3 points/fautes/ballons perdus/lancers francs (Total match)", () => {
+    const result = computeBasketballPronostic({ homeProfile: makeProfile(), awayProfile: makeProfile(), homeTeamName: "A", awayTeamName: "B" });
+    const labels = result.selectionCandidates.map((c) => c.marketLabel);
+    expect(labels).toEqual(expect.arrayContaining(["Rebonds", "Passes décisives", "Tirs à 3 points", "Fautes", "Ballons perdus", "Lancers francs"]));
+  });
+
+  test("chaque match a des sélections INDIVIDUELLES : deux paires de profils différentes ne donnent jamais le même pool", () => {
+    const resultA = computeBasketballPronostic({
+      homeProfile: makeProfile({ homePointsFor: 120 }), awayProfile: makeProfile({ awayPointsFor: 95 }), homeTeamName: "A", awayTeamName: "B",
+    });
+    const resultB = computeBasketballPronostic({
+      homeProfile: makeProfile({ homePointsFor: 100 }), awayProfile: makeProfile({ awayPointsFor: 98 }), homeTeamName: "C", awayTeamName: "D",
+    });
+    expect(resultA.selectionCandidates).not.toEqual(resultB.selectionCandidates);
+  });
+});

@@ -561,4 +561,79 @@ describe("generateCombos — assemble les combinés à partir des VRAIS matchs c
       expect(combosWithCartons).toBeLessThan(totalCombos * 0.5);
     });
   });
+
+  // BLOC 9 (multi-sport) — un combiné peut mélanger football/basket/tennis, matchs en
+  // direct et à venir. Basket/tennis (2 issues, jamais de nul) utilisent le même seuil
+  // que les marchés Plus/Moins, contrairement au 1X2 football (seuil abaissé).
+  describe("bloc 9 — multi-sport (football/basket/tennis mélangés)", () => {
+    function basketballMatch(overrides = {}) {
+      return {
+        id: "bk-1", sport: "basketball", status: "SCHEDULED", utcDate: "2026-01-01T15:00:00Z",
+        competition: { code: "nba", name: "NBA" },
+        homeTeam: { id: "bk-10", name: "Lakers" }, awayTeam: { id: "bk-11", name: "Warriors" },
+        pronostic: {
+          available: true, home: { name: "Lakers" }, away: { name: "Warriors" },
+          selectionCandidates: [{ ...candidate("Issue du match", "Victoire Lakers", 60), verify: { type: "winner", key: "home" } }],
+        },
+        ...overrides,
+      };
+    }
+    function tennisMatch(overrides = {}) {
+      return {
+        id: "tn-1", sport: "tennis", status: "SCHEDULED", utcDate: "2026-01-01T15:00:00Z",
+        competition: { code: "tn-1", name: "Wimbledon" },
+        homeTeam: { id: "tn-10", name: "Djokovic" }, awayTeam: { id: "tn-11", name: "Alcaraz" },
+        pronostic: {
+          available: true, home: { name: "Djokovic" }, away: { name: "Alcaraz" },
+          selectionCandidates: [{ ...candidate("Issue du match", "Victoire Djokovic", 60), verify: { type: "winner", key: "home" } }],
+        },
+        ...overrides,
+      };
+    }
+
+    test("chaque sélection est étiquetée avec son sport (défaut football si absent)", () => {
+      expect(pickLegForMatch(match()).sport).toBe("football");
+      expect(pickLegForMatch(basketballMatch()).sport).toBe("basketball");
+      expect(pickLegForMatch(tennisMatch()).sport).toBe("tennis");
+    });
+
+    test("basket/tennis : \"Issue du match\" à 60 % (au-dessus du seuil Plus/Moins) est retenue, contrairement au football à 45-58 %", () => {
+      const midConfidenceWinner = { ...candidate("Issue du match", "Victoire", 50), verify: { type: "winner", key: "home" } };
+      // 50 % dépasse le seuil football (45) mais pas le seuil basket/tennis (58) : la
+      // même confiance donne un résultat DIFFÉRENT selon le sport.
+      expect(pickLegForMatch(match({ pronostic: pronostic({ selectionCandidates: [midConfidenceWinner] }) }))).not.toBeNull();
+      expect(pickLegForMatch(basketballMatch({
+        pronostic: { available: true, home: { name: "Lakers" }, away: { name: "Warriors" }, selectionCandidates: [midConfidenceWinner] },
+      }))).toBeNull();
+    });
+
+    test("un combiné peut mélanger les 3 sports à la fois", () => {
+      const matches = [
+        match({ id: 1 }),
+        match({ id: 2, homeTeam: { id: 20, name: "Real Madrid" }, awayTeam: { id: 21, name: "Barcelona" }, pronostic: pronostic({ home: { name: "Real Madrid" }, away: { name: "Barcelona" } }) }),
+        basketballMatch(),
+        tennisMatch(),
+      ];
+      const combos = generateCombos(matches, { random: () => 0.99 }); // jamais "très risqué" ni cartons
+      const sportsSeen = new Set(combos.flatMap((c) => c.legs.map((l) => l.sport)));
+      expect(sportsSeen.size).toBeGreaterThan(1);
+    });
+
+    test("jamais deux lignes du même match basket/tennis dans un combiné (même règle que le football)", () => {
+      const matches = [basketballMatch(), tennisMatch(), match({ id: 1 }), match({ id: 2, homeTeam: { id: 20, name: "Real Madrid" }, awayTeam: { id: 21, name: "Barcelona" }, pronostic: pronostic({ home: { name: "Real Madrid" }, away: { name: "Barcelona" } }) })];
+      const combos = generateCombos(matches);
+      for (const combo of combos) {
+        const ids = combo.legs.map((l) => l.matchId);
+        expect(new Set(ids).size).toBe(ids.length);
+      }
+    });
+
+    test("un combiné avec un id basket/tennis (non numérique) obtient quand même un id stable et déterministe", () => {
+      const matches = [basketballMatch(), tennisMatch()];
+      const combos1 = generateCombos(matches, { random: () => 0.01 });
+      const combos2 = generateCombos(matches, { random: () => 0.01 });
+      expect(combos1[0]?.id).toBeDefined();
+      expect(combos1[0]?.id).toBe(combos2[0]?.id);
+    });
+  });
 });

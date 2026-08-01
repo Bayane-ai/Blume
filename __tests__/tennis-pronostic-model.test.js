@@ -169,6 +169,45 @@ test("H2H réel : un historique direct net en faveur d'un joueur nudge la probab
   expect(withH2H.probabilities.home).toBeGreaterThan(withoutH2H.probabilities.home);
 });
 
+// Bloc 9 (multi-sport, Combiné Vision) — pool de sélections "assez sûres", même forme
+// que lib/pronostic.js#buildSelectionCandidates (football), pour que
+// lib/combinedVision.js puisse assembler des combinés avec des matchs tennis. Les
+// breaks sont volontairement ABSENTS de ce pool (voir lib/sports/tennis/
+// pronosticModel.js#buildTennisSelectionCandidates : aucune source ne fournit un
+// décompte réel fiable une fois le match terminé, même limitation que le bloc 8).
+describe("selectionCandidates — pool pour Combiné Vision (bloc 9)", () => {
+  test("contient l'issue du match (jamais \"draw\") et les totaux de jeux avec leur vraie confiance", () => {
+    const strong = profile({ serveWinPct: field(75), returnWinPct: field(48), ranking: 2 });
+    const weak = profile({ serveWinPct: field(55), returnWinPct: field(25), ranking: 90 });
+    const result = computeTennisPronostic({ homeProfile: strong, awayProfile: weak, homeTeamName: "Djokovic", awayTeamName: "Alcaraz" });
+
+    const winner = result.selectionCandidates.find((c) => c.marketLabel === "Issue du match");
+    expect(winner).toBeDefined();
+    expect(["home", "away"]).toContain(winner.verify.key);
+    expect(winner.verify.type).toBe("winner");
+
+    const totalGames = result.selectionCandidates.find((c) => c.marketLabel === "Total jeux");
+    expect(totalGames.verify.statKey).toBe("totalGames");
+  });
+
+  test("inclut les aces (Total/1/2), jamais les breaks (aucune source de vérification fiable)", () => {
+    const result = computeTennisPronostic({ homeProfile: profile(), awayProfile: profile(), homeTeamName: "A", awayTeamName: "B" });
+    const labels = result.selectionCandidates.map((c) => c.marketLabel);
+    expect(labels).toEqual(expect.arrayContaining(["Aces", "Aces 1", "Aces 2"]));
+    expect(labels.some((l) => l.toLowerCase().includes("break"))).toBe(false);
+  });
+
+  test("chaque match a des sélections INDIVIDUELLES : deux paires de profils différentes ne donnent jamais le même pool", () => {
+    const resultA = computeTennisPronostic({
+      homeProfile: profile({ serveWinPct: field(70) }), awayProfile: profile({ serveWinPct: field(50) }), homeTeamName: "A1", awayTeamName: "A2",
+    });
+    const resultB = computeTennisPronostic({
+      homeProfile: profile({ serveWinPct: field(60) }), awayProfile: profile({ serveWinPct: field(58) }), homeTeamName: "B1", awayTeamName: "B2",
+    });
+    expect(resultA.selectionCandidates).not.toEqual(resultB.selectionCandidates);
+  });
+});
+
 describe("Règle figé/live — computeTennisLiveOverlay", () => {
   test("avant le match (pas de liveState) : identique au calcul figé", () => {
     const frozen = computeTennisPronostic({ homeProfile: profile(), awayProfile: profile(), homeTeamName: "A", awayTeamName: "B" });

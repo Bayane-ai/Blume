@@ -93,13 +93,11 @@ describe.each(pages)("%s : sélecteur de sport", (label, Page) => {
   });
 });
 
-// Basket : Live, Matchs à venir (bloc 2) ET désormais Probabilités réussies/échouées
-// (bloc 4, voir components/PronosticHistoryPage.js) ont de vrais écrans — plus de
-// placeholder sur ces 4 pages.
-describe.each([
-  ["Live", Home], ["Matchs à venir", UpcomingMatches],
-  ["Probabilités réussies", ProbabilitesReussies], ["Probabilités échouées", ProbabilitesEchouees],
-])(
+// Bloc 9 — TOUTES les pages de contenu ont désormais un vrai écran pour les 3 sports
+// (Combiné Vision mélange les 3 sports sur une seule page et ignore ce sélecteur —
+// voir pages/combine-vision.js ; News/Historique s'adaptent au sport sélectionné) :
+// plus aucun placeholder « bientôt disponible » nulle part.
+describe.each(pages)(
   "%s : passer sur Basket affiche un vrai écran, jamais un placeholder",
   (label, Page) => {
     test("aucune erreur, aucune page blanche, aucun placeholder « bientôt disponible »", async () => {
@@ -108,37 +106,16 @@ describe.each([
 
       fireEvent.click(screen.getByTestId("sport-tab-basketball"));
       await waitFor(() => expect(screen.getByTestId("sport-tab-basketball")).toHaveAttribute("aria-selected", "true"));
-      await waitFor(() => expect(container.textContent).toMatch(/Basket/));
+      if (label !== "Combiné Vision") {
+        await waitFor(() => expect(container.textContent).toMatch(/Basket/));
+      }
       expect(screen.queryByTestId("sport-coming-soon")).not.toBeInTheDocument();
       expect(container.textContent).not.toMatch(/erreur/i);
     });
   }
 );
 
-// Les autres pages (Combiné Vision, News, Historique — bloc 3+ pour leur contenu
-// basket réel, hors scope de ce bloc) : Basket y affiche encore l'état de chargement
-// propre.
-describe.each(pages.filter(([label]) => !["Live", "Matchs à venir", "Probabilités réussies", "Probabilités échouées"].includes(label)))(
-  "%s : passer sur Basket affiche encore un état de chargement propre (pas encore branché sur cette page)",
-  (label, Page) => {
-    test("jamais une erreur ni une page blanche", async () => {
-      const { container } = render(<Page />);
-      await waitFor(() => expect(screen.getByTestId("sport-tabs")).toBeInTheDocument());
-
-      fireEvent.click(screen.getByTestId("sport-tab-basketball"));
-      await waitFor(() => expect(screen.getByTestId("sport-coming-soon")).toBeInTheDocument());
-      expect(container.textContent).not.toMatch(/erreur/i);
-    });
-  }
-);
-
-// Tennis (bloc 5) : Live et Matchs à venir ont désormais de vrais écrans ; bloc 8 :
-// Probabilités réussies/échouées aussi (voir components/PronosticHistoryPage.js) —
-// plus de placeholder sur ces 4 pages.
-describe.each([
-  ["Live", Home], ["Matchs à venir", UpcomingMatches],
-  ["Probabilités réussies", ProbabilitesReussies], ["Probabilités échouées", ProbabilitesEchouees],
-])(
+describe.each(pages)(
   "%s : passer sur Tennis affiche un vrai écran, jamais un placeholder",
   (label, Page) => {
     test("aucune erreur, aucune page blanche, aucun placeholder « bientôt disponible »", async () => {
@@ -147,24 +124,10 @@ describe.each([
 
       fireEvent.click(screen.getByTestId("sport-tab-tennis"));
       await waitFor(() => expect(screen.getByTestId("sport-tab-tennis")).toHaveAttribute("aria-selected", "true"));
-      await waitFor(() => expect(container.textContent).toMatch(/Tennis/));
+      if (label !== "Combiné Vision") {
+        await waitFor(() => expect(container.textContent).toMatch(/Tennis/));
+      }
       expect(screen.queryByTestId("sport-coming-soon")).not.toBeInTheDocument();
-      expect(container.textContent).not.toMatch(/erreur/i);
-    });
-  }
-);
-
-// Les autres pages (Combiné Vision, News, Historique — hors scope de ce bloc) : Tennis
-// y affiche encore l'état de chargement propre.
-describe.each(pages.filter(([label]) => !["Live", "Matchs à venir", "Probabilités réussies", "Probabilités échouées"].includes(label)))(
-  "%s : passer sur Tennis affiche encore un état de chargement propre (pas encore branché sur cette page)",
-  (label, Page) => {
-    test("jamais une erreur ni une page blanche", async () => {
-      const { container } = render(<Page />);
-      await waitFor(() => expect(screen.getByTestId("sport-tabs")).toBeInTheDocument());
-
-      fireEvent.click(screen.getByTestId("sport-tab-tennis"));
-      await waitFor(() => expect(screen.getByTestId("sport-coming-soon")).toBeInTheDocument());
       expect(container.textContent).not.toMatch(/erreur/i);
     });
   }

@@ -2,11 +2,14 @@
  * @jest-environment jsdom
  *
  * pages/combine-vision.js — "Combiné Vision" : l'app génère AUTOMATIQUEMENT les
- * combinés à partir des vrais matchs déjà chargés par /api/matches et
- * /api/live-matches (chacun déjà muni d'un pronostic réel) — l'utilisateur ne
- * sélectionne rien, et les propositions se rafraîchissent régulièrement.
+ * combinés à partir des vrais matchs déjà chargés (football via /api/matches et
+ * /api/live-matches, déjà munis d'un pronostic réel ; basket/tennis via leurs listes
+ * + une analyse automatique bornée, voir MAX_BACKGROUND_ANALYSES_PER_SPORT) —
+ * l'utilisateur ne sélectionne rien, les propositions se rafraîchissent
+ * régulièrement, et un filtre local permet de voir tous les combinés ou seulement
+ * ceux d'un sport (bloc 9).
  */
-import { render, screen, waitFor, act } from "@testing-library/react";
+import { render, screen, waitFor, act, fireEvent } from "@testing-library/react";
 import CombineVision from "../pages/combine-vision";
 
 jest.mock("next/router", () => ({
@@ -54,6 +57,8 @@ function comboHistoryHandler(comboHistoryResponse) {
   };
 }
 
+// Football uniquement (basket/tennis vides par défaut) — la plupart des tests
+// existants ne portent que sur le football, comme avant le bloc 9.
 function mockFetchWithMatches(matches, comboHistoryResponse) {
   const combo = comboHistoryHandler(comboHistoryResponse);
   return jest.fn((url, options) => {
@@ -63,6 +68,12 @@ function mockFetchWithMatches(matches, comboHistoryResponse) {
       return Promise.resolve({ json: () => Promise.resolve({ competitions: [{ code: "PL", name: "Premier League", matches }] }) });
     }
     if (url.startsWith("/api/live-matches")) {
+      return Promise.resolve({ json: () => Promise.resolve({ matches: [] }) });
+    }
+    if (url.startsWith("/api/basketball/matches") || url.startsWith("/api/tennis/matches")) {
+      return Promise.resolve({ json: () => Promise.resolve({ competitions: [] }) });
+    }
+    if (url.startsWith("/api/basketball/live-matches") || url.startsWith("/api/tennis/live-matches")) {
       return Promise.resolve({ json: () => Promise.resolve({ matches: [] }) });
     }
     return Promise.reject(new Error(`URL inattendue : ${url}`));
@@ -96,8 +107,11 @@ test("pas assez de pronostics assez sûrs : message clair, jamais un combiné in
   expect(screen.queryByTestId("combined-vision-ticket")).not.toBeInTheDocument();
 });
 
-test("erreur des deux sources : message d'erreur clair, jamais une page cassée", async () => {
-  global.fetch = jest.fn(() => Promise.reject(new Error("réseau indisponible")));
+test("erreur des 6 sources (3 sports x 2) : message d'erreur clair, jamais une page cassée", async () => {
+  global.fetch = jest.fn((url) => {
+    if (url.startsWith("/api/combo-history")) return Promise.resolve({ json: () => Promise.resolve({ successRates: {}, progress: {} }) });
+    return Promise.reject(new Error("réseau indisponible"));
+  });
 
   render(<CombineVision />);
 
@@ -164,6 +178,12 @@ test("une actualisation remplace entièrement les anciennes propositions, qui ne
     if (url.startsWith("/api/live-matches")) {
       return Promise.resolve({ json: () => Promise.resolve({ matches: [] }) });
     }
+    if (url.startsWith("/api/basketball/matches") || url.startsWith("/api/tennis/matches")) {
+      return Promise.resolve({ json: () => Promise.resolve({ competitions: [] }) });
+    }
+    if (url.startsWith("/api/basketball/live-matches") || url.startsWith("/api/tennis/live-matches")) {
+      return Promise.resolve({ json: () => Promise.resolve({ matches: [] }) });
+    }
     return Promise.reject(new Error(`URL inattendue : ${url}`));
   });
 
@@ -198,6 +218,12 @@ test("un match en direct assez sûr alimente aussi les combinés (pas seulement 
           ],
         }),
       });
+    }
+    if (url.startsWith("/api/basketball/matches") || url.startsWith("/api/tennis/matches")) {
+      return Promise.resolve({ json: () => Promise.resolve({ competitions: [] }) });
+    }
+    if (url.startsWith("/api/basketball/live-matches") || url.startsWith("/api/tennis/live-matches")) {
+      return Promise.resolve({ json: () => Promise.resolve({ matches: [] }) });
     }
     return Promise.reject(new Error(`URL inattendue : ${url}`));
   });
@@ -264,6 +290,12 @@ test("un combiné déjà classé affiche son statut Gagné/Perdu (via /api/combo
     if (url.startsWith("/api/live-matches")) {
       return Promise.resolve({ json: () => Promise.resolve({ matches: [] }) });
     }
+    if (url.startsWith("/api/basketball/matches") || url.startsWith("/api/tennis/matches")) {
+      return Promise.resolve({ json: () => Promise.resolve({ competitions: [] }) });
+    }
+    if (url.startsWith("/api/basketball/live-matches") || url.startsWith("/api/tennis/live-matches")) {
+      return Promise.resolve({ json: () => Promise.resolve({ matches: [] }) });
+    }
     return Promise.reject(new Error(`URL inattendue : ${url}`));
   });
   global.fetch = fetchMock;
@@ -286,4 +318,106 @@ test("affiche un indicateur clair que les combinés se renouvellent automatiquem
   expect(screen.getByTestId("combined-vision-freshness")).toHaveTextContent(/se renouvelle automatiquement/i);
   // Confirme l'horodatage de la dernière actualisation, pas un texte figé générique.
   expect(screen.getByTestId("combined-vision-freshness")).toHaveTextContent(/mis à jour à/i);
+});
+
+// BLOC 9 (multi-sport) — mélange football/basket/tennis : basket/tennis n'ont pas de
+// pronostic tout prêt dans leur liste (voir pages/api/basketball/matches.js), c'est
+// pages/combine-vision.js qui les analyse automatiquement en arrière-plan (bornée,
+// voir MAX_BACKGROUND_ANALYSES_PER_SPORT) avant de générer les combinés.
+function basketballUpcomingMatch(id, homeName, awayName) {
+  return {
+    id, status: "SCHEDULED", utcDate: new Date(Date.now() + 3 * 3600000).toISOString(),
+    competition: { code: "nba", name: "NBA", season: "2025-2026" },
+    homeTeam: { id: `bk-${id}0`, name: homeName }, awayTeam: { id: `bk-${id}1`, name: awayName },
+    score: { fullTime: { home: null, away: null } },
+    pronostic: { available: false },
+  };
+}
+function tennisUpcomingMatch(id, homeName, awayName) {
+  return {
+    id, status: "SCHEDULED", utcDate: new Date(Date.now() + 3 * 3600000).toISOString(),
+    competition: { code: "tn-1", name: "Wimbledon", surface: "Gazon", category: "ATP" },
+    homeTeam: { id: `tn-${id}0`, name: homeName }, awayTeam: { id: `tn-${id}1`, name: awayName },
+    score: { fullTime: { home: null, away: null } },
+    pronostic: { available: false },
+  };
+}
+function basketballAnalyzeResult(homeName, awayName) {
+  return {
+    available: true, home: { name: homeName }, away: { name: awayName },
+    selectionCandidates: [{ marketLabel: "Issue du match", pickLabel: `Victoire ${homeName}`, confidence: 62, verify: { type: "winner", key: "home" } }],
+  };
+}
+
+function mockFetchMultiSport({ football = [], basketball = [], tennis = [] }) {
+  const combo = comboHistoryHandler();
+  return jest.fn((url, options) => {
+    const comboResult = combo(url, options);
+    if (comboResult) return comboResult;
+    if (url.startsWith("/api/matches")) {
+      return Promise.resolve({ json: () => Promise.resolve({ competitions: football.length ? [{ code: "PL", name: "Premier League", matches: football }] : [] }) });
+    }
+    if (url.startsWith("/api/live-matches")) return Promise.resolve({ json: () => Promise.resolve({ matches: [] }) });
+    if (url.startsWith("/api/basketball/matches")) {
+      return Promise.resolve({ json: () => Promise.resolve({ competitions: basketball.length ? [{ code: "nba", name: "NBA", matches: basketball }] : [] }) });
+    }
+    if (url.startsWith("/api/basketball/live-matches")) return Promise.resolve({ json: () => Promise.resolve({ matches: [] }) });
+    if (url.startsWith("/api/tennis/matches")) {
+      return Promise.resolve({ json: () => Promise.resolve({ competitions: tennis.length ? [{ code: "tn-1", name: "Wimbledon", matches: tennis }] : [] }) });
+    }
+    if (url.startsWith("/api/tennis/live-matches")) return Promise.resolve({ json: () => Promise.resolve({ matches: [] }) });
+    if (url.startsWith("/api/basketball/analyze")) {
+      const homeTeamName = new URL(url, "http://localhost").searchParams.get("homeTeamName");
+      const awayTeamName = new URL(url, "http://localhost").searchParams.get("awayTeamName");
+      return Promise.resolve({ json: () => Promise.resolve(basketballAnalyzeResult(homeTeamName, awayTeamName)) });
+    }
+    if (url.startsWith("/api/tennis/analyze")) {
+      const homeTeamName = new URL(url, "http://localhost").searchParams.get("homeTeamName");
+      const awayTeamName = new URL(url, "http://localhost").searchParams.get("awayTeamName");
+      return Promise.resolve({ json: () => Promise.resolve(basketballAnalyzeResult(homeTeamName, awayTeamName)) });
+    }
+    return Promise.reject(new Error(`URL inattendue : ${url}`));
+  });
+}
+
+test("bloc 9 : analyse automatiquement les matchs basket/tennis en arrière-plan et les mélange aux combinés", async () => {
+  global.fetch = mockFetchMultiSport({
+    basketball: [basketballUpcomingMatch(1, "Lakers", "Warriors"), basketballUpcomingMatch(2, "Celtics", "Nets")],
+  });
+
+  render(<CombineVision />);
+
+  await waitFor(() => expect(screen.getAllByTestId("combined-vision-ticket").length).toBeGreaterThan(0));
+  expect(screen.getAllByText(/Lakers|Celtics/).length).toBeGreaterThan(0);
+});
+
+test("bloc 9 : le filtre de sport local ne montre que les combinés touchant le sport choisi", async () => {
+  global.fetch = mockFetchMultiSport({
+    football: [upcomingMatch(1, "Arsenal FC", "Chelsea FC"), upcomingMatch(2, "Real Madrid", "FC Barcelona")],
+    basketball: [basketballUpcomingMatch(3, "Lakers", "Warriors"), basketballUpcomingMatch(4, "Celtics", "Nets")],
+  });
+
+  render(<CombineVision />);
+  await waitFor(() => expect(screen.getAllByTestId("combined-vision-ticket").length).toBeGreaterThan(0));
+
+  expect(screen.getByTestId("combo-sport-filter-tous")).toHaveAttribute("aria-pressed", "true");
+
+  fireEvent.click(screen.getByTestId("combo-sport-filter-basketball"));
+  await waitFor(() => expect(screen.getByTestId("combo-sport-filter-basketball")).toHaveAttribute("aria-pressed", "true"));
+
+  const tickets = screen.getAllByTestId("combined-vision-ticket");
+  expect(tickets.length).toBeGreaterThan(0);
+  for (const ticket of tickets) {
+    expect(ticket.textContent).toMatch(/🏀/);
+  }
+});
+
+test("bloc 9 : jamais de placeholder « bientôt disponible » sur cette page (elle mélange les 3 sports, indépendamment du sélecteur global)", async () => {
+  global.fetch = mockFetchWithMatches([upcomingMatch(1, "Arsenal FC", "Chelsea FC"), upcomingMatch(2, "Real Madrid", "FC Barcelona")]);
+
+  render(<CombineVision />);
+  await waitFor(() => expect(screen.getAllByTestId("combined-vision-ticket").length).toBeGreaterThan(0));
+
+  fireEvent.click(screen.getByTestId("sport-tab-basketball"));
+  expect(screen.queryByTestId("sport-coming-soon")).not.toBeInTheDocument();
 });

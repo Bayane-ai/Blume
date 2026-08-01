@@ -101,3 +101,31 @@ test("affiche une carte par match consulté, le plus récent en premier, sans bo
   expect(cards[1]).toHaveTextContent("Arsenal FC");
   expect(screen.queryByRole("button", { name: /^analyser$/i })).not.toBeInTheDocument();
 });
+
+test("bloc 9 : mélange football/basket/tennis dans la même liste, chacun avec son badge de sport, jamais un placeholder « bientôt disponible »", async () => {
+  mockNextAddedAt(0);
+  await addMatchToHistory(USER_ID, {
+    id: "bk-99", status: "SCHEDULED", minute: null, utcDate: "2026-01-01T15:00:00Z",
+    competition: { code: "nba", name: "NBA", emblem: "" },
+    homeTeam: { id: "bk-10", name: "Lakers", crest: "" },
+    awayTeam: { id: "bk-11", name: "Warriors", crest: "" },
+    score: { fullTime: { home: null, away: null } },
+  });
+  mockNextAddedAt(1);
+  await addMatchToHistory(USER_ID, {
+    id: "tn-55", status: "SCHEDULED", minute: null, utcDate: "2026-01-02T15:00:00Z",
+    competition: { code: "tn-1", name: "Wimbledon", emblem: "" },
+    homeTeam: { id: "tn-10", name: "Djokovic", crest: "" },
+    awayTeam: { id: "tn-11", name: "Alcaraz", crest: "" },
+    score: { fullTime: { home: null, away: null } },
+  });
+  jest.restoreAllMocks();
+
+  render(<Historique />);
+
+  const cards = await screen.findAllByTestId("match-history-card");
+  expect(cards).toHaveLength(2);
+  expect(cards[0]).toHaveTextContent("Djokovic");
+  expect(cards[1]).toHaveTextContent("Lakers");
+  expect(screen.queryByTestId("sport-coming-soon")).not.toBeInTheDocument();
+});
