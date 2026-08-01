@@ -8,7 +8,7 @@ import { getFrozenPrediction, saveFrozenPrediction, verifyFrozenPrediction, canP
 import { computePronostic, computeLiveOutcome } from "../../lib/pronostic";
 import { computeMatchLinesFromProfiles } from "../../lib/pronosticFromProfiles";
 import { buildStaticNarrative, buildLiveNarrative } from "../../lib/matchNarrative";
-import { getExistingTeamProfile } from "../../lib/teamStatProfiles";
+import { getExistingTeamProfile, getOrRefreshTeamProfile } from "../../lib/teamStatProfiles";
 import {
   getAllLiveFixtures, findLiveFixtureByTeams, getFixtureEvents, mapApiFootballEvents, mapFixtureToLiveState,
   findApiFootballTeamId, getTeamCardProneness,
@@ -85,13 +85,28 @@ async function computeFreshPrediction({ matchId, competitionCode, homeTeamId, aw
     isApiFootballOnlyId ? Promise.resolve(null) : getScorers(competitionCode, token),
     resolveCardProneness(homeTeamName, apiFootballKey),
     resolveCardProneness(awayTeamName, apiFootballKey),
-    // BLOC 2 (lib/pronosticFromProfiles.js) : simple LECTURE Supabase, jamais un appel
-    // API-Football ici — cliquer sur "ANALYSER" ne doit jamais attendre le calcul
-    // complet d'un profil (jusqu'à 22 appels API-Football pour les deux équipes, voir
-    // lib/teamStatProfiles.js). Le rafraîchissement des profils reste déclenché
-    // ailleurs (pages/api/admin/team-profile.js), jamais depuis ce clic.
-    getExistingTeamProfile(homeTeamName),
-    getExistingTeamProfile(awayTeamName),
+    // BLOC 2 (lib/pronosticFromProfiles.js), avec une distinction importante :
+    // - Compétition couverte par football-data.org (resolveTeamStats ci-dessus a déjà
+    //   une vraie source pour cette équipe) : simple LECTURE Supabase, jamais un appel
+    //   API-Football supplémentaire ici — inutile de recalculer une deuxième fois une
+    //   donnée déjà réelle par un autre chemin.
+    // - Match connu UNIQUEMENT par API-Football (petites fédérations absentes de
+    //   football-data.org, ex. Russie/Japon — voir demande utilisateur) :
+    //   resolveTeamStats ne PEUT PAS avoir de vraie donnée pour cette équipe (identifiants
+    //   dans un espace de noms différent, /teams/{id}/matches de football-data.org
+    //   renverrait une erreur) — sans ce cas particulier, ces matchs restaient
+    //   indéfiniment sur l'estimation moyenne (NEUTRAL_ROW), faute d'un premier calcul
+    //   jamais déclenché. Ici, le calcul RÉEL est donc attendu (comme pour le basket,
+    //   voir pages/api/basketball/analyze.js) au lieu d'être simplement lu : le premier
+    //   clic sur "Analyser" pour CE match précis coûte plus cher (jusqu'à 22 appels
+    //   API-Football au total, une seule fois), les suivants (24h) relisent le profil
+    //   déjà calculé, gratuitement, comme n'importe quel autre match.
+    isApiFootballOnlyId
+      ? getOrRefreshTeamProfile({ teamName: homeTeamName, competitionCode, apiFootballKey, token })
+      : getExistingTeamProfile(homeTeamName),
+    isApiFootballOnlyId
+      ? getOrRefreshTeamProfile({ teamName: awayTeamName, competitionCode, apiFootballKey, token })
+      : getExistingTeamProfile(awayTeamName),
   ]);
 
   // BLOC 2 : dès que les DEUX profils d'équipe réels sont disponibles, les lignes de

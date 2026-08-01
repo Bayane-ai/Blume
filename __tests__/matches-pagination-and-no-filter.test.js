@@ -140,3 +140,47 @@ test("une panne au milieu de la pagination (429 quota après la page 1) garde qu
   const russiaComp = res.body.competitions.find((c) => c.area === "Russia");
   expect(russiaComp).toBeDefined();
 });
+
+test("l'appel diagnostique GET /leagues?current=true (jamais un filtre) ne retarde jamais la réponse — la réponse part sans l'attendre", async () => {
+  let leaguesCallResolved = false;
+  global.fetch = jest.fn((url) => {
+    if (url.includes("/v4/matches?")) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ matches: [] }) });
+    }
+    if (url.includes("v3.football.api-sports.io/leagues")) {
+      // Ne se résout jamais avant la fin du test — si handler() attendait cet appel,
+      // la réponse ne partirait jamais et le test expirerait.
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          leaguesCallResolved = true;
+          resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                response: [
+                  { league: { id: 235, name: "Premier League" }, country: { name: "Russia" } },
+                  { league: { id: 98, name: "J1 League" }, country: { name: "Japan" } },
+                ],
+              }),
+          });
+        }, 50);
+      });
+    }
+    if (url.includes("v3.football.api-sports.io/fixtures")) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [], paging: { current: 1, total: 1 } }) });
+    }
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [{ table: [] }] }) });
+  });
+
+  const { default: handler } = await import("../pages/api/matches.js");
+  const res = mockRes();
+  await handler({}, res);
+
+  expect(res.body.error).toBeUndefined();
+  expect(leaguesCallResolved).toBe(false); // la réponse est bien partie avant que /leagues n'ait fini
+
+  // Laisse l'appel diagnostique en arrière-plan se terminer proprement avant la fin du
+  // test (sinon Jest avertit d'un log après coup) — sans jamais faire dépendre la
+  // réponse HTTP elle-même de cette attente, déjà prouvée ci-dessus.
+  await new Promise((resolve) => setTimeout(resolve, 60));
+});

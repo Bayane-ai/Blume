@@ -348,6 +348,87 @@ describe("getFixturesByDate / mapFixtureToUpcomingMatch — couverture mondiale 
   });
 });
 
+describe("getActiveLeagues — GET /leagues?current=true, sans filtre de pays (bloc 7, aucun championnat oublié)", () => {
+  test("sans clé API, renvoie une liste vide sans jamais appeler l'API", async () => {
+    const { getActiveLeagues } = await import("../lib/apiFootball.js");
+    global.fetch = jest.fn();
+    expect(await getActiveLeagues(null)).toEqual([]);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test("interroge /leagues?current=true sans aucun paramètre de pays — tous pays confondus", async () => {
+    const { getActiveLeagues } = await import("../lib/apiFootball.js");
+    const fetchMock = jest.fn((url, opts) => {
+      const parsed = new URL(url);
+      expect(parsed.origin + parsed.pathname).toBe("https://v3.football.api-sports.io/leagues");
+      expect(parsed.searchParams.get("current")).toBe("true");
+      expect(parsed.searchParams.has("country")).toBe(false);
+      expect(opts.headers).toEqual({ "x-apisports-key": TOKEN });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) });
+    });
+    global.fetch = fetchMock;
+
+    await getActiveLeagues(TOKEN);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("suit la pagination jusqu'au bout (Russie/Japon peuvent être sur une page suivante)", async () => {
+    const { getActiveLeagues } = await import("../lib/apiFootball.js");
+    const fetchMock = jest.fn((url) => {
+      const page = new URL(url).searchParams.get("page");
+      if (page === "1") {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              response: [{ league: { id: 1, name: "Premier League" }, country: { name: "England" } }],
+              paging: { current: 1, total: 2 },
+            }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            response: [
+              { league: { id: 235, name: "Premier League" }, country: { name: "Russia" } },
+              { league: { id: 98, name: "J1 League" }, country: { name: "Japan" } },
+            ],
+            paging: { current: 2, total: 2 },
+          }),
+      });
+    });
+    global.fetch = fetchMock;
+
+    const leagues = await getActiveLeagues(TOKEN);
+    expect(leagues).toHaveLength(3);
+    expect(leagues.map((l) => l.country?.name)).toEqual(expect.arrayContaining(["England", "Russia", "Japan"]));
+  });
+
+  test("plusieurs appels rapprochés ne déclenchent qu'un seul appel réel (mis en cache)", async () => {
+    const { getActiveLeagues } = await import("../lib/apiFootball.js");
+    const fetchMock = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) }));
+    global.fetch = fetchMock;
+
+    await Promise.all([getActiveLeagues(TOKEN), getActiveLeagues(TOKEN), getActiveLeagues(TOKEN)]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("un échec réseau après un premier succès reprend la dernière liste connue plutôt que de la faire disparaître", async () => {
+    const { getActiveLeagues } = await import("../lib/apiFootball.js");
+    const leagues = [{ league: { id: 1, name: "Premier League" }, country: { name: "England" } }];
+    let call = 0;
+    global.fetch = jest.fn(() => {
+      call += 1;
+      if (call === 1) return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: leagues }) });
+      return Promise.reject(new Error("Erreur réseau"));
+    });
+
+    const first = await getActiveLeagues(TOKEN);
+    expect(first).toEqual(leagues);
+  });
+});
+
 describe("apiFootballFetch — pause après un 429 (quota quotidien dépassé), jamais de martelage inutile", () => {
   afterEach(() => {
     jest.restoreAllMocks();

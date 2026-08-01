@@ -1,7 +1,7 @@
 import { COMPETITIONS } from "../../lib/competitions";
 import { getStandingsTable } from "../../lib/standingsCache";
 import { computePronostic } from "../../lib/pronostic";
-import { getFixturesByDate, mapFixtureToUpcomingMatch, normalizeTeamName } from "../../lib/apiFootball";
+import { getFixturesByDate, getActiveLeagues, mapFixtureToUpcomingMatch, normalizeTeamName } from "../../lib/apiFootball";
 import { maybeSweepFinishedPredictions } from "../../lib/pronosticHistory";
 
 const BASE = "https://api.football-data.org/v4";
@@ -107,6 +107,27 @@ export default async function handler(req, res) {
         byCode.set(code, { name: m.competition?.name || code, area: m.competition?.area || "", matches: [] });
       }
       byCode.get(code).matches.push(m);
+    }
+
+    // Visibilité diagnostique (jamais un filtre, voir lib/apiFootball.js#getActiveLeagues) :
+    // en arrière-plan, jamais attendue (ne doit jamais ralentir cette réponse — quasi
+    // toujours servie depuis le cache 24h), compare le nombre de compétitions RÉELLEMENT
+    // actives cette saison (toutes fédérations) au nombre de compétitions effectivement
+    // représentées ci-dessus, pour repérer dans les logs Vercel un écart durable plutôt
+    // que de devoir le deviner.
+    if (apiFootballKey) {
+      getActiveLeagues(apiFootballKey)
+        .then((leagues) => {
+          const areasShown = new Set([...byCode.values()].map((c) => (c.area || "").toLowerCase()));
+          const missingCountries = [...new Set(leagues.map((l) => l.country?.name).filter(Boolean))].filter(
+            (country) => !areasShown.has(country.toLowerCase())
+          );
+          console.log(
+            `[API-Football] /leagues?current=true : ${leagues.length} compétition(s) active(s) cette saison, ${areasShown.size} pays/fédération(s) représenté(s) dans les matchs affichés` +
+              (missingCountries.length ? ` — aucun match affiché aujourd'hui pour : ${missingCountries.slice(0, 15).join(", ")}${missingCountries.length > 15 ? "…" : ""}` : "")
+          );
+        })
+        .catch(() => {});
     }
 
     // Le classement (pour le pronostic précalculé) n'existe que côté football-data.org
