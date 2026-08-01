@@ -19,9 +19,21 @@ export function matchHref(m, comp) {
       awayCrest: m.awayTeam?.crest || "",
       status: m.status || "",
       minute: m.minute ?? "",
+      // Basket/tennis uniquement (voir lib/liveClockFormat.js) : "Q3"/"Set 3" — absent
+      // pour le football, qui n'a pas cette notion (comportement "34’" inchangé).
+      period: m.period || "",
       utcDate: m.utcDate || "",
       scoreHome: m.score?.fullTime?.home ?? "",
       scoreAway: m.score?.fullTime?.away ?? "",
+      // Tennis uniquement (bloc 6, voir lib/sports/tennis/mapper.js) — absents pour le
+      // football/basket, jamais lus par eux. pages/match/[id].js n'a pas de source de
+      // données live pour le tennis (pas encore d'analyse, voir bloc 7) : ce sont ces
+      // valeurs, prises au moment du clic, qui alimentent l'écran de détail.
+      surface: m.competition?.surface || "",
+      round: m.round || "",
+      homeFlag: m.homeTeam?.flag || "",
+      awayFlag: m.awayTeam?.flag || "",
+      sets: Array.isArray(m.sets) && m.sets.length > 0 ? JSON.stringify(m.sets) : "",
     },
   };
 }

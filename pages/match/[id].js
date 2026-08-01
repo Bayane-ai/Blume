@@ -45,8 +45,11 @@ export default function MatchPage() {
     id: matchId,
     competitionCode, competitionName, competitionEmblem, homeTeamId, awayTeamId,
     homeTeamName, awayTeamName, homeCrest, awayCrest,
-    status: initialStatus, minute: initialMinute, utcDate, scoreHome, scoreAway,
+    status: initialStatus, minute: initialMinute, period: initialPeriod, utcDate, scoreHome, scoreAway,
     season,
+    // Tennis uniquement (voir components/MatchCard.js#matchHref) — chaînes vides pour
+    // le football/basket, jamais lues par eux.
+    surface: tennisSurface, round: tennisRound, homeFlag, awayFlag, sets: setsJson,
   } = router.query;
 
   // Multi-sport bloc 3 : un match basket (id préfixé "bk-", voir lib/sports/
@@ -55,6 +58,20 @@ export default function MatchPage() {
   // jamais le chemin football ci-dessous, dont les champs (corners, cartons...) n'ont
   // pas de sens pour ce sport.
   const isBasketball = typeof matchId === "string" && matchId.startsWith("bk-");
+  // Multi-sport bloc 6 : un match tennis (id préfixé "tn-") n'a pas encore de modèle
+  // de pronostics réel (voir lib/sports/tennis/pronostic.js, bloc 7) — jamais
+  // interrogé via /api/analyze (football) ni /api/basketball/analyze, dont les
+  // paramètres et les champs renvoyés n'ont aucun sens pour ce sport.
+  const isTennis = typeof matchId === "string" && matchId.startsWith("tn-");
+  const tennisSets = (() => {
+    if (!setsJson || typeof setsJson !== "string") return [];
+    try {
+      const parsed = JSON.parse(setsJson);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  })();
 
   const [pronostic, setPronostic] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -67,6 +84,14 @@ export default function MatchPage() {
   const runAnalysis = useCallback((silent = false) => {
     if (!router.isReady) return;
     setHasRequested(true);
+    // Tennis : aucun modèle de pronostics réel n'existe encore (voir lib/sports/
+    // tennis/pronostic.js, bloc 7) — jamais un appel réseau vers un endpoint conçu
+    // pour un autre sport, dont les champs (competitionCode football, matchStats...)
+    // n'ont pas de sens ici. La même raison honnête que le module côté serveur.
+    if (isTennis) {
+      setPronostic({ available: false, reason: "Tennis pas encore branché à un modèle de pronostics (bientôt disponible)." });
+      return;
+    }
     if (!homeTeamId || !awayTeamId || (!isBasketball && !competitionCode)) {
       setPronostic({ error: "Informations du match manquantes pour calculer les pronostics." });
       return;
@@ -98,7 +123,7 @@ export default function MatchPage() {
         if (!silent) setPronostic({ error: "Erreur lors du calcul des pronostics." });
       })
       .finally(() => setLoading(false));
-  }, [router.isReady, matchId, isBasketball, competitionCode, homeTeamId, awayTeamId, homeTeamName, awayTeamName, season]);
+  }, [router.isReady, matchId, isBasketball, isTennis, competitionCode, homeTeamId, awayTeamId, homeTeamName, awayTeamName, season]);
 
   // Lance l'analyse automatiquement dès que le match est chargé, et à chaque fois qu'on
   // navigue vers un AUTRE match (Next.js réutilise ce même composant, seul l'id d'URL
@@ -157,14 +182,26 @@ export default function MatchPage() {
   // vient toujours de l'API (currentStatus), jamais d'une valeur supposée.
   const isFinishedNow = currentStatus === "FINISHED";
 
+  // Le format de `minute` dépend du sport (voir lib/liveClockFormat.js) : un nombre de
+  // minutes écoulées pour le football ("34’"), mais une chaîne pour le basket ("5:23")
+  // et le tennis ("40-30", score du jeu en cours) — jamais convertie en Number pour ces
+  // deux-là, ce qui produirait NaN.
+  const initialMinuteValue =
+    initialMinute !== undefined && initialMinute !== "" && /^-?\d+$/.test(initialMinute)
+      ? Number(initialMinute)
+      : initialMinute || null;
+
   const matchForBlock = {
     id: matchId || "current",
     status: currentStatus || "",
-    minute: liveState?.minute ?? (initialMinute ? Number(initialMinute) : null),
+    minute: liveState?.minute ?? initialMinuteValue,
+    period: initialPeriod || null,
     utcDate: utcDate || "",
-    competition: { code: competitionCode || "", name: competitionName || "", emblem: competitionEmblem || "" },
-    homeTeam: { name: homeTeamName || "", crest: homeCrest || "" },
-    awayTeam: { name: awayTeamName || "", crest: awayCrest || "" },
+    competition: { code: competitionCode || "", name: competitionName || "", emblem: competitionEmblem || "", surface: tennisSurface || "" },
+    round: tennisRound || "",
+    sets: tennisSets,
+    homeTeam: { name: homeTeamName || "", crest: homeCrest || "", flag: homeFlag || "" },
+    awayTeam: { name: awayTeamName || "", crest: awayCrest || "", flag: awayFlag || "" },
     score: {
       fullTime: liveState?.score || {
         home: scoreHome !== "" && scoreHome !== undefined ? scoreHome : null,
@@ -190,14 +227,17 @@ export default function MatchPage() {
     <div style={st.page}>
       <MatchHeaderHero m={matchForBlock} isLive={isLiveNow} />
 
-      {isLiveNow && (
-        // Épinglée juste sous le score (position: sticky) : en faisant défiler la page,
-        // les moments forts restent visibles en premier, avant le reste du contenu —
-        // seule la liste des événements défile en interne (hauteur bornée) une fois
-        // qu'elle dépasse ce qui tient à l'écran. Bloc 4 (basket) : reste épinglée en
-        // haut EXACTEMENT comme le football (PROMPT : "il reste toujours en haut"),
-        // avec sa propre timeline dérivée du score officiel (jamais "Événement non
-        // disponible", voir components/BasketballMatchTimeline.js).
+      {/* Épinglée juste sous le score (position: sticky) : en faisant défiler la page,
+          les moments forts restent visibles en premier, avant le reste du contenu —
+          seule la liste des événements défile en interne (hauteur bornée) une fois
+          qu'elle dépasse ce qui tient à l'écran. Bloc 4 (basket) : reste épinglée en
+          haut EXACTEMENT comme le football (PROMPT : "il reste toujours en haut"),
+          avec sa propre timeline dérivée du score officiel (jamais "Événement non
+          disponible", voir components/BasketballMatchTimeline.js).
+          Tennis : aucun fil d'événements réel n'existe encore pour ce sport (voir
+          lib/sports/tennis/provider.js) — jamais un panneau "Moments forts" vide ou
+          trompeur, on le masque simplement tant que cette donnée n'existe pas. */}
+      {isLiveNow && !isTennis && (
         <section style={st.pinnedPanel} data-testid="pinned-highlights">
           <h2 style={st.h2}>Moments forts</h2>
           <div style={st.timelineScroll}>
@@ -212,7 +252,7 @@ export default function MatchPage() {
 
       <main style={st.main}>
         <section style={st.panel}>
-          {!isBasketball && pronostic?.home && pronostic?.away && (
+          {!isBasketball && !isTennis && pronostic?.home && pronostic?.away && (
             <div style={st.formRow}>
               <div style={st.formCell}>
                 <FormBadges form={pronostic.home.form} />
@@ -227,16 +267,18 @@ export default function MatchPage() {
             <p style={st.descText}>
               {isBasketball
                 ? `${homeTeamName} affronte ${awayTeamName}${competitionName ? ` en ${competitionName}` : ""}. Retrouve ci-dessous l'analyse statistique : probabilité de victoire, scores finaux probables et statistiques de match estimées.`
+                : isTennis
+                ? `${homeTeamName} affronte ${awayTeamName}${competitionName ? ` en ${competitionName}` : ""}${tennisRound ? ` (${tennisRound})` : ""}.`
                 : `${homeTeamName} affronte ${awayTeamName}${competitionName ? ` en ${competitionName}` : ""}. Retrouve ci-dessous l'analyse statistique : probabilités 1X2, buts/corners/tirs probables et score exact estimé.`}
             </p>
           )}
 
           <div style={st.infoGrid}>
             <div style={st.infoCell}>
-              <span style={st.infoLabel}>Coup d'envoi</span>
+              <span style={st.infoLabel}>{isTennis ? "Horaire" : "Coup d'envoi"}</span>
               <span style={st.infoValue}>{kickoff || "Indisponible"}</span>
             </div>
-            {!isBasketball && (
+            {!isBasketball && !isTennis && (
               <>
                 <div style={st.infoCell}>
                   <span style={st.infoLabel}>Stade</span>
@@ -245,6 +287,18 @@ export default function MatchPage() {
                 <div style={st.infoCell}>
                   <span style={st.infoLabel}>Arbitre</span>
                   <span style={st.infoValue}>{referee || "Indisponible"}</span>
+                </div>
+              </>
+            )}
+            {isTennis && (
+              <>
+                <div style={st.infoCell}>
+                  <span style={st.infoLabel}>Surface</span>
+                  <span style={st.infoValue}>{tennisSurface || "Indisponible"}</span>
+                </div>
+                <div style={st.infoCell}>
+                  <span style={st.infoLabel}>Tour</span>
+                  <span style={st.infoValue}>{tennisRound || "Indisponible"}</span>
                 </div>
               </>
             )}
@@ -260,7 +314,7 @@ export default function MatchPage() {
           {isFinishedNow && (
             <p style={st.finishedHint} data-testid="match-finished-tag">Match terminé</p>
           )}
-          {isLiveNow && (
+          {isLiveNow && !isTennis && (
             <p style={st.liveHint}>
               {isBasketball
                 ? "Le score, la probabilité de victoire, les scores finaux probables et les totaux de points suivent l'évolution du match en direct. Les autres lignes (rebonds, passes décisives, tirs à 3 points, fautes, ballons perdus, lancers francs, joueurs à suivre) ont été calculées une seule fois avant le match et restent identiques jusqu'à la fin — une référence stable pour parier dessus."
@@ -268,12 +322,21 @@ export default function MatchPage() {
             </p>
           )}
 
-          <button style={st.analyzeBtn} onClick={() => runAnalysis(false)} disabled={loading}>
-            {loading ? "Analyse en cours…" : hasRequested ? "Actualiser" : "Analyser ce match"}
-          </button>
+          {isTennis ? (
+            // Le modèle de pronostics tennis n'existe pas encore (voir lib/sports/
+            // tennis/pronostic.js, bloc 7) — un message honnête plutôt qu'un bouton
+            // "Analyser" qui ne déclencherait aucun vrai calcul.
+            <p style={st.hint} data-testid="tennis-pronostic-unavailable">
+              {pronostic?.reason || "Les pronostics automatiques pour le tennis arrivent bientôt."}
+            </p>
+          ) : (
+            <button style={st.analyzeBtn} onClick={() => runAnalysis(false)} disabled={loading}>
+              {loading ? "Analyse en cours…" : hasRequested ? "Actualiser" : "Analyser ce match"}
+            </button>
+          )}
         </section>
 
-        {isBasketball ? (
+        {isTennis ? null : isBasketball ? (
           <>
             {/* Bloc 4 (PROMPT point 4) : "En cliquant sur un match terminé, on voit si
                 ses pronostics ont été validés ou non" — même emplacement que le
