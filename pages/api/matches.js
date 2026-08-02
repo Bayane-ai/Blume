@@ -62,7 +62,14 @@ export default async function handler(req, res) {
     // pays, sans restriction. Une panne d'API-Football ne doit jamais vider la liste :
     // on garde alors simplement les matchs football-data.org.
     let afMatches = [];
-    if (apiFootballKey) {
+    if (!apiFootballKey) {
+      // Sans cette clé, TOUTE compétition absente de lib/competitions.js (la quasi-
+      // totalité du monde du football hors 12 grandes ligues) reste invisible sur le
+      // site — un écran vide silencieux en apparence, alors que la vraie cause est une
+      // variable d'environnement manquante côté Vercel. Le log permet de trancher tout
+      // de suite entre "clé absente" et "API-Football n'a rien à ajouter maintenant".
+      console.warn("[API-Football] API_FOOTBALL_KEY absente : aucune compétition hors football-data.org ne sera affichée (matchs à venir)");
+    } else {
       try {
         // Fenêtre élargie d'un jour vers le passé (hier UTC en plus d'aujourd'hui..+7) :
         // getFixturesByDate interroge désormais explicitement en UTC (timezone=UTC), mais

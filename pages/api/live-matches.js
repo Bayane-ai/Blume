@@ -83,7 +83,11 @@ export default async function handler(req, res) {
     // API n'utilisant pas les mêmes identifiants). Une panne d'API-Football ne doit
     // jamais vider la liste : on garde alors simplement les matchs football-data.org.
     let afMatches = [];
-    if (apiFootballKey) {
+    if (!apiFootballKey) {
+      // Même raisonnement que pages/api/matches.js : sans cette clé, toute compétition
+      // absente de lib/competitions.js reste invisible en direct aussi, silencieusement.
+      console.warn("[API-Football] API_FOOTBALL_KEY absente : aucune compétition hors football-data.org ne sera affichée (direct)");
+    } else {
       try {
         const fixtures = await getAllLiveFixtures(apiFootballKey);
         // Visibilité serveur (logs Vercel) : sans ça, une source qui répond mais ne

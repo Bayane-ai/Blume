@@ -58,6 +58,30 @@ test("aucune liste fermée de ligues/pays (whitelist ou blacklist) n'existe dans
   }
 });
 
+test("aucun filtre sur le type de compétition (League/Cup) ni sur le nom (Super Cup, U19/U20, Women, Friendly...) dans les routes de matchs", () => {
+  const files = ["../lib/apiFootball.js", "../pages/api/matches.js", "../pages/api/live-matches.js"].map((p) =>
+    fs.readFileSync(path.join(__dirname, p), "utf8")
+  );
+  for (const src of files) {
+    // Une Supercoupe n'est ni "League" ni "Cup" : garder uniquement ces deux types
+    // exclurait toutes les supercoupes du monde d'un coup (signalement réel : Supercoupe
+    // des Pays-Bas absente).
+    expect(src).not.toMatch(/league\??\.type\s*===?\s*["']/);
+    expect(src).not.toMatch(/\.type\s*!==?\s*["'](League|Cup)["']/);
+    // Aucune exclusion par mot-clé du nom de la compétition ou de l'équipe.
+    expect(src).not.toMatch(/\b(U1[7-9]|U20|U21|Women|Friendly|Reserve|Youth)\b.*\.(includes|test|match)\(/);
+  }
+});
+
+test("l'absence de API_FOOTBALL_KEY est journalisée explicitement (jamais un échec silencieux indiscernable d'un vrai 0 match)", () => {
+  const files = ["../pages/api/matches.js", "../pages/api/live-matches.js"].map((p) =>
+    fs.readFileSync(path.join(__dirname, p), "utf8")
+  );
+  for (const src of files) {
+    expect(src).toMatch(/console\.warn\(.*API_FOOTBALL_KEY absente/);
+  }
+});
+
 test("la requête API-Football ne transmet aucun paramètre de ligue ni de pays — seulement une plage de dates", () => {
   const apiFootballSrc = fs.readFileSync(path.join(__dirname, "../lib/apiFootball.js"), "utf8");
   expect(apiFootballSrc).not.toMatch(/[?&]league=/);
