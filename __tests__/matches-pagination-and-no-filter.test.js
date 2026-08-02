@@ -89,6 +89,34 @@ test("la requête API-Football ne transmet aucun paramètre de ligue ni de pays 
   expect(apiFootballSrc).toMatch(/\/fixtures\?date=\$\{dateStr\}/);
 });
 
+test("un match dont l'horaire n'est pas encore officiellement fixé (statut TBD, fréquent pour les compétitions moins suivies/coupes/supercoupes) apparaît quand même dans Matchs à venir", async () => {
+  global.fetch = jest.fn((url) => {
+    if (url.includes("/v4/matches?")) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ matches: [] }) });
+    }
+    if (url.includes("v3.football.api-sports.io/fixtures")) {
+      const parsed = new URL(url);
+      const page = parsed.searchParams.get("page");
+      const date = parsed.searchParams.get("date");
+      const todayIso = new Date().toISOString().slice(0, 10);
+      if (date !== todayIso || page !== "1") {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [], paging: { current: 1, total: 1 } }) });
+      }
+      const superCup = afFixture(600, { leagueId: 543, leagueName: "Super Cup", country: "Netherlands", status: "TBD" });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [superCup], paging: { current: 1, total: 1 } }) });
+    }
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ standings: [{ table: [] }] }) });
+  });
+
+  const { default: handler } = await import("../pages/api/matches.js");
+  const res = mockRes();
+  await handler({}, res);
+
+  const superCupComp = res.body.competitions.find((c) => c.area === "Netherlands");
+  expect(superCupComp).toBeDefined();
+  expect(superCupComp.name).toBe("Super Cup");
+});
+
 test("la pagination API-Football est suivie jusqu'au bout : une compétition renvoyée seulement en page 2 apparaît quand même (régression réelle : Russie/Japon absents)", async () => {
   global.fetch = jest.fn((url) => {
     if (url.includes("/v4/matches?")) {

@@ -94,8 +94,14 @@ export default async function handler(req, res) {
         // renvoie rien (quota épuisé, aucun match en ce moment) est indiscernable
         // d'une source qui échoue silencieusement — utile pour diagnostiquer
         // l'absence d'un championnat précis (ex : petite fédération) sans devoir
-        // deviner.
-        console.log(`[API-Football] /fixtures?live=all : ${fixtures.length} match(s) reçu(s)`);
+        // deviner. La liste des pays reçus (pas juste le total) permet de vérifier
+        // directement dans les logs si une fédération précise (ex : signalement d'un
+        // championnat manquant) est réellement renvoyée par l'API à cet instant, sans
+        // avoir à reproduire l'appel à la main.
+        const countries = [...new Set(fixtures.map((f) => f?.league?.country).filter(Boolean))].sort();
+        console.log(
+          `[API-Football] /fixtures?live=all : ${fixtures.length} match(s) reçu(s), ${countries.length} pays/fédération(s) : ${countries.join(", ")}`
+        );
         const known = new Set(
           fdMatches.map((m) => `${normalizeTeamName(m.homeTeam?.name)}|${normalizeTeamName(m.awayTeam?.name)}`)
         );

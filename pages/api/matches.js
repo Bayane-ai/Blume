@@ -88,11 +88,17 @@ export default async function handler(req, res) {
         const known = new Set(
           fdMatches.map((m) => `${normalizeTeamName(m.homeTeam?.name)}|${normalizeTeamName(m.awayTeam?.name)}`)
         );
+        // Seuls les matchs pas encore commencés : le direct est déjà couvert ailleurs,
+        // inutile (et risqué) de mélanger un statut différent ici. "NS" (horaire
+        // confirmé) ET "TBD" (horaire pas encore officiellement fixé par la fédération —
+        // fréquent pour les compétitions moins suivies, coupes et supercoupes) comptent
+        // toutes les deux comme "pas commencé" : ne garder que "NS" ferait disparaître
+        // silencieusement tout match dont l'heure n'est pas encore confirmée. Le filtre
+        // sur `utcDate` juste après protège quand même contre une vraie date absente.
+        const NOT_STARTED_STATUSES = new Set(["NS", "TBD"]);
         afMatches = perDate
           .flat()
-          // Seuls les matchs pas encore commencés : le direct est déjà couvert
-          // ailleurs, inutile (et risqué) de mélanger un statut différent ici.
-          .filter((f) => f?.fixture?.status?.short === "NS")
+          .filter((f) => NOT_STARTED_STATUSES.has(f?.fixture?.status?.short))
           .filter((f) => !known.has(`${normalizeTeamName(f?.teams?.home?.name)}|${normalizeTeamName(f?.teams?.away?.name)}`))
           .map(mapFixtureToUpcomingMatch)
           .filter((m) => m.homeTeam.name && m.awayTeam.name && m.utcDate);
