@@ -3,6 +3,7 @@ import { getLiveMatchesList } from "../../lib/liveListCache";
 import { getAllLiveFixtures, normalizeTeamName, mapFixtureToLiveMatch } from "../../lib/apiFootball";
 import { computePronostic, computeLiveOutcome, buildSelectionCandidates } from "../../lib/pronostic";
 import { maybeSweepFinishedPredictions } from "../../lib/pronosticHistory";
+import { recordLastError } from "../../lib/apiQuota";
 
 const LIVE_STATUSES = ["IN_PLAY", "PAUSED"];
 
@@ -142,6 +143,8 @@ export default async function handler(req, res) {
     res.setHeader("Cache-Control", "s-maxage=3, stale-while-revalidate=20");
     return res.status(200).json({ matches });
   } catch (e) {
+    console.error("[/api/live-matches] Erreur inattendue :", e.message);
+    recordLastError("football-data", `Erreur inattendue /api/live-matches : ${e.message}`);
     return res.status(500).json({ error: e.message });
   }
 }

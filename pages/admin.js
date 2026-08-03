@@ -11,9 +11,17 @@ import SiteHeader from "../components/SiteHeader";
 // deux déjà instrumentés) : ajouter un sport ici suffit à l'afficher, aucun autre
 // changement nécessaire.
 const TRACKED_SPORTS = [
-  { sport: "football", label: "⚽ Football" },
+  { sport: "football", label: "⚽ API-Football (complément petites fédérations)" },
   { sport: "basketball", label: "🏀 Basket" },
 ];
+
+// football-data.org (FOOTBALL_DATA_TOKEN) : source PRINCIPALE des 12 grandes ligues
+// (voir pages/api/matches.js, pages/api/live-matches.js) — pas suivie par
+// lib/apiQuota.js (pas de compteur de quota, cette API n'expose pas les mêmes
+// en-têtes x-ratelimit-* qu'API-SPORTS) mais sa dernière erreur réelle EST persistée
+// (voir lib/liveListCache.js, pages/api/matches.js) : sa panne vide la quasi-totalité
+// du site, c'est la première chose à vérifier ici en cas d'écran vide généralisé.
+const EXTERNAL_SOURCE_KEY = "football-data";
 
 // Zone "propriétaire unique" (voir PROMPT) : le contrôle d'accès a lieu ENTIÈREMENT
 // côté serveur, avant même que la moindre ligne de cette page n'atteigne le
@@ -34,21 +42,30 @@ export async function getServerSideProps({ req, res }) {
   }
 
   const sports = TRACKED_SPORTS.map((s) => s.sport);
-  const [quotaSnapshots, lastErrors] = await Promise.all([
+  const errorKeys = [...sports, EXTERNAL_SOURCE_KEY];
+  const [quotaSnapshots, lastErrorsList] = await Promise.all([
     getAllQuotaSnapshots(sports),
-    Promise.all(sports.map((sport) => getLastError(sport))),
+    Promise.all(errorKeys.map((key) => getLastError(key))),
   ]);
 
   return {
     props: {
       adminEmail: session.email,
       quotaSnapshots,
-      lastErrors: sports.reduce((acc, sport, i) => ({ ...acc, [sport]: lastErrors[i] }), {}),
+      lastErrors: errorKeys.reduce((acc, key, i) => ({ ...acc, [key]: lastErrorsList[i] }), {}),
+      // Lu ICI, côté serveur EN PRODUCTION (jamais depuis le sandbox de développement,
+      // qui n'a jamais ces variables) : la seule façon fiable de confirmer qu'une clé
+      // est bien configurée sur Vercel — jamais la valeur elle-même, uniquement sa
+      // présence.
+      envStatus: {
+        footballDataToken: Boolean(process.env.FOOTBALL_DATA_TOKEN),
+        apiFootballKey: Boolean(process.env.API_FOOTBALL_KEY || process.env.API_BASKETBALL_KEY),
+      },
     },
   };
 }
 
-export default function Admin({ adminEmail, quotaSnapshots, lastErrors }) {
+export default function Admin({ adminEmail, quotaSnapshots, lastErrors, envStatus }) {
   const [recomputeState, setRecomputeState] = useState({ loading: false, result: null, error: null });
 
   const runRecompute = async () => {
@@ -73,6 +90,34 @@ export default function Admin({ adminEmail, quotaSnapshots, lastErrors }) {
           <p style={st.heroSubtitle}>
             Zone réservée au propriétaire du site — connecté en tant que {adminEmail || "administrateur"}.
           </p>
+        </section>
+
+        <section style={st.panel}>
+          <h2 style={st.h2}>Variables d'environnement (production)</h2>
+          <p style={st.desc}>
+            Présence réelle des clés API sur CE serveur (jamais leur valeur) — lu directement
+            depuis l'environnement Vercel qui sert cette page, jamais depuis un fichier local.
+          </p>
+          <div style={st.quotaGrid}>
+            <div style={st.quotaCard} data-testid="admin-env-football-data-token">
+              <div style={st.quotaLabel}>FOOTBALL_DATA_TOKEN (source principale des matchs)</div>
+              <div style={envStatus?.footballDataToken ? st.envOk : st.envMissing}>
+                {envStatus?.footballDataToken ? "Configurée" : "MANQUANTE — aucun match ne peut s'afficher sans elle"}
+              </div>
+            </div>
+            <div style={st.quotaCard} data-testid="admin-env-api-football-key">
+              <div style={st.quotaLabel}>API_FOOTBALL_KEY / API_BASKETBALL_KEY (complément + basket)</div>
+              <div style={envStatus?.apiFootballKey ? st.envOk : st.envMissing}>
+                {envStatus?.apiFootballKey ? "Configurée" : "MANQUANTE — petites fédérations et basket indisponibles"}
+              </div>
+            </div>
+          </div>
+          {lastErrors?.[EXTERNAL_SOURCE_KEY] && (
+            <div style={st.quotaError} data-testid="admin-last-error-football-data">
+              Dernière erreur football-data.org ({formatMinutesAgo(lastErrors[EXTERNAL_SOURCE_KEY].at)}) :{" "}
+              {lastErrors[EXTERNAL_SOURCE_KEY].message}
+            </div>
+          )}
         </section>
 
         <section style={st.panel}>
@@ -150,6 +195,8 @@ const st = {
   quotaNumbers: { display: "flex", flexDirection: "column", gap: 2, fontSize: 12.5 },
   quotaMeta: { fontSize: 11.5, color: "var(--text-secondary)", marginTop: 6, fontStyle: "italic" },
   quotaError: { fontSize: 11.5, color: "var(--negative)", marginTop: 6, wordBreak: "break-word" },
+  envOk: { fontSize: 12.5, color: "var(--accent)", fontWeight: 700 },
+  envMissing: { fontSize: 12.5, color: "var(--negative)", fontWeight: 700 },
   btn: {
     background: "var(--accent)", border: "none", color: "var(--on-accent)", fontWeight: 800,
     borderRadius: 999, padding: "11px 22px", fontSize: 13.5, cursor: "pointer",

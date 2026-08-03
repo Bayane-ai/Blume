@@ -3,8 +3,10 @@ import { getStandingsTable } from "../../lib/standingsCache";
 import { computePronostic } from "../../lib/pronostic";
 import { getFixturesByDate, getActiveLeagues, mapFixtureToUpcomingMatch, normalizeTeamName } from "../../lib/apiFootball";
 import { maybeSweepFinishedPredictions } from "../../lib/pronosticHistory";
+import { recordLastError } from "../../lib/apiQuota";
 
 const BASE = "https://api.football-data.org/v4";
+const SOURCE_KEY = "football-data";
 const NUM_DAYS = 8; // aujourd'hui + 7 jours, même fenêtre que dateFrom/dateTo ci-dessous
 
 function isoDate(d) {
@@ -47,6 +49,14 @@ export default async function handler(req, res) {
       { headers: { "X-Auth-Token": token } }
     );
     if (!r.ok) {
+      // Jamais avalée silencieusement : cette source alimente TOUS les matchs des 12
+      // grandes ligues (voir lib/competitions.js) — sa panne vide la quasi-totalité de
+      // la page. Le corps de la réponse précise la vraie cause (jeton invalide, quota
+      // dépassé, service indisponible...), consultable sur /admin sans les logs Vercel.
+      const body = typeof r.text === "function" ? await r.text().catch(() => "") : "";
+      const message = `football-data.org a répondu ${r.status} sur /matches : ${body.slice(0, 300)}`;
+      console.error(`[football-data] ${message}`);
+      recordLastError(SOURCE_KEY, message);
       return res.status(r.status).json({ error: `Erreur API football-data (code ${r.status})` });
     }
     const data = await r.json();
@@ -181,6 +191,8 @@ export default async function handler(req, res) {
     res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=120");
     return res.status(200).json({ competitions: results });
   } catch (e) {
+    console.error("[/api/matches] Erreur inattendue :", e.message);
+    recordLastError(SOURCE_KEY, `Erreur inattendue /api/matches : ${e.message}`);
     return res.status(500).json({ error: e.message });
   }
 }
