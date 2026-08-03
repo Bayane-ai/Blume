@@ -9,6 +9,8 @@
 // `pronostic: { available: false }`, jamais une estimation inventée.
 import { getBasketballApiKey, getLiveGames } from "../../../lib/sports/basketball/provider";
 import { mapGameToLiveMatch } from "../../../lib/sports/basketball/mapper";
+import { isQuotaExhausted } from "../../../lib/apiQuota";
+import { readPersistentCache } from "../../../lib/apiSportsCache";
 
 export default async function handler(req, res) {
   const key = getBasketballApiKey();
@@ -25,13 +27,27 @@ export default async function handler(req, res) {
       .filter((m) => m.homeTeam.name && m.awayTeam.name)
       .map((m) => ({ ...m, pronostic: { available: false } }));
 
+    // Quota du jour confirmé épuisé (voir lib/apiQuota.js) : getLiveGames() a quand
+    // même pu servir une réponse (repli sur le cache persisté, voir provider.js) —
+    // jamais une erreur affichée dans ce cas, un indicateur discret de fraîcheur à la
+    // place (voir PROMPT : "message discret « Données mises à jour il y a X minutes
+    // »"), pour que l'interface le distingue d'un vrai direct à jour.
+    let stale = false;
+    let lastUpdated = null;
+    if (await isQuotaExhausted("basketball")) {
+      const cached = await readPersistentCache("basketball:live_all");
+      if (cached) {
+        stale = true;
+        lastUpdated = new Date(cached.fetchedAt).toISOString();
+      }
+    }
+
     // Même mécanisme que pages/api/live-matches.js : le CDN Vercel mutualise les
     // réponses entre toutes les instances/visiteurs pendant quelques secondes, pour
     // que l'actualisation fréquente côté client (15-30s) ne multiplie pas les appels
-    // réels vers API-Basketball (déjà protégés par le cache serveur de 45s, voir
-    // provider.js).
+    // réels vers API-Basketball (déjà protégés par le cache serveur, voir provider.js).
     res.setHeader("Cache-Control", "s-maxage=15, stale-while-revalidate=30");
-    return res.status(200).json({ matches });
+    return res.status(200).json({ matches, ...(stale ? { stale, lastUpdated } : {}) });
   } catch (e) {
     console.error("Erreur /api/basketball/live-matches:", e.message);
     return res.status(502).json({ error: "Le direct basket n'est pas disponible pour le moment. Réessaie dans quelques minutes." });

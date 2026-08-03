@@ -161,7 +161,7 @@ describe("Live (Basket) — tous les matchs en direct, toutes ligues confondues"
     await waitFor(() => expect(screen.getByTestId("sport-tab-football")).toBeInTheDocument());
     selectBasketball();
 
-    await waitFor(() => expect(screen.getByText("Aucun match en direct actuellement.")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Aucun match en direct pour ce sport actuellement.")).toBeInTheDocument());
   });
 });
 

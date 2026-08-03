@@ -6,6 +6,7 @@ import MatchCard from "../components/MatchCard";
 import SiteHeader from "../components/SiteHeader";
 import FilterCarousel from "../components/FilterCarousel";
 import SportComingSoon from "../components/SportComingSoon";
+import { formatMinutesAgo } from "../lib/formatRelativeTime";
 
 const UPCOMING_STATUSES = ["SCHEDULED", "TIMED"];
 // Les matchs à venir changent moins vite que le direct, mais un rafraîchissement
@@ -270,6 +271,9 @@ export default function UpcomingMatches() {
             {!bkWeekLoading && bkWeekData && !bkWeekData.error && bkByDay.length === 0 && (
               <p style={st.hint}>Aucun match à venir pour le moment.</p>
             )}
+            {!bkWeekLoading && bkWeekData?.stale && (
+              <p style={st.staleNote}>Données mises à jour {formatMinutesAgo(bkWeekData.lastUpdated)}</p>
+            )}
 
             <div data-testid="match-list" style={st.dayList}>
               {bkByDay.map((day) => (
@@ -388,6 +392,10 @@ const st = {
   heroTitle: { fontSize: 21, fontWeight: 800, margin: "0 0 8px", lineHeight: 1.25 },
   heroSubtitle: { fontSize: 12, color: "var(--text-secondary)", margin: 0, lineHeight: 1.5 },
   hint: { fontSize: 12.5, color: "var(--text-secondary)" },
+  // Message discret (jamais une erreur) affiché quand le quota API du jour est épuisé
+  // et que les matchs viennent du dernier cache connu (voir PROMPT, pages/api/
+  // basketball/*.js) — même ton que .hint, en italique pour rester secondaire.
+  staleNote: { fontSize: 11.5, color: "var(--text-secondary)", fontStyle: "italic", margin: "4px 0 0" },
   searchRow: { display: "flex", gap: 8 },
   searchInput: {
     flex: 1, background: "var(--card-bg)", border: "1px solid var(--border)", color: "var(--text-primary)",

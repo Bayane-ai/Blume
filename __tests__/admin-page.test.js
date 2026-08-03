@@ -60,6 +60,16 @@ test("l'administrateur : accède réellement à la page (props renvoyées, pas d
   expect(result.props.adminEmail).toBe("admin@example.com");
 });
 
+test("l'administrateur reçoit la consommation API du jour pour chaque sport suivi (football, basketball)", async () => {
+  mockSession = { id: "user-admin", email: "admin@example.com" };
+  const ctx = mockContext();
+  const result = await getServerSideProps(ctx);
+  // Aucun Supabase mocké dans ce test : chaque snapshot retombe honnêtement sur des
+  // valeurs "inconnues" (jamais une exception qui ferait planter la page admin) —
+  // seule la PRÉSENCE et la liste des sports sont vérifiées ici.
+  expect(result.props.quotaSnapshots.map((s) => s.sport)).toEqual(["football", "basketball"]);
+});
+
 test("ADMIN_EMAIL non définie : 403 même pour une session qui y ressemblerait", async () => {
   delete process.env.ADMIN_EMAIL;
   mockSession = { id: "user-admin", email: "admin@example.com" };

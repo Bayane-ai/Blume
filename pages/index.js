@@ -9,6 +9,7 @@ import MatchInfoBlock from "../components/MatchInfoBlock";
 import SiteHeader from "../components/SiteHeader";
 import FilterCarousel from "../components/FilterCarousel";
 import SportComingSoon from "../components/SportComingSoon";
+import { formatMinutesAgo } from "../lib/formatRelativeTime";
 
 // Grâce au cache partagé côté serveur (lib/liveListCache.js, actualisé toutes les
 // 2,5s), on peut interroger /api/live-matches très souvent depuis le client sans
@@ -310,7 +311,10 @@ export default function Home() {
               <p style={st.hint}>Les matchs ne sont pas disponibles pour le moment. Réessaie dans quelques minutes.</p>
             )}
             {!bkLiveLoading && bkLiveData && !bkLiveData.error && bkFeed.length === 0 && (
-              <p style={st.hint}>Aucun match en direct actuellement.</p>
+              <p style={st.hint}>Aucun match en direct pour ce sport actuellement.</p>
+            )}
+            {!bkLiveLoading && bkLiveData?.stale && (
+              <p style={st.staleNote}>Données mises à jour {formatMinutesAgo(bkLiveData.lastUpdated)}</p>
             )}
 
             <div data-testid="match-list">
@@ -464,6 +468,10 @@ const st = {
   },
   chipLive: { color: "var(--negative)", borderColor: "var(--negative)" },
   hint: { fontSize: 12.5, color: "var(--text-secondary)" },
+  // Message discret (jamais une erreur) affiché quand le quota API du jour est épuisé
+  // et que les matchs viennent du dernier cache connu (voir PROMPT, pages/api/
+  // basketball/*.js) — même ton que .hint, en italique pour rester secondaire.
+  staleNote: { fontSize: 11.5, color: "var(--text-secondary)", fontStyle: "italic", margin: "4px 0 0" },
   chipsRow: { display: "flex", flexWrap: "wrap", gap: 6 },
   searchRow: { display: "flex", gap: 8 },
   searchInput: {

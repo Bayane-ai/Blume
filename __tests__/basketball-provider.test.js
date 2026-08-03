@@ -61,7 +61,7 @@ describe("getLiveGames — TOUS les matchs en direct dans le monde, sans filtre 
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  test("le cache expire bien après sa fenêtre (nouvel appel réel après 45s+)", async () => {
+  test("le cache expire bien après sa fenêtre (nouvel appel réel après 10min+)", async () => {
     const { getLiveGames } = await import("../lib/sports/basketball/provider.js");
     const fetchMock = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) }));
     global.fetch = fetchMock;
@@ -69,7 +69,7 @@ describe("getLiveGames — TOUS les matchs en direct dans le monde, sans filtre 
     await getLiveGames(KEY);
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    jest.spyOn(Date, "now").mockReturnValue(Date.now() + 50000);
+    jest.spyOn(Date, "now").mockReturnValue(Date.now() + 11 * 60 * 1000);
     await getLiveGames(KEY);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
@@ -252,5 +252,77 @@ describe("Repli honnête sur la dernière donnée connue, jamais une donnée inv
     const { getLiveGames } = await import("../lib/sports/basketball/provider.js");
     global.fetch = jest.fn(() => Promise.reject(new Error("network down")));
     await expect(getLiveGames(KEY)).rejects.toThrow("network down");
+  });
+});
+
+describe("Cache intelligent du direct (PROMPT : rafraîchi toutes les 10 min, et SEULEMENT s'il existe un match plausible en cours/imminent)", () => {
+  test("aucune donnée 'à venir' en cache connue (jamais vu) : tente quand même l'appel réel (fail open)", async () => {
+    jest.doMock("../lib/apiSportsCache", () => ({
+      readPersistentCache: jest.fn(() => Promise.resolve(null)),
+      writePersistentCache: jest.fn(),
+    }));
+    const { getLiveGames } = await import("../lib/sports/basketball/provider.js");
+    const fetchMock = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [{ id: 1 }] }) }));
+    global.fetch = fetchMock;
+
+    const games = await getLiveGames(KEY);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(games).toEqual([{ id: 1 }]);
+  });
+
+  test("des matchs à venir sont en cache mais AUCUN n'est en cours ni dans l'heure : zéro appel réel, sert le cache", async () => {
+    const now = Date.now();
+    const farAwayGame = { date: new Date(now + 6 * 3600000).toISOString() }; // dans 6h : hors fenêtre
+    jest.doMock("../lib/apiSportsCache", () => ({
+      readPersistentCache: jest.fn((key) => {
+        if (key === "basketball:live_all") return Promise.resolve({ payload: [], fetchedAt: now - 20 * 60 * 1000 });
+        if (key.startsWith("basketball:upcoming:")) return Promise.resolve({ payload: [farAwayGame], fetchedAt: now });
+        return Promise.resolve(null);
+      }),
+      writePersistentCache: jest.fn(),
+    }));
+    const { getLiveGames } = await import("../lib/sports/basketball/provider.js");
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock;
+
+    const games = await getLiveGames(KEY);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(games).toEqual([]); // sert le cache live connu (ici vide), jamais une erreur
+  });
+
+  test("un match à venir démarre dans l'heure : l'appel réel est bien tenté", async () => {
+    const now = Date.now();
+    const soonGame = { date: new Date(now + 30 * 60 * 1000).toISOString() }; // dans 30 min
+    jest.doMock("../lib/apiSportsCache", () => ({
+      readPersistentCache: jest.fn((key) => {
+        if (key.startsWith("basketball:upcoming:")) return Promise.resolve({ payload: [soonGame], fetchedAt: now });
+        return Promise.resolve(null);
+      }),
+      writePersistentCache: jest.fn(),
+    }));
+    const { getLiveGames } = await import("../lib/sports/basketball/provider.js");
+    const fetchMock = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [{ id: 2 }] }) }));
+    global.fetch = fetchMock;
+
+    const games = await getLiveGames(KEY);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(games).toEqual([{ id: 2 }]);
+  });
+
+  test("une instance froide (cache mémoire vide) réutilise le cache persisté encore frais, sans appel réel", async () => {
+    const now = Date.now();
+    jest.doMock("../lib/apiSportsCache", () => ({
+      readPersistentCache: jest.fn((key) =>
+        key === "basketball:live_all" ? Promise.resolve({ payload: [{ id: 9 }], fetchedAt: now - 60 * 1000 }) : Promise.resolve(null)
+      ),
+      writePersistentCache: jest.fn(),
+    }));
+    const { getLiveGames } = await import("../lib/sports/basketball/provider.js");
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock;
+
+    const games = await getLiveGames(KEY);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(games).toEqual([{ id: 9 }]);
   });
 });

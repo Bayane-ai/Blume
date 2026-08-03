@@ -5,6 +5,8 @@
 // changent pas d'heure d'une minute à l'autre).
 import { getBasketballApiKey, getGamesByDate } from "../../../lib/sports/basketball/provider";
 import { mapGameToUpcoming } from "../../../lib/sports/basketball/mapper";
+import { isQuotaExhausted } from "../../../lib/apiQuota";
+import { readPersistentCache } from "../../../lib/apiSportsCache";
 
 const NUM_DAYS = 8; // aujourd'hui + 7 jours, même fenêtre que pages/api/matches.js
 
@@ -43,8 +45,22 @@ export default async function handler(req, res) {
       .sort((a, b) => a[1].name.localeCompare(b[1].name))
       .map(([code, entry]) => ({ code, name: entry.name, area: entry.area, matches: entry.matches }));
 
+    // Même principe que pages/api/basketball/live-matches.js : quota du jour confirmé
+    // épuisé -> indicateur discret de fraîcheur plutôt qu'une erreur, la réponse
+    // pouvant déjà venir intégralement du cache persisté (voir provider.js).
+    let stale = false;
+    let lastUpdated = null;
+    if (await isQuotaExhausted("basketball")) {
+      const todayStr = dateStrings[0];
+      const cached = await readPersistentCache(`basketball:upcoming:${todayStr}`);
+      if (cached) {
+        stale = true;
+        lastUpdated = new Date(cached.fetchedAt).toISOString();
+      }
+    }
+
     res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=120");
-    return res.status(200).json({ competitions: results });
+    return res.status(200).json({ competitions: results, ...(stale ? { stale, lastUpdated } : {}) });
   } catch (e) {
     console.error("Erreur /api/basketball/matches:", e.message);
     return res.status(502).json({ error: "Les matchs à venir ne sont pas disponibles pour le moment. Réessaie dans quelques minutes." });
