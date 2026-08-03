@@ -38,22 +38,18 @@ create table if not exists api_quota_usage (
 );
 alter table api_quota_usage enable row level security;
 
--- Vérification : une ligne par table, ses colonnes réelles (nom + type), si la RLS
--- est bien activée, et la liste de ses policies (doit être vide/null pour les deux —
--- confirme qu'aucun accès n'est ouvert à la clé anonyme).
-select
-  t.tablename,
-  (
-    select jsonb_agg(jsonb_build_object('column', c.column_name, 'type', c.data_type) order by c.ordinal_position)
-    from information_schema.columns c
-    where c.table_schema = 'public' and c.table_name = t.tablename
-  ) as columns,
-  t.rowsecurity as rls_enabled,
-  (
-    select jsonb_agg(p.policyname)
-    from pg_policies p
-    where p.schemaname = 'public' and p.tablename = t.tablename
-  ) as policies
-from pg_tables t
-where t.schemaname = 'public' and t.tablename in ('api_football_cache', 'api_quota_usage')
-order by t.tablename;
+-- Vérification : parenthèses volontairement réduites au minimum (une seule requête,
+-- structure plate, sans sous-requête imbriquée) — une précédente version plus riche
+-- (jsonb_agg/jsonb_build_object) a déclenché une erreur de syntaxe après un
+-- copier-coller mobile, l'éditeur ayant fermé des parenthèses en double pendant le
+-- collage. Une ligne par colonne réelle des deux tables, plus une ligne par policy
+-- (aucune attendue pour les deux — confirme qu'aucun accès n'est ouvert à la clé
+-- anonyme), le tout dans un seul résultat via UNION ALL.
+select 'column' as kind, table_name as name, column_name as detail1, data_type as detail2
+from information_schema.columns
+where table_schema = 'public' and table_name in ('api_football_cache', 'api_quota_usage')
+union all
+select 'policy' as kind, tablename as name, policyname as detail1, null as detail2
+from pg_policies
+where schemaname = 'public' and tablename in ('api_football_cache', 'api_quota_usage')
+order by kind, name;
