@@ -10,11 +10,11 @@ test("exactement 3 sports, dans l'ordre Football, Basket, Tennis", () => {
   expect(SPORTS.map((s) => s.id)).toEqual(["football", "basketball", "tennis"]);
 });
 
-test("football est le sport par défaut et le seul déjà implémenté", () => {
+test("football est le sport par défaut ; les trois sports sont désormais implémentés (blocs 1 à 9)", () => {
   expect(DEFAULT_SPORT).toBe("football");
   expect(SPORTS.find((s) => s.id === "football").implemented).toBe(true);
-  expect(SPORTS.find((s) => s.id === "basketball").implemented).toBe(false);
-  expect(SPORTS.find((s) => s.id === "tennis").implemented).toBe(false);
+  expect(SPORTS.find((s) => s.id === "basketball").implemented).toBe(true);
+  expect(SPORTS.find((s) => s.id === "tennis").implemented).toBe(true);
 });
 
 test("isValidSport reconnaît les 3 sports réels, rejette un id inconnu", () => {
@@ -38,13 +38,15 @@ describe("lib/sports — chaque sport a la même interface", () => {
     expect(SPORT_MODULES.football.routes.live).toBe("/api/live-matches");
   });
 
-  // Tennis (bloc 5) : provider/mapper branchés sur de vraies données (API-Tennis, voir
-  // __tests__/tennis-provider.test.js et __tests__/tennis-mapper.test.js pour la
-  // couverture complète) — les pronostics restent honnêtement indisponibles (bloc 7
-  // pas encore fait).
-  test("tennis expose un provider réel (API-Tennis) et un mapper réel, pronostics pas encore branchés", async () => {
+  // Tennis (blocs 5, 7, 8) : provider/mapper/pronostics tous branchés sur de vraies
+  // données (API-Tennis, voir __tests__/tennis-provider.test.js,
+  // __tests__/tennis-mapper.test.js, __tests__/tennis-pronostic-model.test.js pour la
+  // couverture complète). L'appel SANS argument ci-dessous teste seulement le repli
+  // honnête de computePronostic() quand aucune donnée n'est fournie — pas une
+  // limitation du sport lui-même (voir pages/api/tennis/analyze.js pour l'appel réel).
+  test("tennis expose un provider réel (API-Tennis), un mapper réel et des pronostics réels", async () => {
     const mod = SPORT_MODULES.tennis;
-    expect(mod.implemented).toBe(false);
+    expect(mod.implemented).toBe(true);
     expect(typeof mod.provider.getLiveMatches).toBe("function");
     expect(typeof mod.provider.getMatchesByDate).toBe("function");
     expect(typeof mod.provider.getRankings).toBe("function");
@@ -64,12 +66,15 @@ describe("lib/sports — chaque sport a la même interface", () => {
     expect(typeof pronostic.reason).toBe("string");
   });
 
-  // Basket (bloc 1) : provider/mapper branchés sur de vraies données (voir
-  // __tests__/basketball-provider.test.js et __tests__/basketball-mapper.test.js
-  // pour la couverture complète) — les pronostics restent honnêtement indisponibles
-  // (bloc 3 pas encore fait).
-  test("basketball expose un provider réel (API-SPORTS) et un mapper réel, pronostics pas encore branchés", () => {
+  // Basket (blocs 1, 3) : provider/mapper/pronostics tous branchés sur de vraies
+  // données (voir __tests__/basketball-provider.test.js,
+  // __tests__/basketball-mapper.test.js, __tests__/basketball-pronostic-model.test.js
+  // pour la couverture complète). L'appel SANS argument ci-dessous teste seulement le
+  // repli honnête de computePronostic() quand aucune donnée n'est fournie — pas une
+  // limitation du sport lui-même (voir pages/api/basketball/analyze.js pour l'appel réel).
+  test("basketball expose un provider réel (API-SPORTS), un mapper réel et des pronostics réels", () => {
     const mod = SPORT_MODULES.basketball;
+    expect(mod.implemented).toBe(true);
     expect(typeof mod.provider.getLiveGames).toBe("function");
     expect(typeof mod.provider.getGamesByDate).toBe("function");
     expect(typeof mod.provider.getStandings).toBe("function");
