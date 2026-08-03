@@ -16,6 +16,18 @@ import { settleFinishedPredictionsNow as settleTennisPredictionsNow, getTennisAp
 // que cette variable d'environnement est configurée) — sans elle, cette route reste
 // fermée : jamais un endpoint public capable de déclencher des appels API à volonté
 // (risque de vider le quota football-data.org/API-Football/API-Basketball sur demande).
+//
+// vercel.json programme ce cron UNE SEULE FOIS PAR JOUR (jamais plus fréquent) —
+// signalement réel : un plan Vercel Hobby (gratuit) rejette silencieusement TOUT
+// nouveau déploiement dès que vercel.json contient un cron qui s'exécute plus d'une
+// fois par jour (ex: "*/10 * * * *"), sans jamais casser le déploiement déjà en place
+// — l'app continue de tourner sur son ancien code, ce qui a fait croire pendant des
+// jours à un problème d'intégration Git alors que la cause réelle était ce fichier.
+// Ne JAMAIS resserrer cette fréquence sans être passé sur le plan Pro. Le règlement
+// reste malgré tout quasi temps réel en pratique grâce au balayage opportuniste
+// (maybeSweepFinishedPredictions, ci-dessus) déclenché par le trafic normal du site —
+// ce cron n'est qu'un filet de sécurité pour les pronostics qu'aucune visite n'aurait
+// fait retomber en "réglé" depuis la fin de leur match.
 export default async function handler(req, res) {
   const configuredSecret = process.env.CRON_SECRET;
   if (!configuredSecret) return res.status(500).json({ error: "CRON_SECRET non configuré" });
