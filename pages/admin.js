@@ -81,13 +81,13 @@ export default function Admin({ adminEmail, quotaSnapshots, lastErrors, envStatu
     }
   };
 
-  // Diagnostic EN DIRECT (voir pages/api/health/football.js) : jamais déclenché
+  // Diagnostic EN DIRECT (voir pages/api/health/sports.js) : jamais déclenché
   // automatiquement (chaque appel consomme un vrai appel réseau vers chacune des 4
   // sources) — uniquement sur clic explicite ici, comme le recalcul manuel ci-dessous.
   const runHealthCheck = async () => {
     setHealthState({ loading: true, result: null, error: null });
     try {
-      const r = await fetch("/api/health/football");
+      const r = await fetch("/api/health/sports");
       const data = await r.json();
       if (!r.ok) throw new Error(data?.error || "Échec du diagnostic.");
       setHealthState({ loading: false, result: data, error: null });
@@ -114,7 +114,7 @@ export default function Admin({ adminEmail, quotaSnapshots, lastErrors, envStatu
             Interroge réellement, à l'instant du clic, les 4 sources utilisées par le site
             (football-data.org, API-Football, API-Basketball, API-Tennis) : clé présente,
             code HTTP exact, corps de l'erreur, quota restant. Jamais lancé automatiquement
-            (voir /api/health/football) — un clic = un vrai appel à chacune.
+            (voir /api/health/sports) — un clic = un vrai appel à chacune.
           </p>
           <button type="button" style={st.btn} onClick={runHealthCheck} disabled={healthState.loading}>
             {healthState.loading ? "Diagnostic en cours…" : "Lancer le diagnostic"}
@@ -140,6 +140,17 @@ export default function Admin({ adminEmail, quotaSnapshots, lastErrors, envStatu
                       {s.quota.subscriptionActive != null && `Abonnement actif : ${s.quota.subscriptionActive ? "oui" : "non"}. `}
                       {s.quota.current != null && s.quota.limitDay != null && `Quota : ${s.quota.current} / ${s.quota.limitDay} aujourd'hui.`}
                       {s.quota.remainingThisMinute != null && `Restant cette minute : ${s.quota.remainingThisMinute}.`}
+                    </div>
+                  )}
+                  {(s.liveCount != null || s.upcomingCount != null || s.matchesError) && (
+                    <div style={st.quotaMeta} data-testid={`admin-health-${s.name}-matches`}>
+                      {s.matchesError
+                        ? `Échec de récupération des matchs : ${s.matchesError}`
+                        : `Matchs reçus aujourd'hui — Live : ${s.liveCount}, à venir : ${s.upcomingCount}. ` +
+                          (s.cache
+                            ? `Cache — live : ${s.cache.live ? formatMinutesAgo(s.cache.live.lastUpdated) : "aucun"}, ` +
+                              `à venir : ${s.cache.upcoming ? formatMinutesAgo(s.cache.upcoming.lastUpdated) : "aucun"}.`
+                            : "Pas de cache persistant pour cette source.")}
                     </div>
                   )}
                 </div>

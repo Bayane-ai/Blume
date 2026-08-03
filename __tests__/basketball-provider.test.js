@@ -91,7 +91,7 @@ describe("getGamesByDate — matchs (tous statuts) d'une date précise, toutes c
 
     const games = await getGamesByDate("2026-08-01", KEY);
     expect(games).toEqual([{ id: 2 }]);
-    expect(fetchMock.mock.calls[0][0]).toBe("https://v1.basketball.api-sports.io/games?date=2026-08-01");
+    expect(fetchMock.mock.calls[0][0]).toBe("https://v1.basketball.api-sports.io/games?date=2026-08-01&timezone=UTC");
   });
 
   test("deux dates différentes sont mises en cache séparément (pas de collision)", async () => {

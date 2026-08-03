@@ -56,7 +56,7 @@ test("le module admin n'est utilisé que par les routes d'administration et /api
     expect(
       f === "pages/api/admin/recompute.js" ||
       f === "pages/api/admin/team-profile.js" ||
-      f === "pages/api/health/football.js" ||
+      f === "pages/api/health/sports.js" ||
       f === "pages/admin.js" ||
       f === "pages/api/whoami.js" ||
       f === "lib/auth/admin.js"

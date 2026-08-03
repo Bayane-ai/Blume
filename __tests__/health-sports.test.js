@@ -1,5 +1,5 @@
 /**
- * pages/api/health/football.js — diagnostic en direct des 4 sources de données
+ * pages/api/health/sports.js — diagnostic en direct des 4 sources de données
  * (football-data.org, API-Football, API-Basketball, API-Tennis) : clé présente,
  * code HTTP réel, corps de l'erreur, quota. Réservé à l'administrateur (même garde
  * que /admin) puisque chaque appel déclenche de vrais appels réseau. Ne doit JAMAIS
@@ -40,7 +40,7 @@ afterAll(() => {
 });
 
 test("visiteur non-administrateur : 403, jamais le contenu du diagnostic", async () => {
-  const { default: handler } = await import("../pages/api/health/football.js");
+  const { default: handler } = await import("../pages/api/health/sports.js");
   const { req, res } = mockReqRes();
   await handler(req, res);
   expect(res.statusCode).toBe(403);
@@ -51,7 +51,7 @@ test("administrateur, aucune clé configurée : les 4 sources signalent keyPrese
   mockSession = { id: "u1", email: "admin@example.com" };
   global.fetch = jest.fn(() => Promise.reject(new Error("ne devrait jamais être appelé sans clé")));
 
-  const { default: handler } = await import("../pages/api/health/football.js");
+  const { default: handler } = await import("../pages/api/health/sports.js");
   const { req, res } = mockReqRes();
   await handler(req, res);
 
@@ -87,7 +87,7 @@ test("administrateur, toutes les clés présentes : renvoie le code HTTP réel, 
     return Promise.reject(new Error("network unreachable"));
   });
 
-  const { default: handler } = await import("../pages/api/health/football.js");
+  const { default: handler } = await import("../pages/api/health/sports.js");
   const { req, res } = mockReqRes();
   await handler(req, res);
 
@@ -111,10 +111,66 @@ test("administrateur, toutes les clés présentes : renvoie le code HTTP réel, 
   expect(bySource["API-Tennis"].errorBody).toContain("network unreachable");
 });
 
+test("basket : clé présente, /status OK, matchs réellement récupérés (live + à venir) et cache signalé — diagnostique un problème EN AVAL quand tout est vert mais rien ne s'affiche", async () => {
+  mockSession = { id: "u1", email: "admin@example.com" };
+  process.env.API_BASKETBALL_KEY = "bk-key";
+
+  global.fetch = jest.fn((url) => {
+    if (url.includes("v1.basketball.api-sports.io/status")) {
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: () => Promise.resolve({ response: { subscription: { active: true, plan: "Free" }, requests: { current: 3, limit_day: 100 } } }),
+      });
+    }
+    if (url.includes("v1.basketball.api-sports.io/games?live=all")) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [{ id: 1 }, { id: 2 }] }) });
+    }
+    if (url.includes("v1.basketball.api-sports.io/games?date=")) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [{ id: 3 }] }) });
+    }
+    return Promise.reject(new Error(`URL inattendue : ${url}`));
+  });
+
+  const { default: handler } = await import("../pages/api/health/sports.js");
+  const { req, res } = mockReqRes();
+  await handler(req, res);
+
+  const basketball = res.body.sources.find((s) => s.name === "API-Basketball");
+  expect(basketball.ok).toBe(true);
+  expect(basketball.liveCount).toBe(2);
+  expect(basketball.upcomingCount).toBe(1);
+  expect(basketball.matchesError).toBeNull();
+  // Requête basket réelle vérifiée : timezone=UTC explicite (voir lib/sports/
+  // basketball/provider.js — même correctif que football, sans lequel des matchs
+  // pourraient disparaître selon le fuseau par défaut de l'API).
+  expect(global.fetch.mock.calls.some(([u]) => u.includes("timezone=UTC"))).toBe(true);
+});
+
+test("basket : /status OK mais la récupération des matchs échoue (ex: parsing, endpoint différent) — jamais un plantage, l'erreur exacte remonte dans matchesError", async () => {
+  mockSession = { id: "u1", email: "admin@example.com" };
+  process.env.API_BASKETBALL_KEY = "bk-key";
+
+  global.fetch = jest.fn((url) => {
+    if (url.includes("v1.basketball.api-sports.io/status")) {
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ response: {} }) });
+    }
+    return Promise.resolve({ ok: false, status: 500, text: () => Promise.resolve("internal error") });
+  });
+
+  const { default: handler } = await import("../pages/api/health/sports.js");
+  const { req, res } = mockReqRes();
+  await handler(req, res);
+
+  const basketball = res.body.sources.find((s) => s.name === "API-Basketball");
+  expect(basketball.ok).toBe(true); // /status lui-même a bien répondu
+  expect(basketball.liveCount).toBeNull();
+  expect(basketball.matchesError).toEqual(expect.stringContaining("500"));
+});
+
 test("ADMIN_EMAIL non définie : 403 même pour une session qui y ressemblerait", async () => {
   delete process.env.ADMIN_EMAIL;
   mockSession = { id: "u1", email: "admin@example.com" };
-  const { default: handler } = await import("../pages/api/health/football.js");
+  const { default: handler } = await import("../pages/api/health/sports.js");
   const { req, res } = mockReqRes();
   await handler(req, res);
   expect(res.statusCode).toBe(403);

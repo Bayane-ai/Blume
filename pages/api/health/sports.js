@@ -13,8 +13,15 @@
 // ne doit jamais empêcher de connaître l'état des trois autres.
 import { getSession } from "../../../lib/session";
 import { isAdmin } from "../../../lib/auth/admin";
+import { getBasketballApiKey, getLiveGames, getGamesByDate } from "../../../lib/sports/basketball/provider";
+import { getTennisApiKey, getLiveMatches, getMatchesByDate } from "../../../lib/sports/tennis/provider";
+import { readPersistentCache } from "../../../lib/apiSportsCache";
 
 const FOOTBALL_DATA_BASE = "https://api.football-data.org/v4";
+
+function todayUtc() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 async function checkFootballData() {
   const name = "football-data.org";
@@ -86,6 +93,48 @@ async function checkApiSportsStatus({ name, base, keyEnvVar, key }) {
   }
 }
 
+// Basket : appelle RÉELLEMENT les mêmes fonctions que pages/api/basketball/live-matches.js
+// et matches.js (jamais un appel séparé qui pourrait diverger du vrai chemin de code) —
+// nombre de matchs live/à venir reçus AUJOURD'HUI, et fraîcheur du cache persistant
+// (voir lib/apiSportsCache.js) pour chacun des deux. Ne jette jamais : une erreur ici
+// est rapportée dans `matchesError`, jamais un plantage de toute la route.
+async function checkBasketballMatches(key) {
+  const today = todayUtc();
+  try {
+    const [live, upcoming, liveCache, upcomingCache] = await Promise.all([
+      getLiveGames(key),
+      getGamesByDate(today, key),
+      readPersistentCache("basketball:live_all"),
+      readPersistentCache(`basketball:upcoming:${today}`),
+    ]);
+    return {
+      liveCount: live.length,
+      upcomingCount: upcoming.length,
+      cache: {
+        live: liveCache ? { lastUpdated: new Date(liveCache.fetchedAt).toISOString() } : null,
+        upcoming: upcomingCache ? { lastUpdated: new Date(upcomingCache.fetchedAt).toISOString() } : null,
+      },
+      matchesError: null,
+    };
+  } catch (e) {
+    return { liveCount: null, upcomingCount: null, cache: null, matchesError: e.message };
+  }
+}
+
+// Tennis : même principe, mais SANS cache persistant (voir lib/sports/tennis/
+// provider.js — seulement un cache en mémoire, pas encore branché sur
+// lib/apiSportsCache.js comme le basket) : `cache: null` reflète honnêtement cette
+// absence, jamais une valeur inventée.
+async function checkTennisMatches(key) {
+  const today = todayUtc();
+  try {
+    const [live, upcoming] = await Promise.all([getLiveMatches(key), getMatchesByDate(today, key)]);
+    return { liveCount: live.length, upcomingCount: upcoming.length, cache: null, matchesError: null };
+  } catch (e) {
+    return { liveCount: null, upcomingCount: null, cache: null, matchesError: e.message };
+  }
+}
+
 function settledToResult(settled, name) {
   if (settled.status === "fulfilled") return settled.value;
   return {
@@ -111,8 +160,12 @@ export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
 
   const apiFootballKey = process.env.API_FOOTBALL_KEY || null;
-  const apiBasketballKey = process.env.API_BASKETBALL_KEY || apiFootballKey;
-  const apiTennisKey = process.env.API_TENNIS_KEY || apiFootballKey;
+  // getBasketballApiKey()/getTennisApiKey() (voir lib/sports/*/provider.js) sont LA
+  // vraie source de vérité pour la clé effectivement utilisée par le reste du site
+  // (même repli sur API_FOOTBALL_KEY) — jamais une lecture séparée de process.env qui
+  // pourrait diverger de ce que ces routes utilisent réellement.
+  const apiBasketballKey = getBasketballApiKey();
+  const apiTennisKey = getTennisApiKey();
 
   const settled = await Promise.allSettled([
     checkFootballData(),
@@ -131,8 +184,23 @@ export default async function handler(req, res) {
   ]);
 
   const names = ["football-data.org", "API-Football", "API-Basketball", "API-Tennis"];
+  const sources = settled.map((s, i) => settledToResult(s, names[i]));
+
+  // Nombre de matchs RÉELLEMENT récupérés (pas juste "la clé est valide") : répond à
+  // "l'API répond correctement mais rien ne s'affiche" (voir PROMPT, point 3) — un
+  // /status OK avec 0 match récupéré pointe vers un problème EN AVAL (parsing,
+  // mapping, filtre), pas vers la clé ni le quota.
+  if (apiBasketballKey) {
+    const basketballSource = sources.find((s) => s.name === "API-Basketball");
+    if (basketballSource) Object.assign(basketballSource, await checkBasketballMatches(apiBasketballKey));
+  }
+  if (apiTennisKey) {
+    const tennisSource = sources.find((s) => s.name === "API-Tennis");
+    if (tennisSource) Object.assign(tennisSource, await checkTennisMatches(apiTennisKey));
+  }
+
   return res.status(200).json({
     checkedAt: new Date().toISOString(),
-    sources: settled.map((s, i) => settledToResult(s, names[i])),
+    sources,
   });
 }
