@@ -4,9 +4,11 @@ import { computePronostic } from "../../lib/pronostic";
 import { getFixturesByDate, getActiveLeagues, mapFixtureToUpcomingMatch, normalizeTeamName } from "../../lib/apiFootball";
 import { maybeSweepFinishedPredictions } from "../../lib/pronosticHistory";
 import { recordLastError } from "../../lib/apiQuota";
+import { readPersistentCache, writePersistentCache } from "../../lib/apiSportsCache";
 
 const BASE = "https://api.football-data.org/v4";
 const SOURCE_KEY = "football-data";
+const MATCHES_CACHE_KEY = "football-data:matches_main";
 const NUM_DAYS = 8; // aujourd'hui + 7 jours, même fenêtre que dateFrom/dateTo ci-dessous
 
 function isoDate(d) {
@@ -44,26 +46,55 @@ export default async function handler(req, res) {
     // au lieu d'un appel par compétition : le plan gratuit football-data.org limite à
     // 10 requêtes/minute, et 12 appels en parallèle (+ le rafraîchissement automatique)
     // dépassait ce quota, ce qui faisait disparaître silencieusement tous les matchs.
-    const r = await fetch(
-      `${BASE}/matches?dateFrom=${dateFrom}&dateTo=${dateTo}&status=SCHEDULED,TIMED,LIVE,IN_PLAY,PAUSED,FINISHED&limit=100`,
-      { headers: { "X-Auth-Token": token } }
-    );
-    if (!r.ok) {
-      // Jamais avalée silencieusement : cette source alimente TOUS les matchs des 12
-      // grandes ligues (voir lib/competitions.js) — sa panne vide la quasi-totalité de
-      // la page. Le corps de la réponse précise la vraie cause (jeton invalide, quota
-      // dépassé, service indisponible...), consultable sur /admin sans les logs Vercel.
-      const body = typeof r.text === "function" ? await r.text().catch(() => "") : "";
-      const message = `football-data.org a répondu ${r.status} sur /matches : ${body.slice(0, 300)}`;
-      console.error(`[football-data] ${message}`);
-      recordLastError(SOURCE_KEY, message);
-      return res.status(r.status).json({ error: `Erreur API football-data (code ${r.status})` });
+    //
+    // JAMAIS de page vide sans explication : une panne de cette source (quota, jeton,
+    // service indisponible) ne renvoie plus une erreur immédiate — on retombe d'abord
+    // sur la dernière liste connue (cache persistant, voir lib/apiSportsCache.js),
+    // marquée `stale`, avant d'envisager un échec total (voir hardFailureStatus
+    // plus bas, seulement si NI le cache NI API-Football n'ont rien à proposer).
+    let fdMatches = [];
+    let stale = false;
+    let lastUpdated = null;
+    let hardFailureStatus = null;
+    try {
+      const r = await fetch(
+        `${BASE}/matches?dateFrom=${dateFrom}&dateTo=${dateTo}&status=SCHEDULED,TIMED,LIVE,IN_PLAY,PAUSED,FINISHED&limit=100`,
+        { headers: { "X-Auth-Token": token } }
+      );
+      if (!r.ok) {
+        // Jamais avalée silencieusement : cette source alimente TOUS les matchs des 12
+        // grandes ligues (voir lib/competitions.js) — sa panne vide la quasi-totalité
+        // de la page. Le corps de la réponse précise la vraie cause (jeton invalide,
+        // quota dépassé, service indisponible...), consultable sur /admin sans les
+        // logs Vercel.
+        const body = typeof r.text === "function" ? await r.text().catch(() => "") : "";
+        const message = `football-data.org a répondu ${r.status} sur /matches : ${body.slice(0, 300)}`;
+        console.error(`[football-data] ${message}`);
+        recordLastError(SOURCE_KEY, message);
+        hardFailureStatus = r.status;
+      } else {
+        const data = await r.json();
+        // Aucune restriction par ligue, pays, fédération ou catégorie d'âge : toute
+        // compétition renvoyée par l'API (y compris jeunes, réserves, petits
+        // championnats nationaux) est affichée telle quelle.
+        fdMatches = data.matches || [];
+        writePersistentCache(MATCHES_CACHE_KEY, fdMatches);
+      }
+    } catch (e) {
+      console.error(`[football-data] Échec réseau /matches : ${e.message}`);
+      recordLastError(SOURCE_KEY, `Échec réseau /matches : ${e.message}`);
+      hardFailureStatus = 502;
     }
-    const data = await r.json();
-    // Aucune restriction par ligue, pays, fédération ou catégorie d'âge : toute
-    // compétition renvoyée par l'API (y compris jeunes, réserves, petits championnats
-    // nationaux) est affichée telle quelle.
-    const fdMatches = data.matches || [];
+
+    if (hardFailureStatus) {
+      const persisted = await readPersistentCache(MATCHES_CACHE_KEY);
+      if (persisted) {
+        fdMatches = persisted.payload || [];
+        stale = true;
+        lastUpdated = new Date(persisted.fetchedAt).toISOString();
+        hardFailureStatus = null; // du contenu (même daté) vaut toujours mieux qu'une erreur
+      }
+    }
 
     // football-data.org (plan gratuit) ne couvre qu'un nombre restreint de
     // compétitions (voir lib/competitions.js) — API-Football comble ce trou pour les
@@ -115,6 +146,14 @@ export default async function handler(req, res) {
       } catch (e) {
         console.error("Erreur matchs à venir API-Football:", e.message);
       }
+    }
+
+    // Échec total UNIQUEMENT si NI football-data.org (ni frais ni en cache) NI
+    // API-Football n'ont quoi que ce soit à proposer — sinon on affiche ce qu'on a
+    // (source secondaire ou cache), jamais un écran vide silencieux (voir PROMPT,
+    // point 4 : "la page d'accueil ne doit jamais être vide sans explication").
+    if (hardFailureStatus && fdMatches.length === 0 && afMatches.length === 0) {
+      return res.status(hardFailureStatus).json({ error: `Erreur API football-data (code ${hardFailureStatus})` });
     }
 
     // Regroupe par compétition RÉELLEMENT présente dans les matchs reçus — jamais une
@@ -189,7 +228,7 @@ export default async function handler(req, res) {
     });
 
     res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=120");
-    return res.status(200).json({ competitions: results });
+    return res.status(200).json({ competitions: results, ...(stale ? { stale, lastUpdated } : {}) });
   } catch (e) {
     console.error("[/api/matches] Erreur inattendue :", e.message);
     recordLastError(SOURCE_KEY, `Erreur inattendue /api/matches : ${e.message}`);

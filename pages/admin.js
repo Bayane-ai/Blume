@@ -67,6 +67,7 @@ export async function getServerSideProps({ req, res }) {
 
 export default function Admin({ adminEmail, quotaSnapshots, lastErrors, envStatus }) {
   const [recomputeState, setRecomputeState] = useState({ loading: false, result: null, error: null });
+  const [healthState, setHealthState] = useState({ loading: false, result: null, error: null });
 
   const runRecompute = async () => {
     setRecomputeState({ loading: true, result: null, error: null });
@@ -80,6 +81,21 @@ export default function Admin({ adminEmail, quotaSnapshots, lastErrors, envStatu
     }
   };
 
+  // Diagnostic EN DIRECT (voir pages/api/health/football.js) : jamais déclenché
+  // automatiquement (chaque appel consomme un vrai appel réseau vers chacune des 4
+  // sources) — uniquement sur clic explicite ici, comme le recalcul manuel ci-dessous.
+  const runHealthCheck = async () => {
+    setHealthState({ loading: true, result: null, error: null });
+    try {
+      const r = await fetch("/api/health/football");
+      const data = await r.json();
+      if (!r.ok) throw new Error(data?.error || "Échec du diagnostic.");
+      setHealthState({ loading: false, result: data, error: null });
+    } catch (e) {
+      setHealthState({ loading: false, result: null, error: e.message });
+    }
+  };
+
   return (
     <div style={st.page}>
       <SiteHeader session={{ id: null, email: adminEmail }} />
@@ -90,6 +106,46 @@ export default function Admin({ adminEmail, quotaSnapshots, lastErrors, envStatu
           <p style={st.heroSubtitle}>
             Zone réservée au propriétaire du site — connecté en tant que {adminEmail || "administrateur"}.
           </p>
+        </section>
+
+        <section style={st.panel}>
+          <h2 style={st.h2}>Diagnostic en direct des sources de données</h2>
+          <p style={st.desc}>
+            Interroge réellement, à l'instant du clic, les 4 sources utilisées par le site
+            (football-data.org, API-Football, API-Basketball, API-Tennis) : clé présente,
+            code HTTP exact, corps de l'erreur, quota restant. Jamais lancé automatiquement
+            (voir /api/health/football) — un clic = un vrai appel à chacune.
+          </p>
+          <button type="button" style={st.btn} onClick={runHealthCheck} disabled={healthState.loading}>
+            {healthState.loading ? "Diagnostic en cours…" : "Lancer le diagnostic"}
+          </button>
+          {healthState.error && <p style={st.error}>{healthState.error}</p>}
+          {healthState.result && (
+            <div style={st.quotaGrid} data-testid="admin-health-grid">
+              {healthState.result.sources.map((s) => (
+                <div key={s.name} style={st.quotaCard} data-testid={`admin-health-${s.name}`}>
+                  <div style={st.quotaLabel}>{s.name}</div>
+                  <div style={s.keyPresent ? st.envOk : st.envMissing}>
+                    Clé ({s.keyEnvVar || "?"}) : {s.keyPresent ? "présente" : "MANQUANTE"}
+                  </div>
+                  {s.keyPresent && (
+                    <div style={s.ok ? st.envOk : st.envMissing}>
+                      {s.httpStatus != null ? `HTTP ${s.httpStatus}` : "Échec réseau"} —{" "}
+                      {s.ok ? "OK" : s.errorBody || "erreur inconnue"}
+                    </div>
+                  )}
+                  {s.quota && (
+                    <div style={st.quotaMeta}>
+                      {s.quota.plan != null && `Plan : ${s.quota.plan}. `}
+                      {s.quota.subscriptionActive != null && `Abonnement actif : ${s.quota.subscriptionActive ? "oui" : "non"}. `}
+                      {s.quota.current != null && s.quota.limitDay != null && `Quota : ${s.quota.current} / ${s.quota.limitDay} aujourd'hui.`}
+                      {s.quota.remainingThisMinute != null && `Restant cette minute : ${s.quota.remainingThisMinute}.`}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         <section style={st.panel}>

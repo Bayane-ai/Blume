@@ -68,13 +68,17 @@ export default async function handler(req, res) {
     // secondes de cache partagé), pour pouvoir actualiser souvent côté client sans
     // dépasser le quota de l'API, même si plusieurs personnes regardent en même temps.
     const listResult = await getLiveMatchesList(token);
-    if (listResult.errorStatus) {
-      return res.status(listResult.errorStatus).json({ error: `Erreur API football-data (code ${listResult.errorStatus})` });
-    }
     // Aucune restriction par ligue, pays, fédération ou catégorie d'âge : toute
     // compétition renvoyée par l'API (y compris jeunes, réserves, petits championnats
     // nationaux) est affichée telle quelle.
     const fdMatches = listResult.matches || [];
+    const stale = listResult.stale || false;
+    const lastUpdated = listResult.lastUpdated || null;
+    // Jamais un échec immédiat : une panne football-data.org sans même de cache à
+    // resservir (voir lib/liveListCache.js) laisse encore une chance à API-Football
+    // ci-dessous — l'échec total (retourné plus bas) n'intervient que si NI l'une NI
+    // l'autre source n'a rien à montrer.
+    const hardFailureStatus = listResult.errorStatus || null;
 
     // football-data.org (plan gratuit) ne couvre qu'un nombre limité de compétitions —
     // API-Football (voir lib/apiFootball.js, mis en place au bloc 1 pour les événements)
@@ -115,6 +119,13 @@ export default async function handler(req, res) {
       }
     }
 
+    // Échec total UNIQUEMENT si NI football-data.org (frais ou en cache) NI
+    // API-Football n'ont de match en direct à proposer (voir PROMPT, point 4 : jamais
+    // un écran vide silencieux).
+    if (hardFailureStatus && fdMatches.length === 0 && afMatches.length === 0) {
+      return res.status(hardFailureStatus).json({ error: `Erreur API football-data (code ${hardFailureStatus})` });
+    }
+
     const codes = [...new Set(fdMatches.map((m) => m.competition?.code).filter(Boolean))];
     const standingsByCode = {};
     await Promise.all(
@@ -141,7 +152,7 @@ export default async function handler(req, res) {
     // le nombre d'instances — c'est ce qui borne réellement le nombre d'appels à
     // l'API football-data.org, plus fiable que le cache en mémoire seul.
     res.setHeader("Cache-Control", "s-maxage=3, stale-while-revalidate=20");
-    return res.status(200).json({ matches });
+    return res.status(200).json({ matches, ...(stale ? { stale, lastUpdated } : {}) });
   } catch (e) {
     console.error("[/api/live-matches] Erreur inattendue :", e.message);
     recordLastError("football-data", `Erreur inattendue /api/live-matches : ${e.message}`);

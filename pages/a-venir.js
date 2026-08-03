@@ -372,6 +372,9 @@ export default function UpcomingMatches() {
                   : "Aucun match à venir cette semaine."}
               </p>
             )}
+            {!weekLoading && weekData?.stale && (
+              <p style={st.staleNote}>Données mises à jour {formatMinutesAgo(weekData.lastUpdated)}</p>
+            )}
 
             <div data-testid="match-list">
               {weekFeed.map(({ m, comp }) => (

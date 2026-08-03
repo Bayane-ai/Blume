@@ -433,6 +433,9 @@ export default function Home() {
                   : "Aucun match en direct actuellement."}
               </p>
             )}
+            {!liveLoading && liveData?.stale && (
+              <p style={st.staleNote}>Données mises à jour {formatMinutesAgo(liveData.lastUpdated)}</p>
+            )}
 
             <div data-testid="match-list">
               {liveFeed.map(({ m, comp }) => (

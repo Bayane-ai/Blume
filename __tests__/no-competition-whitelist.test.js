@@ -24,7 +24,7 @@ test("pages/api/live-matches.js n'importe aucun filtre de compétition et transm
 
 test("pages/api/matches.js n'importe aucun filtre de compétition et transmet les matchs football-data.org tels quels", () => {
   expect(MATCHES_SRC).not.toMatch(/bettableFilter|isBettableCompetitionName/);
-  expect(MATCHES_SRC).toMatch(/const fdMatches = data\.matches \|\| \[\];/);
+  expect(MATCHES_SRC).toMatch(/fdMatches = data\.matches \|\| \[\];/);
 });
 
 test("aucune liste fermée de compétitions (whitelist/blacklist) n'est utilisée pour filtrer les matchs API-Football", () => {
