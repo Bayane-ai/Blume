@@ -1,14 +1,15 @@
 /**
- * lib/sports/tennis/pronosticHistory.js — bloc 8 : gel du pronostic tennis affiché,
- * vérification automatique ligne par ligne à la fin du match contre le VRAI score/les
- * vraies statistiques (jamais un recalcul), classement Succès/Échec basé UNIQUEMENT
- * sur la probabilité de victoire (règle explicite du bloc 8, différente du football/
- * basket), nettoyage des entrées de plus de 5 jours, revérification des "pending".
+ * lib/sports/tennis/pronosticHistory.js — gel du pronostic tennis (4 lignes, Live
+ * Tennis API), vérification automatique en fin de match contre le VRAI score par set
+ * (winner, totalGames, totalSets), classement Succès/Échec basé UNIQUEMENT sur la
+ * probabilité de victoire, nettoyage des entrées de plus de 5 jours, revérification
+ * des "pending". Relit le match via GET /matches/{id}/score (seul moyen disponible
+ * sur ce plan, voir lib/sports/tennis/provider.js — pas de recherche par id générique
+ * comme l'ancienne intégration API-Sports).
  */
 jest.mock("../lib/supabaseAnon", () => ({ supabaseAnon: { from: jest.fn() } }));
 jest.mock("../lib/sports/tennis/provider", () => ({
-  getGameById: jest.fn(),
-  getGameStatistics: jest.fn(() => Promise.resolve([])),
+  getMatchScore: jest.fn(),
   getTennisApiKey: jest.fn(() => "test-key"),
 }));
 
@@ -19,7 +20,7 @@ import {
   __resetSweepThrottleForTests,
 } from "../lib/sports/tennis/pronosticHistory";
 import { supabaseAnon as supabase } from "../lib/supabaseAnon";
-import { getGameById, getGameStatistics } from "../lib/sports/tennis/provider";
+import { getMatchScore } from "../lib/sports/tennis/provider";
 
 function chainable(result) {
   const obj = {
@@ -39,29 +40,28 @@ function mockSupabaseFrom(...responses) {
 
 beforeEach(() => {
   supabase.from = jest.fn();
-  getGameById.mockReset();
-  getGameStatistics.mockReset().mockResolvedValue([]);
+  getMatchScore.mockReset();
 });
 
 describe("classifyOutcome — tennis, jamais de match nul", () => {
   test("le joueur favori (domicile) gagne réellement -> succès", () => {
     const prediction = { probabilities: { home: 63, away: 37 } };
-    expect(classifyOutcome(prediction, { home: 3, away: 1 })).toBe("success");
+    expect(classifyOutcome(prediction, { home: 2, away: 0 })).toBe("success");
   });
 
   test("le joueur favori ne gagne pas -> échec", () => {
     const prediction = { probabilities: { home: 63, away: 37 } };
-    expect(classifyOutcome(prediction, { home: 1, away: 3 })).toBe("failure");
+    expect(classifyOutcome(prediction, { home: 0, away: 2 })).toBe("failure");
   });
 
   test("score final absent/égal -> null", () => {
     const prediction = { probabilities: { home: 55, away: 45 } };
     expect(classifyOutcome(prediction, null)).toBeNull();
-    expect(classifyOutcome(prediction, { home: 2, away: 2 })).toBeNull();
+    expect(classifyOutcome(prediction, { home: 1, away: 1 })).toBeNull();
   });
 
   test("pronostic sans probabilités -> null", () => {
-    expect(classifyOutcome({}, { home: 3, away: 0 })).toBeNull();
+    expect(classifyOutcome({}, { home: 2, away: 0 })).toBeNull();
   });
 });
 
@@ -73,15 +73,14 @@ describe("canPersistMatch — uniquement les ids tennis (tn-...)", () => {
 });
 
 describe("toPredictionSnapshot — exclut le live éphémère, garde le reste (dont modelState)", () => {
-  test("exclut matchStatus/matchScore/matchMinute/matchPeriod/server/live/available/events", () => {
+  test("exclut matchStatus/matchScore/matchMinute/matchPeriod/server/live/available/sets", () => {
     const result = {
-      home: { name: "A" }, away: { name: "B" }, bestOf: 3, surface: "Dur",
-      probabilities: { home: 60, away: 40 }, setScores: [{ score: "3-1", winner: "p1", probability: 40 }],
-      gameTotals: {}, gameHandicap: {}, setsBlock: {}, aces: {}, doubleFaults: {}, breaks: {}, tiebreak: {},
-      serviceReturnContext: {}, narrative: {}, h2hUsed: false, h2hSummary: null, note: "n",
-      modelState: { p1Hold: 0.6, p2Hold: 0.55, p1PointOnServe: 0.62, p2PointOnServe: 0.58, pSet: 0.6 },
+      home: { name: "A" }, away: { name: "B" }, bestOf: 3,
+      probabilities: { home: 60, away: 40 }, currentSetProbabilities: { home: 55, away: 45 },
+      gameTotals: { line: 22.5, side: "Plus" }, totalSets: { line: 2.5, side: "Moins" }, note: "n",
+      modelState: { p1Hold: 0.6, p2Hold: 0.55, p1PointOnServe: 0.62, p2PointOnServe: 0.58, pSet: 0.6, bestOf: 3 },
       matchStatus: "IN_PLAY", matchScore: { home: 1, away: 0 }, matchMinute: "40-30", matchPeriod: "Set 2",
-      server: "home", live: true, available: true, events: [{ id: "start" }],
+      server: "home", live: true, available: true, sets: [{ home: 6, away: 4 }],
     };
     const snapshot = toPredictionSnapshot(result);
     expect(snapshot.matchStatus).toBeUndefined();
@@ -89,7 +88,7 @@ describe("toPredictionSnapshot — exclut le live éphémère, garde le reste (d
     expect(snapshot.server).toBeUndefined();
     expect(snapshot.live).toBeUndefined();
     expect(snapshot.available).toBeUndefined();
-    expect(snapshot.events).toBeUndefined();
+    expect(snapshot.sets).toBeUndefined();
     expect(snapshot.probabilities).toEqual({ home: 60, away: 40 });
     expect(snapshot.modelState).toEqual(result.modelState);
   });
@@ -113,8 +112,8 @@ describe("getFrozenPrediction", () => {
 describe("saveFrozenPrediction", () => {
   const basePrediction = {
     probabilities: { home: 63, away: 37 },
-    setScores: [{ score: "3-1", winner: "p1", probability: 40 }],
-    gameTotals: { total: { available: true, line: 36.5, side: "Plus" } },
+    gameTotals: { line: 22.5, side: "Plus" },
+    totalSets: { line: 2.5, side: "Moins" },
   };
 
   test("match pas terminé : un seul upsert, sport='tennis', status pending", async () => {
@@ -123,22 +122,22 @@ describe("saveFrozenPrediction", () => {
 
     await saveFrozenPrediction({
       matchId: "tn-1", homeTeamName: "Djokovic", awayTeamName: "Alcaraz",
-      matchDate: "2026-01-01T00:00:00Z", result: basePrediction, matchStatus: "IN_PLAY", finalScore: null,
+      matchDate: "2026-01-01T00:00:00Z", result: basePrediction, matchStatus: "IN_PLAY", finalScore: null, finalSets: null,
     });
 
     expect(upsertCall.mock.calls[0][0]).toMatchObject({ match_id: "tn-1", sport: "tennis", status: "pending", final_score: null });
     expect(upsertCall.mock.calls[0][1]).toEqual({ onConflict: "match_id", ignoreDuplicates: true });
   });
 
-  test("match déjà terminé dès la première analyse : classé directement (favori gagnant -> succès), scores en sets exacts validés", async () => {
+  test("match déjà terminé dès la première analyse : classé directement (favori gagnant -> succès)", async () => {
     const upsertCall = jest.fn(() => chainable({ error: null }));
     supabase.from = jest.fn(() => ({ upsert: upsertCall }));
-    const game = { id: 1, scores: { home: { set_1: 6, set_2: 6, set_3: 6 }, away: { set_1: 4, set_2: 3, set_3: null } } };
+    const finalSets = [{ home: 6, away: 4 }, { home: 6, away: 3 }];
 
     const returned = await saveFrozenPrediction({
       matchId: "tn-1", homeTeamName: "Djokovic", awayTeamName: "Alcaraz",
       matchDate: "2026-01-01T00:00:00Z", result: basePrediction, matchStatus: "FINISHED",
-      finalScore: { home: 2, away: 0 }, game, apiKey: "key",
+      finalScore: { home: 2, away: 0 }, finalSets,
     });
 
     expect(upsertCall.mock.calls[0][0].status).toBe("success");
@@ -160,21 +159,20 @@ describe("saveFrozenPrediction", () => {
 });
 
 describe("verifyFrozenPrediction", () => {
-  const basePrediction = { probabilities: { home: 63, away: 37 }, setScores: [] };
-
   test("aucun \"pending\" trouvé : idempotent, aucune mise à jour", async () => {
     supabase.from = mockSupabaseFrom({ data: null, error: null });
-    await verifyFrozenPrediction("tn-1", { home: 2, away: 0 }, null, "key");
+    await verifyFrozenPrediction("tn-1", { home: 2, away: 0 }, []);
     expect(supabase.from).toHaveBeenCalledTimes(1);
   });
 
   test("match encore pending : classe et renvoie {status, prediction}", async () => {
+    const basePrediction = { probabilities: { home: 63, away: 37 } };
     const updateCall = jest.fn(() => chainable({ error: null }));
     supabase.from = jest.fn()
       .mockReturnValueOnce(chainable({ data: { prediction: basePrediction }, error: null }))
       .mockImplementationOnce(() => ({ update: updateCall }));
 
-    const returned = await verifyFrozenPrediction("tn-1", { home: 2, away: 0 }, {}, "key");
+    const returned = await verifyFrozenPrediction("tn-1", { home: 2, away: 0 }, [{ home: 6, away: 4 }, { home: 6, away: 4 }]);
     expect(updateCall).toHaveBeenCalledTimes(1);
     expect(updateCall.mock.calls[0][0].status).toBe("success");
     expect(returned.status).toBe("success");
@@ -187,16 +185,19 @@ describe("verifyFrozenPrediction", () => {
   });
 });
 
-describe("breaks : jamais vérifiés (aucune source fiable de décompte total)", () => {
-  test("verification.breaks toujours {total:null, home:null, away:null}", async () => {
+describe("vérification ligne par ligne (totalGames, totalSets — jamais un crochet inventé)", () => {
+  test("totalGames et totalSets comparés au vrai résultat", async () => {
     const updateCall = jest.fn(() => chainable({ error: null }));
-    const prediction = { probabilities: { home: 63, away: 37 }, breaks: { total: { available: true, line: 4.5, side: "Plus" } } };
+    const prediction = { probabilities: { home: 63, away: 37 }, gameTotals: { line: 20.5, side: "Plus" }, totalSets: { line: 2.5, side: "Moins" } };
     supabase.from = jest.fn()
       .mockReturnValueOnce(chainable({ data: { prediction }, error: null }))
       .mockImplementationOnce(() => ({ update: updateCall }));
 
-    await verifyFrozenPrediction("tn-1", { home: 2, away: 0 }, {}, "key");
-    expect(updateCall.mock.calls[0][0].prediction.verification.breaks).toEqual({ total: null, home: null, away: null });
+    // Sets réels : 6-4 puis 6-3 -> 19 jeux (< 20.5, "Plus" -> échoué), 2 sets (< 2.5, "Moins" -> réussi).
+    await verifyFrozenPrediction("tn-1", { home: 2, away: 0 }, [{ home: 6, away: 4 }, { home: 6, away: 3 }]);
+    const verification = updateCall.mock.calls[0][0].prediction.verification;
+    expect(verification.totalGames).toBe(false);
+    expect(verification.totalSets).toBe(true);
   });
 });
 
@@ -209,28 +210,25 @@ describe("maybeSweepFinishedPredictions / settleFinishedPredictionsNow", () => {
     expect(supabase.from).toHaveBeenCalledWith("pronostic_history");
   });
 
-  test("un match pending devenu FINISHED est reclassé pendant le balayage (id RÉEL relu directement)", async () => {
+  test("un match pending devenu FINISHED est reclassé pendant le balayage (id RÉEL relu directement via getMatchScore)", async () => {
     const updateCall = jest.fn(() => chainable({ error: null }));
-    const prediction = { probabilities: { home: 63, away: 37 }, setScores: [] };
+    const prediction = { probabilities: { home: 63, away: 37 } };
     supabase.from = jest.fn()
       .mockReturnValueOnce(chainable({ data: [{ match_id: "tn-202", prediction, match_date: "2026-01-01T00:00:00Z" }], error: null }))
       .mockImplementationOnce(() => ({ update: updateCall }));
-    getGameById.mockResolvedValue({
-      id: 202, status: { long: "Finished", short: "FT" }, teams: { home: { id: 10 }, away: { id: 11 } },
-      scores: { home: { set_1: 6, set_2: 6, total: 2 }, away: { set_1: 3, set_2: 4, total: 0 } },
-    });
+    getMatchScore.mockResolvedValue({ status: "finished", sets: [{ p1: 6, p2: 3 }, { p1: 6, p2: 4 }] });
 
     await settleFinishedPredictionsNow("key");
 
-    expect(getGameById).toHaveBeenCalledWith("202", "key");
+    expect(getMatchScore).toHaveBeenCalledWith("202", "key");
     expect(updateCall).toHaveBeenCalledTimes(1);
     expect(updateCall.mock.calls[0][0]).toMatchObject({ status: "success", final_score: { home: 2, away: 0 } });
   });
 
   test("un match pending toujours en cours n'est jamais reclassé", async () => {
-    const prediction = { probabilities: { home: 63, away: 37 }, setScores: [] };
+    const prediction = { probabilities: { home: 63, away: 37 } };
     supabase.from = mockSupabaseFrom({ data: [{ match_id: "tn-202", prediction, match_date: "2026-01-01T00:00:00Z" }], error: null });
-    getGameById.mockResolvedValue({ id: 202, status: { long: "Set 2", short: "" }, scores: { home: { set_1: 6 }, away: { set_1: 4 } } });
+    getMatchScore.mockResolvedValue({ status: "live", sets: [{ p1: 6, p2: 4 }] });
 
     await settleFinishedPredictionsNow("key");
     expect(supabase.from).toHaveBeenCalledTimes(1); // seulement la lecture, jamais de update

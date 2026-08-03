@@ -49,7 +49,12 @@ test("visiteur non-administrateur : 403, jamais le contenu du diagnostic", async
 
 test("administrateur, aucune clé configurée : les 4 sources signalent keyPresent:false, jamais un plantage", async () => {
   mockSession = { id: "u1", email: "admin@example.com" };
-  global.fetch = jest.fn(() => Promise.reject(new Error("ne devrait jamais être appelé sans clé")));
+  // GET /health (Live Tennis API) est explicitement SANS clé (voir PROMPT) : appelé
+  // même sans TENNIS_API_KEY, jamais compté comme un appel de données authentifié.
+  global.fetch = jest.fn((url) => {
+    if (url.endsWith("/health")) return Promise.resolve({ ok: true, status: 200 });
+    return Promise.reject(new Error("ne devrait jamais être appelé sans clé"));
+  });
 
   const { default: handler } = await import("../pages/api/health/sports.js");
   const { req, res } = mockReqRes();
@@ -61,13 +66,15 @@ test("administrateur, aucune clé configurée : les 4 sources signalent keyPrese
     expect(s.keyPresent).toBe(false);
     expect(s.ok).toBe(false);
   }
-  expect(global.fetch).not.toHaveBeenCalled();
+  expect(global.fetch).toHaveBeenCalledTimes(1);
+  expect(global.fetch.mock.calls[0][0]).toContain("/health");
 });
 
 test("administrateur, toutes les clés présentes : renvoie le code HTTP réel, le corps de l'erreur ET le quota — jamais un plantage même si une source répond mal", async () => {
   mockSession = { id: "u1", email: "admin@example.com" };
   process.env.FOOTBALL_DATA_TOKEN = "fd-token";
   process.env.API_FOOTBALL_KEY = "af-key";
+  process.env.TENNIS_API_KEY = "tn-key";
 
   global.fetch = jest.fn((url) => {
     if (url.includes("api.football-data.org")) {
@@ -82,8 +89,8 @@ test("administrateur, toutes les clés présentes : renvoie le code HTTP réel, 
     if (url.includes("v1.basketball.api-sports.io/status")) {
       return Promise.resolve({ ok: false, status: 403, json: () => Promise.resolve({ errors: { subscription: "no active subscription" } }) });
     }
-    // API-Tennis : pas de clé configurée séparément, retombe sur API_FOOTBALL_KEY —
-    // simule ici une panne réseau totale (ni status ni body).
+    if (url.endsWith("/health")) return Promise.resolve({ ok: true, status: 200 });
+    // API-Tennis (Live Tennis API) : panne réseau totale sur le vrai appel de données.
     return Promise.reject(new Error("network unreachable"));
   });
 
@@ -106,9 +113,11 @@ test("administrateur, toutes les clés présentes : renvoie le code HTTP réel, 
   expect(bySource["API-Basketball"].ok).toBe(false);
   expect(bySource["API-Basketball"].errorBody).toContain("subscription");
 
-  expect(bySource["API-Tennis"].ok).toBe(false);
-  expect(bySource["API-Tennis"].httpStatus).toBeNull();
-  expect(bySource["API-Tennis"].errorBody).toContain("network unreachable");
+  const tennis = bySource["API-Tennis (Live Tennis API)"];
+  expect(tennis.keyPresent).toBe(true);
+  expect(tennis.ok).toBe(false);
+  expect(tennis.matchesError).toContain("network unreachable");
+  expect(tennis.healthEndpoint).toEqual({ ok: true, status: 200 });
 });
 
 test("basket : clé présente, /status OK, matchs réellement récupérés (live + à venir) et cache signalé — diagnostique un problème EN AVAL quand tout est vert mais rien ne s'affiche", async () => {

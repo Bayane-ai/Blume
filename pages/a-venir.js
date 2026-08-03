@@ -299,10 +299,13 @@ export default function UpcomingMatches() {
             </section>
 
             {tnWeekLoading && <p style={st.hint}>Chargement des matchs…</p>}
-            {!tnWeekLoading && (!tnWeekData || tnWeekData?.error) && (
+            {!tnWeekLoading && tnWeekData?.unsupported && (
+              <p style={st.hint}>{tnWeekData.message || "Les matchs à venir ne sont pas disponibles pour le tennis avec cette source."}</p>
+            )}
+            {!tnWeekLoading && !tnWeekData?.unsupported && (!tnWeekData || tnWeekData?.error) && (
               <p style={st.hint}>Les matchs ne sont pas disponibles pour le moment. Réessaie dans quelques minutes.</p>
             )}
-            {!tnWeekLoading && tnWeekData && !tnWeekData.error && tnByDay.length === 0 && (
+            {!tnWeekLoading && tnWeekData && !tnWeekData.error && !tnWeekData.unsupported && tnByDay.length === 0 && (
               <p style={st.hint}>Aucun match à venir pour le moment.</p>
             )}
 

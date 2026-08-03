@@ -54,14 +54,8 @@ export default function TennisPronosticHistoryCard({ item }) {
       {verification && (
         <div style={st.verifiedSection}>
           <TennisVerifiedLines
-            setScores={prediction.setScores}
             gameTotals={prediction.gameTotals}
-            gameHandicap={prediction.gameHandicap}
-            setsBlock={prediction.setsBlock}
-            aces={prediction.aces}
-            doubleFaults={prediction.doubleFaults}
-            breaks={prediction.breaks}
-            tiebreak={prediction.tiebreak}
+            totalSets={prediction.totalSets}
             verification={verification}
             homeName={home}
             awayName={away}

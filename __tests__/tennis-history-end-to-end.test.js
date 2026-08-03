@@ -1,9 +1,7 @@
 /**
- * Vérification bout en bout (bloc 8 : "Vérifie toi-même que les sections
- * 'Probabilités réussies' et 'Probabilités échouées' du tennis se remplissent
- * réellement après la fin d'un match, et corrige si ce n'est pas le cas") — simule une
- * vraie base Supabase en mémoire (comme __tests__/basketball-history-end-to-end.test.js)
- * pour prouver que le chemin COMPLET fonctionne réellement :
+ * Vérification bout en bout : prouve que le chemin COMPLET fonctionne réellement,
+ * du calcul du pronostic (Live Tennis API, ranking-based — voir lib/sports/tennis/
+ * livePronostic.js) jusqu'aux pages "Probabilités réussies/échouées" :
  *   1) pages/api/tennis/analyze.js analyse un match tennis déjà terminé pour la
  *      première fois -> fige ET classe le pronostic (Succès/Échec, sur la seule
  *      probabilité de victoire) -> écrit une vraie ligne dans "pronostic_history"
@@ -88,6 +86,7 @@ function makeFakeSupabase() {
 }
 
 jest.mock("../lib/supabaseAnon", () => ({ supabaseAnon: { from: jest.fn() } }));
+jest.mock("../lib/apiSportsCache", () => ({ readPersistentCache: jest.fn(() => Promise.resolve(null)), writePersistentCache: jest.fn() }));
 
 function mockRes() {
   const res = {};
@@ -97,40 +96,19 @@ function mockRes() {
   return res;
 }
 
-function field(value) {
-  return { value, estimated: value == null, sampleSize: 8, available: value != null };
+// Djokovic (classement 1) très largement favori face à un joueur classé 300e —
+// probabilité de victoire domicile largement > 50%, pour un test déterministe.
+function strongHomePlayer() {
+  return { ranking: 1 };
+}
+function weakAwayPlayer() {
+  return { ranking: 300 };
 }
 
-// Djokovic nettement plus fort qu'Alcaraz sur cette surface -> favori clairement
-// désigné (probabilité de victoire domicile largement > 50%), pour un test déterministe.
-function strongHomeProfile() {
+function finishedScore({ homeSets, awaySets }) {
   return {
-    available: true, playerName: "Djokovic", ranking: 1, form: "WWWWW", matchesUsed: 8,
-    serveWinPct: field(72), returnWinPct: field(45), firstServeInPct: field(66),
-    firstServeWonPct: field(80), secondServeWonPct: field(55),
-    acesPerMatch: field(10), doubleFaultsPerMatch: field(1.5), breakPointsWonPct: field(47),
-  };
-}
-function weakAwayProfile() {
-  return {
-    available: true, playerName: "Alcaraz", ranking: 80, form: "LLLWL", matchesUsed: 8,
-    serveWinPct: field(55), returnWinPct: field(28), firstServeInPct: field(58),
-    firstServeWonPct: field(65), secondServeWonPct: field(42),
-    acesPerMatch: field(4), doubleFaultsPerMatch: field(4.5), breakPointsWonPct: field(30),
-  };
-}
-
-function finishedGame({ homeSets, awaySets }) {
-  const scoresHome = {};
-  const scoresAway = {};
-  homeSets.forEach((h, i) => { scoresHome[`set_${i + 1}`] = h; });
-  awaySets.forEach((a, i) => { scoresAway[`set_${i + 1}`] = a; });
-  return {
-    // Date récente ("maintenant") plutôt qu'une date figée : le vrai nettoyage des
-    // entrées de plus de 5 jours supprimerait sinon cette ligne de test.
-    id: 555, date: new Date().toISOString(), status: { long: "Finished", short: "FT" },
-    teams: { home: { id: 10, name: "Djokovic" }, away: { id: 11, name: "Alcaraz" } },
-    scores: { home: scoresHome, away: scoresAway },
+    status: "finished",
+    sets: homeSets.map((h, i) => ({ home: h, away: awaySets[i] })),
   };
 }
 
@@ -138,41 +116,34 @@ beforeEach(() => {
   jest.resetModules();
 });
 
-async function setupModules({ fakeDb, gameObj, statsRows }) {
+function setupModules({ fakeDb, rawScore }) {
   const { supabaseAnon } = require("../lib/supabaseAnon");
   supabaseAnon.from = fakeDb.from;
 
   jest.doMock("../lib/sports/tennis/provider", () => ({
     getTennisApiKey: () => "test-key",
-    getGameById: jest.fn(() => Promise.resolve(gameObj)),
-    getGameStatistics: jest.fn(() => Promise.resolve(statsRows)),
-    getHeadToHead: jest.fn(() => Promise.resolve([])),
-  }));
-  jest.doMock("../lib/sports/tennis/statProfiles", () => ({
-    getOrBuildPlayerProfile: jest.fn(({ playerId }) =>
-      Promise.resolve(String(playerId) === "10" ? strongHomeProfile() : weakAwayProfile())
-    ),
+    getMatchScore: jest.fn(() => Promise.resolve(rawScore)),
+    getPlayer: jest.fn((id) => Promise.resolve(id === "10" ? strongHomePlayer() : weakAwayPlayer())),
   }));
   // lib/sports/tennis/pronosticHistory.js n'est PAS mocké : c'est le vrai code, contre
   // la fausse base ci-dessus — c'est exactement ce que ce test vérifie.
 }
 
 function djokovicWinsMatch() {
-  return finishedGame({ homeSets: [6, 6, 6], awaySets: [4, 3, 2] }); // 3 sets à 0
+  return finishedScore({ homeSets: [6, 6, 6], awaySets: [4, 3, 2] }); // 3 sets à 0
 }
 function djokovicLosesMatch() {
-  return finishedGame({ homeSets: [3, 2, 4, 1], awaySets: [6, 6, 6, 6] }); // 0 set à 4 (bo5 improbable mais suffisant pour le test)
+  return finishedScore({ homeSets: [3, 2, 4], awaySets: [6, 6, 6] }); // 0 set à 3
 }
 
 test("un match tennis qui se termine avec le joueur favori vainqueur remplit réellement « Probabilités réussies »", async () => {
   const fakeDb = makeFakeSupabase();
-  const game = djokovicWinsMatch();
-  await setupModules({ fakeDb, gameObj: game, statsRows: [] });
+  setupModules({ fakeDb, rawScore: djokovicWinsMatch() });
 
   const { default: analyzeHandler } = await import("../pages/api/tennis/analyze.js");
   const analyzeRes = mockRes();
   await analyzeHandler(
-    { query: { matchId: "tn-555", homeTeamId: "tn-10", awayTeamId: "tn-11", homeTeamName: "Djokovic", awayTeamName: "Alcaraz", surface: "Dur" } },
+    { query: { matchId: "tn-555", homeTeamId: "tn-10", awayTeamId: "tn-11", homeTeamName: "Djokovic", awayTeamName: "Alcaraz" } },
     analyzeRes
   );
 
@@ -202,8 +173,7 @@ test("un match tennis qui se termine avec le joueur favori vainqueur remplit ré
 
 test("un match tennis qui se termine avec le joueur favori perdant remplit réellement « Probabilités échouées »", async () => {
   const fakeDb = makeFakeSupabase();
-  const game = djokovicLosesMatch();
-  await setupModules({ fakeDb, gameObj: game, statsRows: [] });
+  setupModules({ fakeDb, rawScore: djokovicLosesMatch() });
 
   const { default: analyzeHandler } = await import("../pages/api/tennis/analyze.js");
   const analyzeRes = mockRes();
@@ -228,8 +198,8 @@ test("un match tennis qui se termine avec le joueur favori perdant remplit réel
 
 test("un match tennis pas encore terminé n'apparaît dans AUCUNE des deux listes tant qu'il n'est pas classé", async () => {
   const fakeDb = makeFakeSupabase();
-  const liveGame = { ...djokovicWinsMatch(), status: { long: "Set 2", short: "Set2" } };
-  await setupModules({ fakeDb, gameObj: liveGame, statsRows: [] });
+  const liveScore = { status: "live", sets: [{ home: 6, away: 4 }, { home: 3, away: 2 }] };
+  setupModules({ fakeDb, rawScore: liveScore });
 
   const { default: analyzeHandler } = await import("../pages/api/tennis/analyze.js");
   const analyzeRes = mockRes();
@@ -251,8 +221,8 @@ test("un match tennis pas encore terminé n'apparaît dans AUCUNE des deux liste
 
 test("un pronostic tennis 'pending' devenu terminé entre-temps est classé automatiquement au chargement de la page (balayage)", async () => {
   const fakeDb = makeFakeSupabase();
-  const liveGame = { ...djokovicWinsMatch(), status: { long: "Set 2", short: "Set2" } };
-  await setupModules({ fakeDb, gameObj: liveGame, statsRows: [] });
+  const liveScore = { status: "live", sets: [{ home: 6, away: 4 }, { home: 3, away: 2 }] };
+  setupModules({ fakeDb, rawScore: liveScore });
   const { default: analyzeHandler } = await import("../pages/api/tennis/analyze.js");
   await analyzeHandler(
     { query: { matchId: "tn-555", homeTeamId: "tn-10", awayTeamId: "tn-11", homeTeamName: "Djokovic", awayTeamName: "Alcaraz" } },
@@ -263,14 +233,12 @@ test("un pronostic tennis 'pending' devenu terminé entre-temps est classé auto
   jest.resetModules();
   const { supabaseAnon } = require("../lib/supabaseAnon");
   supabaseAnon.from = fakeDb.from;
-  const finishedNow = djokovicWinsMatch();
+  jest.doMock("../lib/apiSportsCache", () => ({ readPersistentCache: jest.fn(() => Promise.resolve(null)), writePersistentCache: jest.fn() }));
   jest.doMock("../lib/sports/tennis/provider", () => ({
     getTennisApiKey: () => "test-key",
-    getGameById: jest.fn(() => Promise.resolve(finishedNow)),
-    getGameStatistics: jest.fn(() => Promise.resolve([])),
-    getHeadToHead: jest.fn(() => Promise.resolve([])),
+    getMatchScore: jest.fn(() => Promise.resolve(djokovicWinsMatch())),
+    getPlayer: jest.fn(() => Promise.resolve(null)),
   }));
-  jest.doMock("../lib/sports/tennis/statProfiles", () => ({ getOrBuildPlayerProfile: jest.fn() }));
 
   const { default: historyHandler } = await import("../pages/api/pronostic-history.js");
   const successRes = mockRes();
@@ -292,11 +260,10 @@ test("bloc 8, point 3 : une entrée tennis classée il y a plus de 5 jours dispa
   );
   const { supabaseAnon } = require("../lib/supabaseAnon");
   supabaseAnon.from = fakeDb.from;
+  jest.doMock("../lib/apiSportsCache", () => ({ readPersistentCache: jest.fn(() => Promise.resolve(null)), writePersistentCache: jest.fn() }));
   jest.doMock("../lib/sports/tennis/provider", () => ({
-    getTennisApiKey: () => "test-key", getGameById: jest.fn(() => Promise.resolve(null)),
-    getGameStatistics: jest.fn(() => Promise.resolve([])), getHeadToHead: jest.fn(() => Promise.resolve([])),
+    getTennisApiKey: () => "test-key", getMatchScore: jest.fn(() => Promise.resolve(null)), getPlayer: jest.fn(() => Promise.resolve(null)),
   }));
-  jest.doMock("../lib/sports/tennis/statProfiles", () => ({ getOrBuildPlayerProfile: jest.fn() }));
 
   const { default: historyHandler } = await import("../pages/api/pronostic-history.js");
   const res = mockRes();

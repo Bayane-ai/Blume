@@ -1,243 +1,138 @@
 /**
- * lib/sports/tennis/mapper.js — bloc 5 : normalise un match brut API-Tennis vers la
- * même forme que le football/basket (voir lib/apiFootball.js, lib/sports/
- * basketball/mapper.js), pour que components/MatchCard.js reste inchangé. Ids
- * préfixés "tn-" (jamais "af-"/"bk-"), statuts détectés par mot-clé (vocabulaire
- * exact non confirmable en direct depuis cet environnement, voir provider.js).
+ * lib/sports/tennis/mapper.js — normalise un match Live Tennis API (liste + détail
+ * de score, deux endpoints séparés — voir lib/sports/tennis/provider.js) vers la même
+ * forme que le football/basket, pour que components/MatchCard.js reste inchangé. Ids
+ * préfixés "tn-" (jamais "af-"/"bk-"). Forme exacte non vérifiable en direct (réseau
+ * bloqué depuis ce sandbox) : chaque champ est tenté à plusieurs emplacements
+ * plausibles, jamais une valeur inventée quand absente.
  */
-import { mapMatchStatusToBlumeStatus, mapMatchToLiveState, mapMatchToUpcoming, mapGameStatistics } from "../lib/sports/tennis/mapper";
+import { mapMatchStatusToBlumeStatus, mapMatchToLiveState } from "../lib/sports/tennis/mapper";
 
-function rawGame(overrides = {}) {
+function rawMatch(overrides = {}) {
   return {
     id: 555,
     date: "2026-08-01T14:00:00+00:00",
-    status: { long: "Set 2", short: "Set2" },
-    league: { id: 12, name: "Wimbledon", logo: "https://example.com/wimbledon.png", type: "Grand Slam", surface: "grass" },
-    country: { name: "United Kingdom" },
-    season: 2026,
+    status: "live",
+    tournament: { id: 12, name: "Wimbledon", surface: "grass", category: "Grand Slam", country: "United Kingdom" },
     round: "Quarterfinal",
-    teams: {
-      home: { id: 101, name: "Novak Djokovic", logo: "https://example.com/djokovic.png" },
-      away: { id: 102, name: "Carlos Alcaraz", logo: "https://example.com/alcaraz.png" },
-    },
-    scores: {
-      home: { set_1: 6, set_2: 3, set_3: null, set_4: null, set_5: null, game: 40 },
-      away: { set_1: 4, set_2: 5, set_3: null, set_4: null, set_5: null, game: 30 },
-    },
+    player1: { id: 101, name: "Novak Djokovic", photo: "https://example.com/djokovic.png" },
+    player2: { id: 102, name: "Carlos Alcaraz", photo: "https://example.com/alcaraz.png" },
+    ...overrides,
+  };
+}
+
+function rawScore(overrides = {}) {
+  return {
+    sets: [{ p1: 6, p2: 4 }, { p1: 3, p2: 5 }],
+    currentGame: { p1: 40, p2: 30 },
+    server: "player1",
     ...overrides,
   };
 }
 
 describe("mapMatchStatusToBlumeStatus — vocabulaire détecté par mot-clé (pas un code exact fragile)", () => {
-  test("un set en cours -> IN_PLAY", () => {
-    expect(mapMatchStatusToBlumeStatus({ long: "Set 1", short: "Set1" })).toBe("IN_PLAY");
-    expect(mapMatchStatusToBlumeStatus({ long: "1st Set", short: "1S" })).toBe("IN_PLAY");
+  test("statut contenant 'live' -> IN_PLAY", () => {
+    expect(mapMatchStatusToBlumeStatus("live")).toBe("IN_PLAY");
+    expect(mapMatchStatusToBlumeStatus("in_progress")).toBe("IN_PLAY");
   });
 
   test("pas encore commencé -> SCHEDULED", () => {
-    expect(mapMatchStatusToBlumeStatus({ long: "Not Started", short: "NS" })).toBe("SCHEDULED");
+    expect(mapMatchStatusToBlumeStatus("scheduled")).toBe("SCHEDULED");
+    expect(mapMatchStatusToBlumeStatus("not_started")).toBe("SCHEDULED");
   });
 
   test("terminé (y compris abandon/forfait) -> FINISHED", () => {
-    expect(mapMatchStatusToBlumeStatus({ long: "Finished", short: "FT" })).toBe("FINISHED");
-    expect(mapMatchStatusToBlumeStatus({ long: "Retired", short: "Ret." })).toBe("FINISHED");
-    expect(mapMatchStatusToBlumeStatus({ long: "Walkover", short: "W.O." })).toBe("FINISHED");
-  });
-
-  test("pause (changement de côté, pluie...) -> PAUSED", () => {
-    expect(mapMatchStatusToBlumeStatus({ long: "Rain Delay", short: "Rain" })).toBe("PAUSED");
+    expect(mapMatchStatusToBlumeStatus("finished")).toBe("FINISHED");
+    expect(mapMatchStatusToBlumeStatus("retired")).toBe("FINISHED");
+    expect(mapMatchStatusToBlumeStatus("walkover")).toBe("FINISHED");
   });
 
   test("statut vide/inconnu : jamais transformé silencieusement en autre chose", () => {
     expect(mapMatchStatusToBlumeStatus(undefined)).toBe("SCHEDULED");
-    expect(mapMatchStatusToBlumeStatus({ long: "Postponed", short: "Postp." })).toBe("POSTP.");
+    expect(mapMatchStatusToBlumeStatus("postponed")).toBe("SUSPENDED");
   });
 });
 
-describe("mapMatchToLiveState — même forme que les autres sports, avec le préfixe tn- (jamais af-/bk-)", () => {
-  test("mappe id/statut/score (sets gagnés)/joueurs/tournoi avec le préfixe tn-", () => {
-    const m = mapMatchToLiveState(rawGame());
+describe("mapMatchToLiveState — fusionne la liste (rawMatch) et le détail de score (rawScore)", () => {
+  test("mappe id/statut/joueurs/tournoi avec le préfixe tn-", () => {
+    const m = mapMatchToLiveState(rawMatch(), rawScore());
     expect(m.id).toBe("tn-555");
     expect(m.status).toBe("IN_PLAY");
-    expect(m.homeTeam).toEqual({ id: "tn-101", name: "Novak Djokovic", crest: "https://example.com/djokovic.png", flag: null });
-    expect(m.awayTeam).toEqual({ id: "tn-102", name: "Carlos Alcaraz", crest: "https://example.com/alcaraz.png", flag: null });
+    expect(m.homeTeam).toEqual({ id: "tn-101", name: "Novak Djokovic", crest: "https://example.com/djokovic.png", flag: null, ranking: null });
+    expect(m.awayTeam).toEqual({ id: "tn-102", name: "Carlos Alcaraz", crest: "https://example.com/alcaraz.png", flag: null, ranking: null });
     expect(m.competition.code).toBe("tn-12");
     expect(m.competition.name).toBe("Wimbledon");
     expect(m.competition.surface).toBe("Gazon");
     expect(m.competition.category).toBe("Grand Slam");
-    expect(m.utcDate).toBe("2026-08-01T14:00:00+00:00");
   });
 
-  test("le score utilise les VRAIS sets gagnés (1 set partout ici : 1er set gagné par le domicile, 2ème par l'extérieur, tous deux terminés)", () => {
-    const m = mapMatchToLiveState(rawGame());
+  test("le score utilise les VRAIS sets gagnés (1 partout : 1er set domicile, 2e extérieur)", () => {
+    const m = mapMatchToLiveState(rawMatch(), rawScore());
     expect(m.score.fullTime).toEqual({ home: 1, away: 1 });
   });
 
-  test("period = numéro du set en cours, minute = score du jeu en cours — uniquement si le match est réellement en direct", () => {
-    const m = mapMatchToLiveState(rawGame());
+  test("period = numéro du set en cours, minute = score du jeu en cours — uniquement en direct", () => {
+    const m = mapMatchToLiveState(rawMatch(), rawScore());
     expect(m.period).toBe("Set 2");
     expect(m.minute).toBe("40-30");
   });
 
-  test("match pas en direct : ni period ni minute (jamais une valeur inventée pour un match qui n'est pas en cours)", () => {
-    const m = mapMatchToLiveState(rawGame({ status: { long: "Not Started", short: "NS" } }));
+  test("match pas en direct : ni period ni minute ni server (jamais une valeur inventée)", () => {
+    const m = mapMatchToLiveState(rawMatch({ status: "scheduled" }), null);
     expect(m.period).toBeNull();
     expect(m.minute).toBeNull();
+    expect(m.server).toBeNull();
   });
 
-  test("conserve le détail set par set (sets) — donnée la plus fine réellement disponible, jamais un point par point inventé", () => {
-    const m = mapMatchToLiveState(rawGame());
+  test("conserve le détail set par set, jamais un point par point inventé", () => {
+    const m = mapMatchToLiveState(rawMatch(), rawScore());
     expect(m.sets).toEqual([{ home: 6, away: 4 }, { home: 3, away: 5 }]);
   });
 
-  test("préfère un total de sets gagnés fourni directement par la source plutôt qu'un recalcul (fiable même en cas d'abandon en cours de set)", () => {
-    const m = mapMatchToLiveState(rawGame({ scores: { home: { set_1: 6, total: 2 }, away: { set_1: 3, total: 0 } } }));
-    expect(m.score.fullTime).toEqual({ home: 2, away: 0 });
+  test("aucun score détaillé disponible (rawScore null) : retombe sur ce que la liste fournit déjà elle-même, sans planter", () => {
+    const m = mapMatchToLiveState(rawMatch({ sets: [{ home: 2, away: 1 }] }), null);
+    expect(m.sets).toEqual([{ home: 2, away: 1 }]);
   });
 
   test("surface absente : honnêtement null, jamais une surface inventée", () => {
-    const m = mapMatchToLiveState(rawGame({ league: { id: 12, name: "Tournoi X" } }));
+    const m = mapMatchToLiveState(rawMatch({ tournament: { id: 12, name: "Tournoi X" } }), rawScore());
     expect(m.competition.surface).toBeNull();
   });
 
   test("des champs manquants ne font jamais planter le mapping (valeurs honnêtes par défaut)", () => {
-    const m = mapMatchToLiveState({});
+    const m = mapMatchToLiveState({}, null);
     expect(m.id).toBe("");
-    expect(m.homeTeam).toEqual({ id: "", name: "", crest: "", flag: null });
+    expect(m.homeTeam).toEqual({ id: "", name: "", crest: "", flag: null, ranking: null });
     expect(m.score.fullTime).toEqual({ home: 0, away: 0 });
     expect(m.sets).toEqual([]);
   });
-});
 
-describe("mapMatchToUpcoming — statut/score toujours neutres avant le match", () => {
-  test("mappe un match pas encore commencé", () => {
-    const m = mapMatchToUpcoming(rawGame({ status: { long: "Not Started", short: "NS" } }));
-    expect(m.id).toBe("tn-555");
-    expect(m.status).toBe("SCHEDULED");
-    expect(m.score.fullTime).toEqual({ home: null, away: null });
-    expect(m.minute).toBeNull();
+  test("joueur au service détecté via server: 'player1'/'player2'", () => {
+    const home = mapMatchToLiveState(rawMatch(), rawScore({ server: "player1" }));
+    expect(home.server).toBe("home");
+    const away = mapMatchToLiveState(rawMatch(), rawScore({ server: "player2" }));
+    expect(away.server).toBe("away");
   });
 
-  test("catégorie/tournoi jamais filtrés (ATP/WTA/Grand Chelem/Masters 1000/250/500/Challenger/ITF)", () => {
-    for (const category of ["ATP", "WTA", "Grand Slam", "Masters 1000", "ATP 250", "ATP 500", "Challenger", "ITF"]) {
-      const m = mapMatchToUpcoming(rawGame({ league: { id: 1, name: "Test", type: category } }));
-      expect(m.competition.category).toBe(category);
-    }
+  test("jamais un service deviné quand la source ne l'indique pas", () => {
+    const m = mapMatchToLiveState(rawMatch(), rawScore({ server: undefined }));
+    expect(m.server).toBeNull();
   });
 
-  test("un match à venir n'a jamais de joueur au service (pas encore commencé)", () => {
-    const m = mapMatchToUpcoming(rawGame({ status: { long: "Not Started", short: "NS" } }));
-    expect(m.server).toBeUndefined();
+  test("classement du joueur repris quand fourni", () => {
+    const m = mapMatchToLiveState(rawMatch({ player1: { id: 101, name: "Djokovic", ranking: 1 } }), rawScore());
+    expect(m.homeTeam.ranking).toBe(1);
   });
 });
 
-describe("drapeau du joueur (PROMPT bloc 6, point 1)", () => {
-  test("lu sur teams.home.flag quand présent", () => {
-    const m = mapMatchToLiveState(
-      rawGame({ teams: { home: { id: 101, name: "Novak Djokovic", flag: "https://example.com/rs.png" }, away: { id: 102, name: "Carlos Alcaraz" } } })
-    );
-    expect(m.homeTeam.flag).toBe("https://example.com/rs.png");
-  });
-
-  test("repli sur teams.home.country.flag si le champ direct est absent", () => {
-    const m = mapMatchToLiveState(
-      rawGame({
-        teams: {
-          home: { id: 101, name: "Novak Djokovic", country: { flag: "https://example.com/rs.png" } },
-          away: { id: 102, name: "Carlos Alcaraz" },
-        },
-      })
-    );
+describe("drapeau du joueur", () => {
+  test("lu sur player1.flag quand présent", () => {
+    const m = mapMatchToLiveState(rawMatch({ player1: { id: 101, name: "Djokovic", flag: "https://example.com/rs.png" } }), rawScore());
     expect(m.homeTeam.flag).toBe("https://example.com/rs.png");
   });
 
   test("jamais un drapeau inventé quand la source ne le fournit pas", () => {
-    const m = mapMatchToLiveState(rawGame({ teams: { home: { id: 101, name: "Novak Djokovic" }, away: { id: 102, name: "Carlos Alcaraz" } } }));
+    const m = mapMatchToLiveState(rawMatch({ player1: { id: 101, name: "Djokovic" } }), rawScore());
     expect(m.homeTeam.flag).toBeNull();
-    expect(m.awayTeam.flag).toBeNull();
-  });
-});
-
-describe("joueur au service (PROMPT bloc 6, point 1)", () => {
-  test("détecté via scores.home.serve / scores.away.serve", () => {
-    const home = mapMatchToLiveState(rawGame({ scores: { home: { set_1: 6, game: 40, serve: true }, away: { set_1: 4, game: 30, serve: false } } }));
-    expect(home.server).toBe("home");
-    const away = mapMatchToLiveState(rawGame({ scores: { home: { set_1: 6, game: 40, serve: false }, away: { set_1: 4, game: 30, serve: true } } }));
-    expect(away.server).toBe("away");
-  });
-
-  test("jamais un service deviné quand la source ne l'indique pas — même en direct", () => {
-    const m = mapMatchToLiveState(rawGame());
-    expect(m.server).toBeNull();
-  });
-
-  test("jamais renseigné pour un match qui n'est pas en direct (terminé)", () => {
-    const m = mapMatchToLiveState(
-      rawGame({ status: { long: "Finished", short: "FT" }, scores: { home: { set_1: 6, set_2: 6, serve: true }, away: { set_1: 3, set_2: 2, serve: false } } })
-    );
-    expect(m.server).toBeNull();
-  });
-});
-
-describe("mapGameStatistics — stats de service/retour réelles d'un match (PROMPT bloc 7)", () => {
-  function raw(overrides = {}) {
-    return [
-      {
-        team: { id: 101 },
-        statistics: [
-          { type: "Aces", value: 8 },
-          { type: "Double Faults", value: 2 },
-          { type: "1st Serve", value: "63%" },
-          { type: "1st Serve Points Won", value: "74%" },
-          { type: "2nd Serve Points Won", value: "51%" },
-          { type: "Break Points Won", value: "3/5" },
-        ],
-      },
-      {
-        team: { id: 102 },
-        statistics: [
-          { type: "Aces", value: 3 },
-          { type: "Double Faults", value: 4 },
-          { type: "1st Serve", value: "58%" },
-          { type: "1st Serve Points Won", value: "66%" },
-          { type: "2nd Serve Points Won", value: "45%" },
-          { type: "Break Points Won", value: "1/4" },
-        ],
-      },
-    ].map((e, i) => (overrides[i] ? { ...e, ...overrides[i] } : e));
-  }
-
-  test("distingue domicile/extérieur par id, jamais mélangés", () => {
-    const m = mapGameStatistics(raw(), 101);
-    expect(m.home.aces.value).toBe(8);
-    expect(m.away.aces.value).toBe(3);
-  });
-
-  test("parse les pourcentages ('63%' -> 63)", () => {
-    const m = mapGameStatistics(raw(), 101);
-    expect(m.home.firstServeInPct.value).toBe(63);
-    expect(m.home.firstServeWonPct.value).toBe(74);
-  });
-
-  test("parse les fractions ('3/5' -> 60 %, garde aussi made/attempted)", () => {
-    const m = mapGameStatistics(raw(), 101);
-    expect(m.home.breakPointsWon.value).toBe(60);
-    expect(m.home.breakPointsWon.made).toBe(3);
-    expect(m.home.breakPointsWon.attempted).toBe(5);
-  });
-
-  test("réponse absente ou incomplète -> null, jamais un objet à moitié rempli", () => {
-    expect(mapGameStatistics(null, 101)).toBeNull();
-    expect(mapGameStatistics([{ team: { id: 101 }, statistics: [] }], 101)).toBeNull();
-  });
-
-  test("un type de statistique absent de la réponse -> honnêtement null, jamais inventé", () => {
-    const partial = [
-      { team: { id: 101 }, statistics: [{ type: "Aces", value: 5 }] },
-      { team: { id: 102 }, statistics: [{ type: "Aces", value: 2 }] },
-    ];
-    const m = mapGameStatistics(partial, 101);
-    expect(m.home.aces.value).toBe(5);
-    expect(m.home.doubleFaults.value).toBeNull();
   });
 });

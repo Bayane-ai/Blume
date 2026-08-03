@@ -17,11 +17,7 @@ import BasketballSingleTotals from "../../components/BasketballSingleTotals";
 import BasketballPlayersToWatch from "../../components/BasketballPlayersToWatch";
 import BasketballMatchTimeline from "../../components/BasketballMatchTimeline";
 import BasketballMatchOutcomeRecap from "../../components/BasketballMatchOutcomeRecap";
-import TennisPronosticResults from "../../components/TennisPronosticResults";
-import TennisSecondaryStats from "../../components/TennisSecondaryStats";
-import TennisServiceReturnContext from "../../components/TennisServiceReturnContext";
-import TennisMatchScenario from "../../components/TennisMatchScenario";
-import TennisMatchTimeline from "../../components/TennisMatchTimeline";
+import TennisLivePronostic from "../../components/TennisLivePronostic";
 import TennisMatchOutcomeRecap from "../../components/TennisMatchOutcomeRecap";
 import { useRequireAuth } from "../../lib/useRequireAuth";
 import { addMatchToHistory } from "../../lib/matchHistory";
@@ -238,19 +234,18 @@ export default function MatchPage() {
       {/* Épinglée juste sous le score (position: sticky) : en faisant défiler la page,
           les moments forts restent visibles en premier, avant le reste du contenu —
           seule la liste des événements défile en interne (hauteur bornée) une fois
-          qu'elle dépasse ce qui tient à l'écran. Bloc 4 (basket)/Bloc 8 (tennis) :
-          reste épinglée en haut EXACTEMENT comme le football (PROMPT : "il reste
-          toujours en haut"), chacun avec sa propre timeline dérivée du score officiel
-          (jamais "Événement non disponible", voir components/BasketballMatchTimeline.js
-          et components/TennisMatchTimeline.js). */}
-      {isLiveNow && (
+          qu'elle dépasse ce qui tient à l'écran. Bloc 4 (basket) : reste épinglée en
+          haut EXACTEMENT comme le football, avec sa propre timeline dérivée du score
+          officiel (jamais "Événement non disponible", voir components/
+          BasketballMatchTimeline.js). Tennis : pas de timeline (Live Tennis API, plan
+          gratuit, ne fournit qu'un score en direct — voir lib/sports/tennis/
+          provider.js — jamais d'événement inventé pour combler cette absence). */}
+      {isLiveNow && !isTennis && (
         <section style={st.pinnedPanel} data-testid="pinned-highlights">
           <h2 style={st.h2}>Moments forts</h2>
           <div style={st.timelineScroll}>
             {isBasketball ? (
               <BasketballMatchTimeline events={liveState?.events} timelineNote={liveState?.timelineNote} />
-            ) : isTennis ? (
-              <TennisMatchTimeline events={liveState?.events} timelineNote={liveState?.timelineNote} />
             ) : (
               <MatchTimeline events={liveState?.events} homeTeamId={homeTeamId} isLive />
             )}
@@ -327,7 +322,7 @@ export default function MatchPage() {
               {isBasketball
                 ? "Le score, la probabilité de victoire, les scores finaux probables et les totaux de points suivent l'évolution du match en direct. Les autres lignes (rebonds, passes décisives, tirs à 3 points, fautes, ballons perdus, lancers francs, joueurs à suivre) ont été calculées une seule fois avant le match et restent identiques jusqu'à la fin — une référence stable pour parier dessus."
                 : isTennis
-                ? "Le score, la probabilité de victoire, les scores en sets probables et les totaux de jeux suivent l'évolution du match en direct. Les autres lignes (aces, doubles fautes, breaks, jeu décisif, handicap jeux) ont été calculées une seule fois avant le match et restent identiques jusqu'à la fin — une référence stable pour parier dessus."
+                ? "Le vainqueur du match, le vainqueur du set en cours, le total de jeux et le total de sets suivent l'évolution du match en direct, recalculés à chaque actualisation à partir du vrai score."
                 : "Le score, les moments forts, les probabilités de victoire, les scores exacts et les totaux de buts suivent l'évolution du match en direct. Les autres lignes (Corners, Hors-jeu, Fautes, Touches, tirs, cartons...) ont été calculées une seule fois avant le match et restent identiques jusqu'à la fin — une référence stable pour parier dessus."}
             </p>
           )}
@@ -347,23 +342,11 @@ export default function MatchPage() {
                 lui-même que si cette donnée est là. */}
             {!loading && hasRequested && isFinishedNow && <TennisMatchOutcomeRecap pronostic={pronostic} />}
 
-            {/* Bloc 7 : Probabilité de victoire, scores en sets probables, totaux de
-                jeux, handicap jeux, sets (blocs 1-5) — voir components/
-                TennisPronosticResults.js. */}
-            {!loading && hasRequested && <TennisPronosticResults pronostic={pronostic} />}
-            {/* Aces, doubles fautes, breaks, jeu décisif (blocs 6-9). */}
-            {!loading && hasRequested && pronostic?.available && <TennisSecondaryStats pronostic={pronostic} />}
-            {/* Contexte service/retour (bloc 10). */}
-            {!loading && hasRequested && pronostic?.available && <TennisServiceReturnContext pronostic={pronostic} />}
-            {/* Scénario du match (bloc 11). */}
-            {!loading && hasRequested && pronostic?.available && <TennisMatchScenario pronostic={pronostic} />}
-
-            {!isLiveNow && (
-              <section style={st.panel}>
-                <h2 style={st.h2}>Moments forts</h2>
-                <TennisMatchTimeline events={liveState?.events} timelineNote={liveState?.timelineNote} />
-              </section>
-            )}
+            {/* Vainqueur du match, vainqueur du set en cours, total de jeux, total de
+                sets — les 4 lignes calculables avec Live Tennis API (plan gratuit),
+                voir components/TennisLivePronostic.js et lib/sports/tennis/
+                livePronostic.js. */}
+            {!loading && hasRequested && <TennisLivePronostic pronostic={pronostic} />}
           </>
         ) : isBasketball ? (
           <>

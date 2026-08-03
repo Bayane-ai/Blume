@@ -60,6 +60,7 @@ export async function getServerSideProps({ req, res }) {
       envStatus: {
         footballDataToken: Boolean(process.env.FOOTBALL_DATA_TOKEN),
         apiFootballKey: Boolean(process.env.API_FOOTBALL_KEY || process.env.API_BASKETBALL_KEY),
+        tennisApiKey: Boolean(process.env.TENNIS_API_KEY),
       },
     },
   };
@@ -138,8 +139,9 @@ export default function Admin({ adminEmail, quotaSnapshots, lastErrors, envStatu
                     <div style={st.quotaMeta}>
                       {s.quota.plan != null && `Plan : ${s.quota.plan}. `}
                       {s.quota.subscriptionActive != null && `Abonnement actif : ${s.quota.subscriptionActive ? "oui" : "non"}. `}
-                      {s.quota.current != null && s.quota.limitDay != null && `Quota : ${s.quota.current} / ${s.quota.limitDay} aujourd'hui.`}
+                      {s.quota.current != null && s.quota.limitDay != null && `Quota : ${s.quota.current} / ${s.quota.limitDay} aujourd'hui. `}
                       {s.quota.remainingThisMinute != null && `Restant cette minute : ${s.quota.remainingThisMinute}.`}
+                      {s.quota.currentMinute != null && s.quota.limitMinute != null && `Cette minute : ${s.quota.currentMinute} / ${s.quota.limitMinute}.`}
                     </div>
                   )}
                   {(s.liveCount != null || s.upcomingCount != null || s.matchesError) && (
@@ -176,6 +178,12 @@ export default function Admin({ adminEmail, quotaSnapshots, lastErrors, envStatu
               <div style={st.quotaLabel}>API_FOOTBALL_KEY / API_BASKETBALL_KEY (complément + basket)</div>
               <div style={envStatus?.apiFootballKey ? st.envOk : st.envMissing}>
                 {envStatus?.apiFootballKey ? "Configurée" : "MANQUANTE — petites fédérations et basket indisponibles"}
+              </div>
+            </div>
+            <div style={st.quotaCard} data-testid="admin-env-tennis-api-key">
+              <div style={st.quotaLabel}>TENNIS_API_KEY (Live Tennis API)</div>
+              <div style={envStatus?.tennisApiKey ? st.envOk : st.envMissing}>
+                {envStatus?.tennisApiKey ? "Configurée" : "MANQUANTE — tennis indisponible"}
               </div>
             </div>
           </div>

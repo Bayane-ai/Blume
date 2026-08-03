@@ -1,271 +1,227 @@
 /**
- * lib/sports/tennis/provider.js — bloc 5 (API tennis) : API-SPORTS Tennis
- * (v1.tennis.api-sports.io, même fournisseur/compte que le football/basket), cache
- * court pour le direct (15-30s), cache plus long pour les données de saison, pause
- * après un 429 (quota quotidien), et repli honnête (jamais une liste vide masquant
- * une vraie panne) — mêmes conventions que lib/sports/basketball/provider.js.
+ * lib/sports/tennis/provider.js — client Live Tennis API (https://api.livetennisapi.com),
+ * fournisseur DIFFÉRENT d'API-SPORTS (football/basket) : clé dédiée TENNIS_API_KEY,
+ * en-tête Authorization: Bearer, plan gratuit limité (live only, pas d'historique) et
+ * un quota STRICT (30/min, 1000/jour) auto-limité avec marge de sécurité (950/28) —
+ * voir PROMPT. Couvre les 4 scénarios demandés : réponse OK, 429, 401, réponse vide,
+ * et panne réseau totale (timeout).
  */
 const KEY = "test-tennis-key";
 
+function makeCacheMock(store = new Map()) {
+  return {
+    readPersistentCache: jest.fn((key) => {
+      const entry = store.get(key);
+      return Promise.resolve(entry ? { payload: entry.payload, fetchedAt: entry.fetchedAt } : null);
+    }),
+    writePersistentCache: jest.fn((key, payload) => {
+      store.set(key, { payload, fetchedAt: Date.now() });
+    }),
+    __store: store,
+  };
+}
+
 beforeEach(() => {
   jest.resetModules();
-  delete process.env.API_FOOTBALL_KEY;
-  delete process.env.API_TENNIS_KEY;
+  delete process.env.TENNIS_API_KEY;
 });
 
-describe("getTennisApiKey — réutilise la clé football par défaut, API_TENNIS_KEY prend le pas si définie", () => {
+describe("getTennisApiKey — clé DÉDIÉE, jamais de repli sur une clé d'un autre sport", () => {
   test("aucune clé définie : null", async () => {
     const { getTennisApiKey } = await import("../lib/sports/tennis/provider.js");
     expect(getTennisApiKey()).toBeNull();
   });
 
-  test("seule API_FOOTBALL_KEY est définie : réutilisée pour le tennis", async () => {
-    process.env.API_FOOTBALL_KEY = "shared-key";
+  test("TENNIS_API_KEY définie : reprise telle quelle", async () => {
+    process.env.TENNIS_API_KEY = "real-key";
     const { getTennisApiKey } = await import("../lib/sports/tennis/provider.js");
-    expect(getTennisApiKey()).toBe("shared-key");
-  });
-
-  test("API_TENNIS_KEY définie : prioritaire sur API_FOOTBALL_KEY", async () => {
-    process.env.API_FOOTBALL_KEY = "shared-key";
-    process.env.API_TENNIS_KEY = "dedicated-key";
-    const { getTennisApiKey } = await import("../lib/sports/tennis/provider.js");
-    expect(getTennisApiKey()).toBe("dedicated-key");
+    expect(getTennisApiKey()).toBe("real-key");
   });
 });
 
-describe("getLiveMatches — TOUS les matchs en direct dans le monde, sans filtre de catégorie", () => {
-  test("sans clé, renvoie une liste vide sans jamais appeler l'API", async () => {
+describe("checkTennisHealth — GET /health, sans clé, jamais compté dans le quota", () => {
+  test("connectivité OK", async () => {
+    global.fetch = jest.fn(() => Promise.resolve({ ok: true, status: 200 }));
+    const { checkTennisHealth } = await import("../lib/sports/tennis/provider.js");
+    const result = await checkTennisHealth();
+    expect(result).toEqual({ ok: true, status: 200 });
+    expect(global.fetch).toHaveBeenCalledWith("https://api.livetennisapi.com/api/public/v1/health");
+  });
+
+  test("panne réseau totale : jamais un plantage, ok:false explicite", async () => {
+    global.fetch = jest.fn(() => Promise.reject(new Error("ECONNRESET")));
+    const { checkTennisHealth } = await import("../lib/sports/tennis/provider.js");
+    const result = await checkTennisHealth();
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("ECONNRESET");
+  });
+});
+
+describe("getLiveMatches — réponse OK (200)", () => {
+  test("sans clé, liste vide sans jamais appeler l'API", async () => {
+    jest.doMock("../lib/apiSportsCache", () => makeCacheMock());
     const { getLiveMatches } = await import("../lib/sports/tennis/provider.js");
     global.fetch = jest.fn();
     expect(await getLiveMatches(null)).toEqual([]);
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  test("appelle /games?live=all avec le bon header d'authentification, sans aucun filtre de catégorie/tournoi", async () => {
+  test("appelle /matches?status=live avec Authorization: Bearer <clé>", async () => {
+    jest.doMock("../lib/apiSportsCache", () => makeCacheMock());
     const { getLiveMatches } = await import("../lib/sports/tennis/provider.js");
-    const fetchMock = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [{ id: 1 }] }) }));
+    const fetchMock = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ matches: [{ id: 1 }] }) }));
     global.fetch = fetchMock;
 
-    const games = await getLiveMatches(KEY);
-    expect(games).toEqual([{ id: 1 }]);
-    expect(fetchMock.mock.calls[0][0]).toBe("https://v1.tennis.api-sports.io/games?live=all");
-    expect(fetchMock.mock.calls[0][1].headers).toEqual({ "x-apisports-key": KEY });
+    const matches = await getLiveMatches(KEY);
+    expect(matches).toEqual([{ id: 1 }]);
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.livetennisapi.com/api/public/v1/matches?status=live");
+    expect(fetchMock.mock.calls[0][1].headers).toEqual({ Authorization: `Bearer ${KEY}` });
   });
 
-  test("plusieurs appels rapprochés ne déclenchent qu'un seul appel réel (cache court, 15-30s)", async () => {
+  test("un seul appel réel partagé (cache persistant 60s) même pour plusieurs visiteurs à la fois", async () => {
+    jest.doMock("../lib/apiSportsCache", () => makeCacheMock());
     const { getLiveMatches } = await import("../lib/sports/tennis/provider.js");
-    const fetchMock = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) }));
-    global.fetch = fetchMock;
-
-    await Promise.all([getLiveMatches(KEY), getLiveMatches(KEY), getLiveMatches(KEY)]);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  test("le cache expire bien après sa fenêtre (nouvel appel réel après 20s+)", async () => {
-    const { getLiveMatches } = await import("../lib/sports/tennis/provider.js");
-    const fetchMock = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) }));
+    const fetchMock = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ matches: [] }) }));
     global.fetch = fetchMock;
 
     await getLiveMatches(KEY);
+    await getLiveMatches(KEY); // même minute -> cache encore frais, aucun 2e appel
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
 
-    jest.spyOn(Date, "now").mockReturnValue(Date.now() + 21000);
+describe("getLiveMatches — réponse vide (200 OK, 0 match)", () => {
+  test("ce n'est pas une erreur : liste vide honnête, jamais un plantage", async () => {
+    jest.doMock("../lib/apiSportsCache", () => makeCacheMock());
+    const { getLiveMatches } = await import("../lib/sports/tennis/provider.js");
+    global.fetch = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ matches: [] }) }));
+    expect(await getLiveMatches(KEY)).toEqual([]);
+  });
+});
+
+describe("getLiveMatches — 429 (quota atteint côté API)", () => {
+  test("sans cache connu : l'erreur remonte, jamais une liste vide silencieuse", async () => {
+    jest.doMock("../lib/apiSportsCache", () => makeCacheMock());
+    const { getLiveMatches } = await import("../lib/sports/tennis/provider.js");
+    global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 429, text: () => Promise.resolve("rate limited") }));
+    await expect(getLiveMatches(KEY)).rejects.toThrow(/429/);
+  });
+
+  test("avec un cache persistant connu : sert la dernière liste connue plutôt que l'erreur", async () => {
+    const store = new Map();
+    store.set("tennis:livetennisapi:live", { payload: [{ id: 9 }], fetchedAt: Date.now() - 5 * 60 * 1000 });
+    jest.doMock("../lib/apiSportsCache", () => makeCacheMock(store));
+    const { getLiveMatches } = await import("../lib/sports/tennis/provider.js");
+    global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 429, text: () => Promise.resolve("rate limited") }));
+    expect(await getLiveMatches(KEY)).toEqual([{ id: 9 }]);
+  });
+});
+
+describe("getLiveMatches — 401 (clé invalide)", () => {
+  test("sans cache connu : l'erreur remonte avec le code exact", async () => {
+    jest.doMock("../lib/apiSportsCache", () => makeCacheMock());
+    const { getLiveMatches } = await import("../lib/sports/tennis/provider.js");
+    global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 401, text: () => Promise.resolve("invalid token") }));
+    await expect(getLiveMatches(KEY)).rejects.toThrow(/401/);
+  });
+});
+
+describe("getLiveMatches — panne réseau totale (timeout / l'API ne répond pas)", () => {
+  test("sans cache connu : l'erreur remonte, jamais un plantage silencieux", async () => {
+    jest.doMock("../lib/apiSportsCache", () => makeCacheMock());
+    const { getLiveMatches } = await import("../lib/sports/tennis/provider.js");
+    global.fetch = jest.fn(() => Promise.reject(new Error("ETIMEDOUT")));
+    await expect(getLiveMatches(KEY)).rejects.toThrow("ETIMEDOUT");
+  });
+
+  test("avec un cache persistant connu : sert la dernière liste connue", async () => {
+    const store = new Map();
+    store.set("tennis:livetennisapi:live", { payload: [{ id: 4 }], fetchedAt: Date.now() - 2 * 60 * 1000 });
+    jest.doMock("../lib/apiSportsCache", () => makeCacheMock(store));
+    const { getLiveMatches } = await import("../lib/sports/tennis/provider.js");
+    global.fetch = jest.fn(() => Promise.reject(new Error("ETIMEDOUT")));
+    expect(await getLiveMatches(KEY)).toEqual([{ id: 4 }]);
+  });
+});
+
+describe("Quota STRICT auto-limité (30/min, 1000/jour réels -> marge de sécurité 28/950)", () => {
+  test("compteur journalier déjà à la limite de sécurité : bloque AVANT tout appel réel, sert le cache", async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const store = new Map();
+    store.set(`tennis:livetennisapi:day:${today}`, { payload: { count: 950 }, fetchedAt: Date.now() });
+    store.set("tennis:livetennisapi:live", { payload: [{ id: 5 }], fetchedAt: Date.now() - 60000 });
+    jest.doMock("../lib/apiSportsCache", () => makeCacheMock(store));
+    const { getLiveMatches } = await import("../lib/sports/tennis/provider.js");
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock;
+
+    expect(await getLiveMatches(KEY)).toEqual([{ id: 5 }]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("compteur par minute déjà à la limite de sécurité : bloque aussi, même si le quota du jour est large", async () => {
+    const minuteKey = `tennis:livetennisapi:minute:${Math.floor(Date.now() / 60000)}`;
+    const store = new Map();
+    store.set(minuteKey, { payload: { count: 28 }, fetchedAt: Date.now() });
+    jest.doMock("../lib/apiSportsCache", () => makeCacheMock(store));
+    const { getLiveMatches } = await import("../lib/sports/tennis/provider.js");
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock;
+
+    await expect(getLiveMatches(KEY)).rejects.toThrow(/quota/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("un appel réel réussi incrémente bien les deux compteurs (jour et minute)", async () => {
+    const store = new Map();
+    jest.doMock("../lib/apiSportsCache", () => makeCacheMock(store));
+    const { getLiveMatches, getTennisQuotaUsageToday } = await import("../lib/sports/tennis/provider.js");
+    global.fetch = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ matches: [] }) }));
+
     await getLiveMatches(KEY);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const usage = await getTennisQuotaUsageToday();
+    expect(usage.requestsToday).toBe(1);
+    expect(usage.requestsThisMinute).toBe(1);
+    expect(usage.dailyCap).toBe(950);
+    expect(usage.minuteCap).toBe(28);
   });
 });
 
-describe("getMatchesByDate — matchs (tous statuts) d'une date précise, toutes catégories confondues", () => {
-  test("sans clé ni date, renvoie une liste vide sans appeler l'API", async () => {
-    const { getMatchesByDate } = await import("../lib/sports/tennis/provider.js");
+describe("getMatchScore / getPlayer — jamais bloquants pour l'affichage du match lui-même", () => {
+  test("getMatchScore : échec -> null en repli (pas d'exception), la carte reste affichable sans le détail", async () => {
+    jest.doMock("../lib/apiSportsCache", () => makeCacheMock());
+    const { getMatchScore } = await import("../lib/sports/tennis/provider.js");
+    global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 500, text: () => Promise.resolve("boom") }));
+    expect(await getMatchScore("555", KEY)).toBeNull();
+  });
+
+  test("getMatchScore : appelle /matches/{id}/score avec le bon en-tête", async () => {
+    jest.doMock("../lib/apiSportsCache", () => makeCacheMock());
+    const { getMatchScore } = await import("../lib/sports/tennis/provider.js");
+    const fetchMock = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ data: { sets: [] } }) }));
+    global.fetch = fetchMock;
+
+    const score = await getMatchScore("555", KEY);
+    expect(score).toEqual({ sets: [] });
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.livetennisapi.com/api/public/v1/matches/555/score");
+  });
+
+  test("getPlayer : sans id ni clé, repli honnête sans appel réseau", async () => {
+    jest.doMock("../lib/apiSportsCache", () => makeCacheMock());
+    const { getPlayer } = await import("../lib/sports/tennis/provider.js");
     global.fetch = jest.fn();
-    expect(await getMatchesByDate("2026-08-01", null)).toEqual([]);
-    expect(await getMatchesByDate(null, KEY)).toEqual([]);
+    expect(await getPlayer(null, KEY)).toBeNull();
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  test("appelle /games?date=YYYY-MM-DD", async () => {
-    const { getMatchesByDate } = await import("../lib/sports/tennis/provider.js");
-    const fetchMock = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [{ id: 2 }] }) }));
+  test("getPlayer : appelle /players/{id}", async () => {
+    jest.doMock("../lib/apiSportsCache", () => makeCacheMock());
+    const { getPlayer } = await import("../lib/sports/tennis/provider.js");
+    const fetchMock = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ data: { ranking: 5 } }) }));
     global.fetch = fetchMock;
 
-    const games = await getMatchesByDate("2026-08-01", KEY);
-    expect(games).toEqual([{ id: 2 }]);
-    expect(fetchMock.mock.calls[0][0]).toBe("https://v1.tennis.api-sports.io/games?date=2026-08-01");
-  });
-
-  test("deux dates différentes sont mises en cache séparément (pas de collision)", async () => {
-    const { getMatchesByDate } = await import("../lib/sports/tennis/provider.js");
-    const fetchMock = jest.fn((url) => Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [{ url }] }) }));
-    global.fetch = fetchMock;
-
-    const a = await getMatchesByDate("2026-08-01", KEY);
-    const b = await getMatchesByDate("2026-08-02", KEY);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(a).not.toEqual(b);
-  });
-});
-
-describe("getGameById — relit un match précis", () => {
-  test("sans id ni clé, repli honnête sans appel réseau", async () => {
-    const { getGameById } = await import("../lib/sports/tennis/provider.js");
-    global.fetch = jest.fn();
-    expect(await getGameById(null, KEY)).toBeNull();
-    expect(global.fetch).not.toHaveBeenCalled();
-  });
-
-  test("appelle /games?id=X et renvoie le premier (et seul) élément", async () => {
-    const { getGameById } = await import("../lib/sports/tennis/provider.js");
-    const fetchMock = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [{ id: 42 }] }) }));
-    global.fetch = fetchMock;
-
-    const game = await getGameById(42, KEY);
-    expect(game).toEqual({ id: 42 });
-    expect(fetchMock.mock.calls[0][0]).toBe("https://v1.tennis.api-sports.io/games?id=42");
-  });
-});
-
-describe("getGameStatistics / getRankings / getPlayerStatistics / getPlayerGames / getHeadToHead / getTournaments", () => {
-  test("chaque fonction exige ses paramètres et la clé, sinon repli honnête sans appel réseau", async () => {
-    const provider = await import("../lib/sports/tennis/provider.js");
-    global.fetch = jest.fn();
-
-    expect(await provider.getGameStatistics(null, KEY)).toEqual([]);
-    expect(await provider.getRankings(null, KEY)).toEqual([]);
-    expect(await provider.getPlayerStatistics({ player: null, season: "2026" }, KEY)).toEqual([]);
-    expect(await provider.getPlayerGames({ player: null, season: "2026" }, KEY)).toEqual([]);
-    expect(await provider.getHeadToHead(null, 2, KEY)).toEqual([]);
-    expect(await provider.getTournaments(null, null)).toEqual([]);
-    expect(global.fetch).not.toHaveBeenCalled();
-  });
-
-  test("getPlayerGames appelle /games?player=X&season=Y — base réelle de la forme récente", async () => {
-    const { getPlayerGames } = await import("../lib/sports/tennis/provider.js");
-    const fetchMock = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [{ id: 1 }, { id: 2 }, { id: 3 }] }) }));
-    global.fetch = fetchMock;
-
-    const games = await getPlayerGames({ player: 101, season: "2026" }, KEY);
-    expect(games).toHaveLength(3);
-    expect(fetchMock.mock.calls[0][0]).toBe("https://v1.tennis.api-sports.io/games?player=101&season=2026");
-  });
-
-  test("getGameStatistics appelle /games/statistics?id=X", async () => {
-    const { getGameStatistics } = await import("../lib/sports/tennis/provider.js");
-    const fetchMock = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [{ player: {} }] }) }));
-    global.fetch = fetchMock;
-
-    const stats = await getGameStatistics(555, KEY);
-    expect(stats).toEqual([{ player: {} }]);
-    expect(fetchMock.mock.calls[0][0]).toBe("https://v1.tennis.api-sports.io/games/statistics?id=555");
-  });
-
-  test("getRankings appelle /rankings?type=ATP et /rankings?type=WTA séparément, jamais mélangés", async () => {
-    const { getRankings } = await import("../lib/sports/tennis/provider.js");
-    const fetchMock = jest.fn((url) =>
-      Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [{ url }] }) })
-    );
-    global.fetch = fetchMock;
-
-    const atp = await getRankings("ATP", KEY);
-    const wta = await getRankings("WTA", KEY);
-    expect(fetchMock.mock.calls[0][0]).toBe("https://v1.tennis.api-sports.io/rankings?type=ATP");
-    expect(fetchMock.mock.calls[1][0]).toBe("https://v1.tennis.api-sports.io/rankings?type=WTA");
-    expect(atp).not.toEqual(wta);
-  });
-
-  test("getPlayerStatistics appelle /players/statistics?player=X&season=Y", async () => {
-    const { getPlayerStatistics } = await import("../lib/sports/tennis/provider.js");
-    const fetchMock = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [{ wins: 20 }] }) }));
-    global.fetch = fetchMock;
-
-    const stats = await getPlayerStatistics({ player: 99, season: "2026" }, KEY);
-    expect(stats).toEqual([{ wins: 20 }]);
-    expect(fetchMock.mock.calls[0][0]).toBe("https://v1.tennis.api-sports.io/players/statistics?player=99&season=2026");
-  });
-
-  test("getHeadToHead appelle /games?h2h=id1-id2 avec les vrais identifiants des deux joueurs", async () => {
-    const { getHeadToHead } = await import("../lib/sports/tennis/provider.js");
-    const fetchMock = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [{ id: 1 }, { id: 2 }] }) }));
-    global.fetch = fetchMock;
-
-    const games = await getHeadToHead(10, 20, KEY);
-    expect(games).toHaveLength(2);
-    expect(fetchMock.mock.calls[0][0]).toBe("https://v1.tennis.api-sports.io/games?h2h=10-20");
-  });
-
-  test("getTournaments n'ajoute AUCUN filtre de catégorie — tous les tournois disponibles, sans exception", async () => {
-    const { getTournaments } = await import("../lib/sports/tennis/provider.js");
-    const fetchMock = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [{ id: 1 }, { id: 2 }] }) }));
-    global.fetch = fetchMock;
-
-    const tournaments = await getTournaments(null, KEY);
-    expect(tournaments).toHaveLength(2);
-    expect(fetchMock.mock.calls[0][0]).toBe("https://v1.tennis.api-sports.io/leagues");
-  });
-});
-
-describe("Pause après un 429 (quota quotidien dépassé) — même mécanique que les autres providers", () => {
-  afterEach(() => {
-    jest.restoreAllMocks();
-  });
-
-  test("après un 429 (sans aucune donnée connue avant), l'erreur remonte — puis la pause empêche tout nouvel appel réseau", async () => {
-    const { getLiveMatches } = await import("../lib/sports/tennis/provider.js");
-    const fetchMock = jest.fn(() => Promise.resolve({ ok: false, status: 429 }));
-    global.fetch = fetchMock;
-
-    await expect(getLiveMatches(KEY)).rejects.toThrow();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-
-    jest.spyOn(Date, "now").mockReturnValue(Date.now() + 21000);
-    await expect(getLiveMatches(KEY)).rejects.toThrow(/pause/i);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  test("une fois la pause (~1h) écoulée, un nouvel appel réel est retenté et peut réussir", async () => {
-    const { getLiveMatches } = await import("../lib/sports/tennis/provider.js");
-    let call = 0;
-    const fetchMock = jest.fn(() => {
-      call += 1;
-      if (call === 1) return Promise.resolve({ ok: false, status: 429 });
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [{ id: 7 }] }) });
-    });
-    global.fetch = fetchMock;
-
-    const nowSpy = jest.spyOn(Date, "now");
-    nowSpy.mockReturnValue(1_000_000);
-    await expect(getLiveMatches(KEY)).rejects.toThrow();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-
-    nowSpy.mockReturnValue(1_000_000 + 60 * 60 * 1000 + 1000);
-    const games = await getLiveMatches(KEY);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(games).toEqual([{ id: 7 }]);
-  });
-});
-
-describe("Repli honnête sur la dernière donnée connue, jamais une donnée inventée", () => {
-  test("un incident passager (erreur réseau) après un premier succès retombe sur la dernière valeur connue", async () => {
-    const { getLiveMatches } = await import("../lib/sports/tennis/provider.js");
-    let call = 0;
-    const fetchMock = jest.fn(() => {
-      call += 1;
-      if (call === 1) return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [{ id: 1 }] }) });
-      return Promise.reject(new Error("network down"));
-    });
-    global.fetch = fetchMock;
-
-    const first = await getLiveMatches(KEY);
-    expect(first).toEqual([{ id: 1 }]);
-
-    jest.spyOn(Date, "now").mockReturnValue(Date.now() + 21000);
-    const second = await getLiveMatches(KEY);
-    expect(second).toEqual([{ id: 1 }]);
-  });
-
-  test("un échec sans AUCUNE donnée connue laisse l'erreur remonter (jamais masquée par une liste vide silencieuse)", async () => {
-    const { getLiveMatches } = await import("../lib/sports/tennis/provider.js");
-    global.fetch = jest.fn(() => Promise.reject(new Error("network down")));
-    await expect(getLiveMatches(KEY)).rejects.toThrow("network down");
+    const player = await getPlayer("101", KEY);
+    expect(player).toEqual({ ranking: 5 });
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.livetennisapi.com/api/public/v1/players/101");
   });
 });

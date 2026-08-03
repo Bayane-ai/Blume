@@ -13,7 +13,7 @@ import { supabaseAnon as supabase } from "../lib/supabaseAnon";
 import { getLiveMatch } from "../lib/liveMatchCache";
 import { fetchRealMatchStats } from "../lib/pronosticVerification";
 import { getGameById as getBasketballGameById, getGameStatistics as getBasketballGameStatistics } from "../lib/sports/basketball/provider";
-import { getGameById as getTennisGameById, getGameStatistics as getTennisGameStatistics } from "../lib/sports/tennis/provider";
+import { getMatchScore as getTennisMatchScore } from "../lib/sports/tennis/provider";
 
 jest.mock("../lib/supabaseAnon", () => ({ supabaseAnon: { from: jest.fn() } }));
 jest.mock("../lib/liveMatchCache", () => ({ getLiveMatch: jest.fn() }));
@@ -22,7 +22,7 @@ jest.mock("../lib/sports/basketball/provider", () => ({
   getGameById: jest.fn(), getGameStatistics: jest.fn(() => Promise.resolve([])), getBasketballApiKey: () => "basket-key",
 }));
 jest.mock("../lib/sports/tennis/provider", () => ({
-  getGameById: jest.fn(), getGameStatistics: jest.fn(() => Promise.resolve([])), getTennisApiKey: () => "tennis-key",
+  getMatchScore: jest.fn(), getTennisApiKey: () => "tennis-key",
 }));
 
 function chainable(result) {
@@ -44,8 +44,7 @@ beforeEach(() => {
   fetchRealMatchStats.mockReset().mockResolvedValue(null);
   getBasketballGameById.mockReset();
   getBasketballGameStatistics.mockReset().mockResolvedValue([]);
-  getTennisGameById.mockReset();
-  getTennisGameStatistics.mockReset().mockResolvedValue([]);
+  getTennisMatchScore.mockReset();
 });
 
 function leg(overrides = {}) {
@@ -407,13 +406,12 @@ describe("BLOC 9 — sélections basket/tennis vérifiées via leur propre API",
       ],
     };
     supabase.from = jest.fn(() => chainable({ data: [row], error: null }));
-    getTennisGameById.mockResolvedValue({
-      id: 9, status: { long: "Finished", short: "FT" }, teams: { home: { id: 10 }, away: { id: 11 } },
-      scores: { home: { set_1: 6, set_2: 6, total: 2 }, away: { set_1: 4, set_2: 3, total: 0 } },
+    getTennisMatchScore.mockResolvedValue({
+      status: "finished", sets: [{ home: 6, away: 4 }, { home: 6, away: 3 }],
     });
 
     const progress = await getComboProgress(["c-tennis"], ctx({ token: null, tennisApiKey: "tennis-key" }));
-    expect(getTennisGameById).toHaveBeenCalledWith("9", "tennis-key");
+    expect(getTennisMatchScore).toHaveBeenCalledWith("9", "tennis-key");
     // Les deux sélections partagent le même matchId : la seconde écrase la première
     // dans `legResults` (même limitation que le reste de ce fichier, qui indexe par
     // matchId) — ici les deux sont vraies, donc la valeur finale reste `true`.
@@ -427,9 +425,8 @@ describe("BLOC 9 — sélections basket/tennis vérifiées via leur propre API",
       legs: [{ matchId: "tn-9", sport: "tennis", verify: { type: "line", statKey: "totalGames", line: 5.5, side: "Plus" } }],
     };
     supabase.from = jest.fn(() => chainable({ data: [row], error: null }));
-    getTennisGameById.mockResolvedValue({
-      id: 9, status: { long: "Set 2", short: "" }, teams: { home: { id: 10 }, away: { id: 11 } },
-      scores: { home: { set_1: 6, set_2: 4 }, away: { set_1: 4, set_2: 2 } }, // déjà 16 jeux joués, largement > 5.5
+    getTennisMatchScore.mockResolvedValue({
+      status: "live", sets: [{ home: 6, away: 4 }, { home: 4, away: 2 }], // déjà 16 jeux joués, largement > 5.5
     });
 
     const progress = await getComboProgress(["c-tennis-live"], ctx({ token: null, tennisApiKey: "tennis-key" }));

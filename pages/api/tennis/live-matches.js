@@ -1,36 +1,35 @@
-// Bloc 5 (multi-sport) — équivalent tennis de pages/api/live-matches.js et pages/api/
-// basketball/live-matches.js : TOUS les matchs actuellement en direct dans le monde,
-// toutes catégories confondues (ATP, WTA, Grand Chelem, Masters 1000, ATP 250/500,
-// Challengers, ITF — voir PROMPT bloc 5, point 3), sans le moindre filtre — voir
-// lib/sports/tennis/provider.js (API-Tennis, cache court côté serveur) et lib/sports/
-// tennis/mapper.js (mise en forme, même structure que le football/basket pour que
-// components/MatchCard.js reste inchangé).
+// Équivalent tennis de pages/api/live-matches.js (football) — TOUS les matchs
+// actuellement en direct (Live Tennis API, voir lib/sports/tennis/provider.js), sans
+// filtre de tournoi. Un seul appel réel partagé par tous les visiteurs (cache
+// persistant 60s, voir provider.js#getLiveMatches) — jamais un appel par visiteur.
 //
-// Pas encore de pronostic (bloc 7) : chaque match reçoit honnêtement
-// `pronostic: { available: false }`, jamais une estimation inventée.
+// Le score détaillé (sets/jeu en cours/serveur) vient de GET /matches/{id}/score, un
+// endpoint SÉPARÉ de la liste (voir PROMPT) : appeler ce détail pour CHAQUE match
+// affiché à CHAQUE rafraîchissement de cette liste dépasserait vite le quota strict
+// (30/min, 1000/jour, voir provider.js) dès que plusieurs matchs sont en direct en
+// même temps — non appelé ici (le mapper retombe sur ce que la liste fournit déjà
+// elle-même, voir mapLiveTennisMatch). Le détail précis est réservé à la page d'un
+// match ouvert (voir pages/api/tennis/analyze.js).
 import { getTennisApiKey, getLiveMatches } from "../../../lib/sports/tennis/provider";
 import { mapMatchToLiveState } from "../../../lib/sports/tennis/mapper";
 
 export default async function handler(req, res) {
   const key = getTennisApiKey();
-  // Message clair en français, jamais un texte technique ("contactez l'administrateur")
-  // — voir PROMPT bloc 5, point 5.
   if (!key) {
     return res.status(500).json({ error: "Clé API tennis manquante. Le direct tennis n'est pas disponible pour le moment." });
   }
 
   try {
-    const games = await getLiveMatches(key);
-    const matches = games
-      .map(mapMatchToLiveState)
+    const rawMatches = await getLiveMatches(key);
+    const matches = rawMatches
+      .map((m) => mapMatchToLiveState(m, null))
       .filter((m) => m.homeTeam.name && m.awayTeam.name)
       .map((m) => ({ ...m, pronostic: { available: false } }));
 
     // Même mécanisme que les autres sports : le CDN Vercel mutualise les réponses
     // entre toutes les instances/visiteurs pendant quelques secondes, pour que
-    // l'actualisation fréquente côté client (15-30s, voir PROMPT bloc 5, point 4) ne
-    // multiplie pas les appels réels vers API-Tennis (déjà protégés par le cache
-    // serveur de 20s, voir provider.js).
+    // l'actualisation fréquente côté client ne multiplie pas les appels réels vers
+    // Live Tennis API (déjà protégés par le cache serveur de 60s, voir provider.js).
     res.setHeader("Cache-Control", "s-maxage=15, stale-while-revalidate=30");
     return res.status(200).json({ matches });
   } catch (e) {

@@ -14,7 +14,7 @@
 import { getSession } from "../../../lib/session";
 import { isAdmin } from "../../../lib/auth/admin";
 import { getBasketballApiKey, getLiveGames, getGamesByDate } from "../../../lib/sports/basketball/provider";
-import { getTennisApiKey, getLiveMatches, getMatchesByDate } from "../../../lib/sports/tennis/provider";
+import { getTennisApiKey, getLiveMatches, checkTennisHealth, getTennisQuotaUsageToday } from "../../../lib/sports/tennis/provider";
 import { readPersistentCache } from "../../../lib/apiSportsCache";
 
 const FOOTBALL_DATA_BASE = "https://api.football-data.org/v4";
@@ -121,17 +121,43 @@ async function checkBasketballMatches(key) {
   }
 }
 
-// Tennis : même principe, mais SANS cache persistant (voir lib/sports/tennis/
-// provider.js — seulement un cache en mémoire, pas encore branché sur
-// lib/apiSportsCache.js comme le basket) : `cache: null` reflète honnêtement cette
-// absence, jamais une valeur inventée.
-async function checkTennisMatches(key) {
-  const today = todayUtc();
+// Tennis (Live Tennis API — fournisseur DIFFÉRENT d'API-SPORTS, voir lib/sports/
+// tennis/provider.js) : pas de /status ni de matchs "à venir" sur ce plan gratuit
+// (voir PROMPT). GET /health valide la connectivité (sans clé) ; si une clé est
+// configurée, un vrai appel à /matches?status=live donne le nombre RÉEL de matchs en
+// direct récupérés, l'état du cache persistant partagé, et la consommation du jour
+// (compteur interne, ce fournisseur n'expose pas d'en-tête x-ratelimit-*).
+async function checkTennis(key) {
+  const checkedAt = new Date().toISOString();
+  const health = await checkTennisHealth();
+  const base = {
+    name: "API-Tennis (Live Tennis API)",
+    keyEnvVar: "TENNIS_API_KEY",
+    keyPresent: Boolean(key),
+    healthEndpoint: health,
+    checkedAt,
+  };
+  if (!key) {
+    return { ...base, ok: false, httpStatus: null, errorBody: null, quota: null, liveCount: null, cache: null, matchesError: null };
+  }
   try {
-    const [live, upcoming] = await Promise.all([getLiveMatches(key), getMatchesByDate(today, key)]);
-    return { liveCount: live.length, upcomingCount: upcoming.length, cache: null, matchesError: null };
+    const [live, liveCache, usage] = await Promise.all([
+      getLiveMatches(key),
+      readPersistentCache("tennis:livetennisapi:live"),
+      getTennisQuotaUsageToday(),
+    ]);
+    return {
+      ...base,
+      ok: true,
+      httpStatus: 200,
+      errorBody: null,
+      quota: { current: usage.requestsToday, limitDay: usage.dailyCap, currentMinute: usage.requestsThisMinute, limitMinute: usage.minuteCap },
+      liveCount: live.length,
+      cache: { live: liveCache ? { lastUpdated: new Date(liveCache.fetchedAt).toISOString() } : null, upcoming: null },
+      matchesError: null,
+    };
   } catch (e) {
-    return { liveCount: null, upcomingCount: null, cache: null, matchesError: e.message };
+    return { ...base, ok: false, httpStatus: null, errorBody: e.message, quota: null, liveCount: null, cache: null, matchesError: e.message };
   }
 }
 
@@ -177,13 +203,10 @@ export default async function handler(req, res) {
       name: "API-Basketball", base: "https://v1.basketball.api-sports.io",
       keyEnvVar: "API_BASKETBALL_KEY (ou API_FOOTBALL_KEY en repli)", key: apiBasketballKey,
     }),
-    checkApiSportsStatus({
-      name: "API-Tennis", base: "https://v1.tennis.api-sports.io",
-      keyEnvVar: "API_TENNIS_KEY (ou API_FOOTBALL_KEY en repli)", key: apiTennisKey,
-    }),
+    checkTennis(apiTennisKey),
   ]);
 
-  const names = ["football-data.org", "API-Football", "API-Basketball", "API-Tennis"];
+  const names = ["football-data.org", "API-Football", "API-Basketball", "API-Tennis (Live Tennis API)"];
   const sources = settled.map((s, i) => settledToResult(s, names[i]));
 
   // Nombre de matchs RÉELLEMENT récupérés (pas juste "la clé est valide") : répond à
@@ -193,10 +216,6 @@ export default async function handler(req, res) {
   if (apiBasketballKey) {
     const basketballSource = sources.find((s) => s.name === "API-Basketball");
     if (basketballSource) Object.assign(basketballSource, await checkBasketballMatches(apiBasketballKey));
-  }
-  if (apiTennisKey) {
-    const tennisSource = sources.find((s) => s.name === "API-Tennis");
-    if (tennisSource) Object.assign(tennisSource, await checkTennisMatches(apiTennisKey));
   }
 
   return res.status(200).json({

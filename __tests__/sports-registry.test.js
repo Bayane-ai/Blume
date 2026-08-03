@@ -38,20 +38,21 @@ describe("lib/sports — chaque sport a la même interface", () => {
     expect(SPORT_MODULES.football.routes.live).toBe("/api/live-matches");
   });
 
-  // Tennis (blocs 5, 7, 8) : provider/mapper/pronostics tous branchés sur de vraies
-  // données (API-Tennis, voir __tests__/tennis-provider.test.js,
-  // __tests__/tennis-mapper.test.js, __tests__/tennis-pronostic-model.test.js pour la
-  // couverture complète). L'appel SANS argument ci-dessous teste seulement le repli
-  // honnête de computePronostic() quand aucune donnée n'est fournie — pas une
-  // limitation du sport lui-même (voir pages/api/tennis/analyze.js pour l'appel réel).
-  test("tennis expose un provider réel (API-Tennis), un mapper réel et des pronostics réels", async () => {
+  // Tennis (Live Tennis API — voir __tests__/tennis-provider.test.js,
+  // __tests__/tennis-mapper.test.js, __tests__/tennis-live-pronostic.test.js pour la
+  // couverture complète). Plan gratuit limité au direct (voir lib/sports/tennis/
+  // provider.js) : pas de getMatchesByDate/getRankings/getPlayerStatistics/
+  // getHeadToHead comme l'ancienne intégration API-Sports, désormais impossibles à
+  // honorer honnêtement avec cette source. L'appel SANS argument ci-dessous teste
+  // seulement le repli honnête de computePronostic() quand aucune donnée n'est
+  // fournie — pas une limitation du sport lui-même (voir pages/api/tennis/analyze.js
+  // pour l'appel réel).
+  test("tennis expose un provider réel (Live Tennis API), un mapper réel et des pronostics réels", async () => {
     const mod = SPORT_MODULES.tennis;
     expect(mod.implemented).toBe(true);
     expect(typeof mod.provider.getLiveMatches).toBe("function");
-    expect(typeof mod.provider.getMatchesByDate).toBe("function");
-    expect(typeof mod.provider.getRankings).toBe("function");
-    expect(typeof mod.provider.getPlayerStatistics).toBe("function");
-    expect(typeof mod.provider.getHeadToHead).toBe("function");
+    expect(typeof mod.provider.getMatchScore).toBe("function");
+    expect(typeof mod.provider.getPlayer).toBe("function");
     expect(typeof mod.mapper.mapMatchToLiveState).toBe("function");
 
     // Jamais une donnée fictive : sans clé API, le provider renvoie honnêtement une

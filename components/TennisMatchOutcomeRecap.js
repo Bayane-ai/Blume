@@ -27,14 +27,8 @@ export default function TennisMatchOutcomeRecap({ pronostic }) {
         />
       )}
       <TennisVerifiedLines
-        setScores={pronostic.setScores}
         gameTotals={pronostic.gameTotals}
-        gameHandicap={pronostic.gameHandicap}
-        setsBlock={pronostic.setsBlock}
-        aces={pronostic.aces}
-        doubleFaults={pronostic.doubleFaults}
-        breaks={pronostic.breaks}
-        tiebreak={pronostic.tiebreak}
+        totalSets={pronostic.totalSets}
         verification={pronostic.verification}
         homeName={pronostic.home?.name}
         awayName={pronostic.away?.name}
