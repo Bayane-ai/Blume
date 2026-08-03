@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { getSession } from "../lib/session";
 import { isAdmin } from "../lib/auth/admin";
-import { getAllQuotaSnapshots } from "../lib/apiQuota";
+import { getAllQuotaSnapshots, getLastError } from "../lib/apiQuota";
 import { formatMinutesAgo } from "../lib/formatRelativeTime";
 import SiteHeader from "../components/SiteHeader";
 
@@ -33,12 +33,22 @@ export async function getServerSideProps({ req, res }) {
     return { props: {} };
   }
 
-  const quotaSnapshots = await getAllQuotaSnapshots(TRACKED_SPORTS.map((s) => s.sport));
+  const sports = TRACKED_SPORTS.map((s) => s.sport);
+  const [quotaSnapshots, lastErrors] = await Promise.all([
+    getAllQuotaSnapshots(sports),
+    Promise.all(sports.map((sport) => getLastError(sport))),
+  ]);
 
-  return { props: { adminEmail: session.email, quotaSnapshots } };
+  return {
+    props: {
+      adminEmail: session.email,
+      quotaSnapshots,
+      lastErrors: sports.reduce((acc, sport, i) => ({ ...acc, [sport]: lastErrors[i] }), {}),
+    },
+  };
 }
 
-export default function Admin({ adminEmail, quotaSnapshots }) {
+export default function Admin({ adminEmail, quotaSnapshots, lastErrors }) {
   const [recomputeState, setRecomputeState] = useState({ loading: false, result: null, error: null });
 
   const runRecompute = async () => {
@@ -94,6 +104,11 @@ export default function Admin({ adminEmail, quotaSnapshots }) {
                 <div style={st.quotaMeta}>
                   {snap.updatedAt ? `Dernière requête ${formatMinutesAgo(snap.updatedAt)}` : "Aucune requête effectuée aujourd'hui"}
                 </div>
+                {lastErrors?.[snap.sport] && (
+                  <div style={st.quotaError} data-testid={`admin-last-error-${snap.sport}`}>
+                    Dernière erreur ({formatMinutesAgo(lastErrors[snap.sport].at)}) : {lastErrors[snap.sport].message}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -134,6 +149,7 @@ const st = {
   quotaLabel: { fontSize: 13.5, fontWeight: 800, marginBottom: 6 },
   quotaNumbers: { display: "flex", flexDirection: "column", gap: 2, fontSize: 12.5 },
   quotaMeta: { fontSize: 11.5, color: "var(--text-secondary)", marginTop: 6, fontStyle: "italic" },
+  quotaError: { fontSize: 11.5, color: "var(--negative)", marginTop: 6, wordBreak: "break-word" },
   btn: {
     background: "var(--accent)", border: "none", color: "var(--on-accent)", fontWeight: 800,
     borderRadius: 999, padding: "11px 22px", fontSize: 13.5, cursor: "pointer",

@@ -33,6 +33,37 @@ function makeSupabaseMock(rows) {
   };
 }
 
+function makeCacheTableMock(rows) {
+  return {
+    upsert: (row) => {
+      const idx = rows.findIndex((r) => r.cache_key === row.cache_key);
+      if (idx >= 0) rows[idx] = { ...rows[idx], ...row };
+      else rows.push({ ...row });
+      return Promise.resolve({ error: null });
+    },
+    select: () => ({
+      eq: (col, val) => ({
+        maybeSingle: () => {
+          const row = rows.find((r) => r[col] === val) || null;
+          return Promise.resolve({ data: row, error: null });
+        },
+      }),
+    }),
+  };
+}
+
+function makeSupabaseMockWithCache(quotaRows, cacheRows) {
+  return {
+    getSupabaseAdmin: () => ({
+      from: (table) => {
+        if (table === "api_football_cache") return makeCacheTableMock(cacheRows);
+        if (table === "api_quota_usage") return makeSupabaseMock(quotaRows).getSupabaseAdmin().from(table);
+        throw new Error(`table inattendue : ${table}`);
+      },
+    }),
+  };
+}
+
 function fakeResponse(headers) {
   const map = new Map(Object.entries(headers || {}));
   return { headers: { get: (name) => (map.has(name) ? map.get(name) : null) } };
@@ -86,6 +117,21 @@ test("le compteur est INDÉPENDANT par sport : épuiser le basket ne touche pas 
     expect.objectContaining({ sport: "football", requestsUsed: 1, requestsRemaining: 42 }),
     expect.objectContaining({ sport: "basketball", requestsUsed: 1, requestsRemaining: 0 }),
   ]);
+});
+
+test("recordLastError puis getLastError : retrouve le message et l'horodatage, sans affecter les autres sports", async () => {
+  const cacheRows = [];
+  jest.doMock("../lib/supabaseAdmin", () => makeSupabaseMockWithCache([], cacheRows));
+  const { recordLastError, getLastError } = await import("../lib/apiQuota");
+
+  expect(await getLastError("basketball")).toBeNull(); // rien enregistré -> pas d'erreur inventée
+
+  await recordLastError("basketball", "API-Basketball a répondu 403 sur /games?live=all");
+  const entry = await getLastError("basketball");
+  expect(entry.message).toBe("API-Basketball a répondu 403 sur /games?live=all");
+  expect(entry.at).toEqual(expect.any(String));
+
+  expect(await getLastError("football")).toBeNull(); // indépendant par sport, même cache partagé
 });
 
 test("aucune fonction ne jette jamais, même si Supabase est indisponible (table absente, migration pas encore exécutée...)", async () => {

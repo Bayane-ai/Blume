@@ -46,6 +46,22 @@ test("aucune requête connue pour un sport (quota jamais lu) : message honnête,
   expect(football).toHaveTextContent("Aucune requête effectuée aujourd'hui");
 });
 
+test("dernière erreur connue pour un sport : affichée pour diagnostiquer (abonnement manquant vs quota)", () => {
+  const quotaSnapshots = [
+    { sport: "football", requestsUsed: 3, requestsRemaining: 97, requestsLimit: 100, updatedAt: null },
+    { sport: "basketball", requestsUsed: 3, requestsRemaining: 97, requestsLimit: 100, updatedAt: null },
+  ];
+  const lastErrors = {
+    football: null,
+    basketball: { message: "API-Basketball a répondu 403 sur /games?live=all", at: new Date(Date.now() - 4 * 60000).toISOString() },
+  };
+  render(<Admin adminEmail="admin@example.com" quotaSnapshots={quotaSnapshots} lastErrors={lastErrors} />);
+
+  expect(screen.queryByTestId("admin-last-error-football")).toBeNull();
+  const basketballError = screen.getByTestId("admin-last-error-basketball");
+  expect(basketballError).toHaveTextContent("API-Basketball a répondu 403 sur /games?live=all");
+});
+
 test("les deux sports (football, basketball) apparaissent toujours, dans cet ordre", () => {
   const quotaSnapshots = [
     { sport: "football", requestsUsed: 1, requestsRemaining: 99, requestsLimit: 100, updatedAt: null },
