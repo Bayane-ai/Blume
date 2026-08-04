@@ -9,7 +9,34 @@ import MatchInfoBlock from "../components/MatchInfoBlock";
 import SiteHeader from "../components/SiteHeader";
 import FilterCarousel from "../components/FilterCarousel";
 import SportComingSoon from "../components/SportComingSoon";
+import ExternalMatchesWidget from "../components/ExternalMatchesWidget";
+import { LEAGUE_SLUGS } from "../lib/espnSoccer";
 import { formatMinutesAgo } from "../lib/formatRelativeTime";
+
+// Deux sections "widget" indépendantes du pipeline principal (voir lib/espnSoccer.js
+// et components/ExternalMatchesWidget.js) : appel direct navigateur, sans backend, sans
+// clé — LDC/Europa/Conference + championnats russe/suédois/slovaque/letton d'un côté,
+// tous les clubs (grandes compétitions en premier) de l'autre.
+const SPECIFIC_COMPETITIONS = [
+  LEAGUE_SLUGS.UEFA_CHAMPIONS_LEAGUE,
+  LEAGUE_SLUGS.UEFA_EUROPA_LEAGUE,
+  LEAGUE_SLUGS.UEFA_CONFERENCE_LEAGUE,
+  LEAGUE_SLUGS.RUSSIA_PREMIER_LEAGUE,
+  LEAGUE_SLUGS.SWEDEN_ALLSVENSKAN,
+  LEAGUE_SLUGS.SLOVAKIA_SUPER_LIGA,
+  LEAGUE_SLUGS.LATVIA_VIRSLIGA,
+];
+
+const ALL_CLUBS_COMPETITIONS = [
+  LEAGUE_SLUGS.UEFA_CHAMPIONS_LEAGUE,
+  LEAGUE_SLUGS.UEFA_EUROPA_LEAGUE,
+  LEAGUE_SLUGS.UEFA_CONFERENCE_LEAGUE,
+  LEAGUE_SLUGS.PREMIER_LEAGUE,
+  LEAGUE_SLUGS.LA_LIGA,
+  LEAGUE_SLUGS.SERIE_A,
+  LEAGUE_SLUGS.BUNDESLIGA,
+  LEAGUE_SLUGS.LIGUE_1,
+];
 
 // Grâce au cache partagé côté serveur (lib/liveListCache.js, actualisé toutes les
 // 2,5s), on peut interroger /api/live-matches très souvent depuis le client sans
@@ -442,6 +469,21 @@ export default function Home() {
                 <MatchCard key={m.id} m={m} comp={comp} />
               ))}
             </div>
+
+            <ExternalMatchesWidget
+              title="Ligue des Champions, Europa, Conference & championnats spécifiques"
+              subtitle="Russie, Suède, Slovaquie, Lettonie — source indépendante, actualisée automatiquement toutes les 5 minutes."
+              leagues={SPECIFIC_COMPETITIONS}
+              testId="external-specific-competitions"
+            />
+
+            <ExternalMatchesWidget
+              title="Matchs à venir — tous les clubs"
+              subtitle="Grandes compétitions en premier, actualisées automatiquement toutes les 5 minutes."
+              leagues={ALL_CLUBS_COMPETITIONS}
+              minMatches={6}
+              testId="external-all-clubs"
+            />
           </>
         )}
       </main>

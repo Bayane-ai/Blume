@@ -164,6 +164,21 @@ export default async function handler(req, res) {
     return res.status(200).json({ available: false, message: "Les pronostics basket arrivent bientôt sur Blume." });
   }
 
+  // Widgets "compétitions spécifiques" / "tous les clubs" (voir components/
+  // ExternalMatchesWidget.js) : matchs récupérés directement depuis le navigateur via
+  // l'API ESPN (id préfixé "espn-"), en dehors du pipeline football-data.org/API-
+  // Football. Jamais envoyé à football-data.org : ses ids sont numérotés
+  // indépendamment et pourraient par coïncidence désigner un tout autre match — et
+  // interroger quand même gaspillerait inutilement le quota (10 req/min) pour une
+  // requête vouée à échouer. Réponse honnête plutôt qu'une estimation "moyenne" sans
+  // aucune vraie donnée derrière.
+  if (typeof matchId === "string" && matchId.startsWith("espn-")) {
+    return res.status(200).json({
+      available: false,
+      message: "Ce match provient d'une source externe (widget compétitions) : pas encore de pronostic détaillé disponible pour lui sur Blume.",
+    });
+  }
+
   if (!token) return res.status(500).json({ error: "Clé API manquante" });
   if (!competitionCode || !homeTeamId || !awayTeamId) {
     return res.status(400).json({ error: "Paramètres manquants" });
