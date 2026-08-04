@@ -136,10 +136,7 @@ test('"Matchs à venir" mène à une vraie page (pas un lien mort) affichant le 
   expect(within(nav).getByRole("link", { name: "Matchs à venir" })).toHaveAttribute("href", "/a-venir");
 
   await waitFor(() => expect(screen.getAllByText("Real Madrid").length).toBeGreaterThan(0));
-  // Ce même match peut légitimement apparaître deux fois sur cette page : une fois
-  // dans la liste principale, une fois dans la section "tous les clubs" (voir
-  // pages/a-venir.js, lib/featuredCompetitions.js) — jamais un filtre là-bas.
-  expect(screen.getAllByText("Barcelona").length).toBeGreaterThan(0);
+  expect(screen.getByText("Barcelona")).toBeInTheDocument();
   expect(screen.getAllByRole("button", { name: /^analyser$/i }).length).toBeGreaterThan(0);
 
   // Aucun match en direct de l'autre page, aucun score affiché (pas encore joué).

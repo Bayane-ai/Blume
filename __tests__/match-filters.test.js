@@ -46,6 +46,20 @@ test("une compétition sans code est ignorée plutôt que de casser le filtrage"
   expect(result.map((c) => c.value)).toEqual(["PL"]);
 });
 
+test("Europa League/Conference League et les championnats russe/suédois/slovaque/letton remontent juste après les compétitions majeures habituelles (jamais une liste séparée)", () => {
+  const matches = [
+    match("ZZZ", "Zeta Zone Cup"),
+    { competition: { code: "af-235", name: "Premier League", area: "Russia" } },
+    match("PL", "Premier League"),
+    { competition: { code: "af-3", name: "UEFA Europa League" } },
+  ];
+  const result = presentCompetitions(matches);
+  // PL (déjà connue) d'abord, puis les compétitions "spécifiques" (triées entre elles
+  // par nom), puis tout le reste (alphabétique) — un seul et même filtre pour la liste
+  // de matchs déjà affichée, jamais un doublon.
+  expect(result.map((c) => c.value)).toEqual(["PL", "af-235", "af-3", "ZZZ"]);
+});
+
 test("presentMatchdays reste inchangé : journées réelles d'une compétition, triées, jamais une compétition sans champ matchday exploitable", () => {
   const matches = [match("PL", "Premier League", 3), match("PL", "Premier League", 1), match("FL1", "Ligue 1", 5)];
   expect(presentMatchdays(matches, "PL")).toEqual([

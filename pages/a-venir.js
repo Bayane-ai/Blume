@@ -6,8 +6,6 @@ import MatchCard from "../components/MatchCard";
 import SiteHeader from "../components/SiteHeader";
 import FilterCarousel from "../components/FilterCarousel";
 import SportComingSoon from "../components/SportComingSoon";
-import CompetitionMatchesSection from "../components/CompetitionMatchesSection";
-import { isFeaturedSpecificCompetition, sortByStatusThenDate, sortByPriorityThenDate } from "../lib/featuredCompetitions";
 import { formatMinutesAgo } from "../lib/formatRelativeTime";
 
 const UPCOMING_STATUSES = ["SCHEDULED", "TIMED"];
@@ -208,23 +206,6 @@ export default function UpcomingMatches() {
     return rows;
   }, [weekData, searchQuery, compFilter, matchdayFilter]);
 
-  // "Ligue des Champions, Europa, Conference & championnats spécifiques" (Russie,
-  // Suède, Slovaquie, Lettonie), portion À VENIR — la portion en direct de la même
-  // section vit sur la page d'accueil (voir pages/index.js), jamais les deux mélangées
-  // ici (même convention que "Football en direct" vs cette page). Voir
-  // lib/featuredCompetitions.js pour le détail du filtre.
-  const specificCompetitionsUpcomingFeed = useMemo(
-    () => sortByStatusThenDate(allUpcomingMatches.filter((m) => m?.homeTeam && m?.awayTeam && m?.utcDate).filter(isFeaturedSpecificCompetition)),
-    [allUpcomingMatches]
-  );
-
-  // "Matchs à venir — tous les clubs" : jamais un filtre, seulement un ordre de
-  // priorité (grandes compétitions d'abord, voir lib/featuredCompetitions.js).
-  const allClubsFeed = useMemo(
-    () => sortByPriorityThenDate(allUpcomingMatches.filter((m) => m?.homeTeam && m?.awayTeam && m?.utcDate)),
-    [allUpcomingMatches]
-  );
-
   // Multi-sport bloc 2 : "Matchs groupés JOUR PAR JOUR (une section par date), toutes
   // compétitions confondues" — jamais de filtre par compétition pour le basket dans
   // ce bloc (contrairement au football ci-dessus, pas demandé ici).
@@ -403,23 +384,6 @@ export default function UpcomingMatches() {
                 <MatchCard key={m.id} m={m} comp={comp} />
               ))}
             </div>
-
-            <CompetitionMatchesSection
-              title="Ligue des Champions, Europa, Conference & championnats spécifiques — à venir"
-              subtitle="Russie, Suède, Slovaquie, Lettonie — mêmes sources que le reste de Blume (football-data.org + API-Football). Les matchs en direct de ces compétitions sont sur la page d'accueil (Live)."
-              matches={specificCompetitionsUpcomingFeed}
-              loading={weekLoading}
-              testId="featured-specific-competitions-upcoming"
-            />
-
-            <CompetitionMatchesSection
-              title="Matchs à venir — tous les clubs"
-              subtitle="Grandes compétitions en premier (Ligue des Champions, Europa, Conference, Premier League, LaLiga, Serie A, Bundesliga, Ligue 1)."
-              matches={allClubsFeed}
-              loading={weekLoading}
-              minMatches={6}
-              testId="featured-all-clubs"
-            />
           </>
         )}
       </main>
