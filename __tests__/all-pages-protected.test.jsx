@@ -13,6 +13,7 @@ import { render, screen } from "@testing-library/react";
 
 import Home from "../pages/index";
 import UpcomingMatches from "../pages/a-venir";
+import MatchsDuJour from "../pages/matchs-du-jour";
 import CombineVision from "../pages/combine-vision";
 import News from "../pages/news";
 import CompetitionPage from "../pages/competition/[code]";
@@ -45,6 +46,7 @@ beforeEach(() => {
 const pages = [
   ["/", Home],
   ["/a-venir", UpcomingMatches],
+  ["/matchs-du-jour", MatchsDuJour],
   ["/combine-vision", CombineVision],
   ["/news", News],
   ["/competition/[code]", CompetitionPage],
