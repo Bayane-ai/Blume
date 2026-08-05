@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchMatchesWithFallback, readCachedMatches, writeCachedMatches } from "../lib/sportScore";
+import { fetchMatchesWithFallback, readCachedMatches, writeCachedMatches, groupByCompetition, countCoverage } from "../lib/sportScore";
 
 // Rechargement automatique toutes les 5 minutes (demandé) : retire les matchs terminés
 // de la tête de liste et fait apparaître les nouveaux sans que le visiteur recharge la
@@ -45,8 +45,9 @@ function MatchRow({ m }) {
   const status = STATUS_LABELS[m.status] || STATUS_LABELS.upcoming;
   return (
     <li style={st.card} data-testid="sportscore-match">
-      <div style={st.cardTop}>
-        <span style={st.competition}>{m.competition || "Compétition non communiquée"}</span>
+      {/* La compétition n'est plus répétée ici : elle titre déjà le groupe auquel cette
+          carte appartient (voir groupByCompetition). */}
+      <div style={st.cardTopRight}>
         <span
           style={{
             ...st.badge,
@@ -122,6 +123,16 @@ export default function SportScoreSection({ sport, title, subtitle, testId }) {
       if (error) console.warn(`[SportScore] ${sport} : bascule sur les sources Blume — ${error}`);
 
       if (list.length > 0) {
+        // Comptage diagnostique : ce qui est REÇU. Le même comptage est refait sur ce
+        // qui est RENDU (voir plus bas, data-* sur la section) — les deux doivent être
+        // identiques, sans quoi un filtre traînerait encore quelque part.
+        const coverage = countCoverage(list);
+        const meta = list.meta;
+        console.info(
+          `[SportScore] ${sport} : ${coverage.matches} match(s), ${coverage.competitions} compétition(s) distincte(s)` +
+            (meta ? ` — ${meta.pages} page(s) lue(s), ${meta.received} reçu(s) de la source` : "") +
+            (meta?.droppedNoNames ? `, ${meta.droppedNoNames} écarté(s) faute de nom d'équipe` : "")
+        );
         setMatches(list);
         setSource(source);
         setPhase("loaded");
@@ -192,11 +203,22 @@ export default function SportScoreSection({ sport, title, subtitle, testId }) {
       )}
 
       {phase === "loaded" && (
-        <ul style={st.list} data-testid={`${testId}-list`}>
-          {matches.map((m) => (
-            <MatchRow key={m.id} m={m} />
+        <div
+          data-testid={`${testId}-list`}
+          data-match-count={matches.length}
+          data-competition-count={countCoverage(matches).competitions}
+        >
+          {groupByCompetition(matches).map((group) => (
+            <div key={group.competition} style={st.group} data-testid={`${testId}-group`}>
+              <h3 style={st.groupTitle}>{group.competition}</h3>
+              <ul style={st.list}>
+                {group.matches.map((m) => (
+                  <MatchRow key={m.id} m={m} />
+                ))}
+              </ul>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
 
       {/* Attribution obligatoire de l'offre gratuite SportScore — lien dofollow
@@ -225,7 +247,7 @@ const st = {
     background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 14,
     padding: 14, display: "flex", flexDirection: "column", gap: 10,
   },
-  cardTop: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  cardTopRight: { display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 },
   competition: {
     fontSize: 11, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: 0.3,
     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0,
@@ -264,6 +286,13 @@ const st = {
 
   // Cause technique réelle, affichée sous le message lisible : discrète mais jamais
   // cachée, pour qu'une panne soit diagnosticable sans ouvrir la console.
+  // Un groupe par compétition : titre discret, puis ses matchs. Purement visuel —
+  // aucun match n'est jamais écarté par ce regroupement.
+  group: { display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 },
+  groupTitle: {
+    fontSize: 12, fontWeight: 800, margin: 0, color: "var(--text-secondary)",
+    textTransform: "uppercase", letterSpacing: 0.4,
+  },
   errorDetail: { fontSize: 10.5, color: "var(--text-secondary)", opacity: 0.8, margin: "4px 0 0", wordBreak: "break-word" },
   sourceNote: { fontSize: 11, color: "var(--text-secondary)", fontStyle: "italic", margin: 0 },
   attribution: { fontSize: 11, color: "var(--text-secondary)", margin: "2px 0 0" },

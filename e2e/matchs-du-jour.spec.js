@@ -76,20 +76,20 @@ test("desktop : les deux sections affichent les vrais matchs, triés, avec statu
   // Grandes compétitions en tête, amicaux conservés en dessous.
   const fCards = football.getByTestId("sportscore-match");
   await expect(fCards).toHaveCount(2);
-  await expect(fCards.nth(0)).toContainText("UEFA Champions League");
+  await expect(football.getByTestId("sportscore-football-group").nth(0)).toContainText("UEFA Champions League");
   await expect(fCards.nth(0)).toContainText("Real Madrid");
-  await expect(fCards.nth(1)).toContainText("Club Friendlies");
+  await expect(football.getByTestId("sportscore-football-group").nth(1)).toContainText("Club Friendlies");
 
   // Tennis : Grand Chelem avant l'ITF, et statut réel affiché.
   const tCards = tennis.getByTestId("sportscore-match");
-  await expect(tCards.nth(0)).toContainText("Wimbledon");
+  await expect(tennis.getByTestId("sportscore-tennis-group").nth(0)).toContainText("Wimbledon");
   await expect(tennis.getByTestId("sportscore-status-live")).toContainText("En direct");
 
   // Basket : NBA en tête, et le match terminé relégué en fin de liste (jamais en tête).
   const bCards = basket.getByTestId("sportscore-match");
-  await expect(bCards.nth(0)).toContainText("NBA");
-  await expect(bCards.nth(1)).toContainText("Liga ACB");
-  await expect(bCards.nth(1).getByTestId("sportscore-status-finished")).toBeVisible();
+  await expect(basket.getByTestId("sportscore-basketball-group").nth(0)).toContainText("NBA");
+  await expect(basket.getByTestId("sportscore-basketball-group").nth(1)).toContainText("Liga ACB");
+  await expect(basket.getByTestId("sportscore-status-finished")).toBeVisible();
 
   // Aucun "undefined"/"null"/"[object Object]" nulle part à l'écran.
   const body = await page.locator("body").innerText();
@@ -176,7 +176,7 @@ test("visite suivante avec API en panne : les derniers vrais matchs connus reste
   await page.reload();
 
   await expect(page.getByTestId("sportscore-football").getByTestId("sportscore-match").first()).toContainText("Real Madrid");
-  await expect(page.getByTestId("sportscore-basketball").getByTestId("sportscore-match").first()).toContainText("NBA");
+  await expect(page.getByTestId("sportscore-basketball")).toContainText("NBA");
   await expect(page.getByTestId("sportscore-football-fallback")).toHaveCount(0);
 });
 
@@ -203,8 +203,8 @@ test("appel direct à sportscore.com refusé (CORS) : les matchs s'affichent qua
 
   // Les matchs sont bien là, affichés directement, sans que le visiteur clique.
   await expect(page.getByTestId("sportscore-football").getByTestId("sportscore-match").first()).toContainText("Real Madrid");
-  await expect(page.getByTestId("sportscore-tennis").getByTestId("sportscore-match").first()).toContainText("Wimbledon");
-  await expect(page.getByTestId("sportscore-basketball").getByTestId("sportscore-match").first()).toContainText("NBA");
+  await expect(page.getByTestId("sportscore-tennis")).toContainText("Wimbledon");
+  await expect(page.getByTestId("sportscore-basketball")).toContainText("NBA");
   await expect(page.getByTestId("sportscore-football-fallback")).toHaveCount(0);
 
   await page.screenshot({ path: "e2e-out/matchs-du-jour-proxy.png", fullPage: true });
@@ -303,4 +303,74 @@ test("toutes les sources mortes : la cause technique réelle est affichée, plus
   await expect(detail).toContainText("Repli Blume");
 
   await page.screenshot({ path: "e2e-out/matchs-du-jour-erreur-detaillee.png", fullPage: true });
+});
+
+test("couverture complète : tout ce que la source renvoie est affiché — reçu == affiché, pour les 3 sports", async ({ page }) => {
+  const logs = [];
+  page.on("console", (msg) => { if (msg.type() === "info") logs.push(msg.text()); });
+
+  // 12 compétitions volontairement hétéroclites par sport : grandes, jeunes, réserves,
+  // féminines, amicaux, petites fédérations.
+  const COMPS = {
+    football: ["UEFA Champions League", "Premier League", "Club Friendlies", "Russia U20 League",
+               "Latvia Virsliga Reserves", "Women's Cup", "Bhutan Premier League", "Serie D Girone C",
+               "Regional Amateur Cup", "Iceland 3. deild", "Fiji National League", "Youth Cup U17"],
+    tennis: ["Wimbledon", "ATP 250 Metz", "WTA 125 Contrexeville", "ITF M15 Monastir",
+             "ITF W15 Antalya", "Challenger Como", "Junior Open", "Exhibition Match",
+             "Davis Cup Group IV", "Fed Cup Zone", "Senior Tour", "Wheelchair Open"],
+    basketball: ["NBA", "EuroLeague", "Liga ACB", "NCAA D3", "WNBA", "Youth U18 Cup",
+                 "Regional Amateur League", "Bhutan Basketball League", "Reserves Cup",
+                 "Summer League", "Friendly Tournament", "3x3 Open"],
+  };
+
+  await page.route("**/api/**", (route) => route.fulfill({ json: {} }));
+  await page.route("**/api/auth/session", (route) =>
+    route.fulfill({ json: { session: { id: "u1", email: "test@example.com" } } })
+  );
+  await page.route("**sportscore.com/**", (route) => {
+    const sport = new URL(route.request().url()).searchParams.get("sport");
+    const matches = (COMPS[sport] || []).map((name, i) => ({
+      id: `${sport}-${i}`,
+      home_team: { name: `${sport} H${i}` },
+      away_team: { name: `${sport} A${i}` },
+      league: { name },
+      start_at: "2026-08-10T18:00:00Z",
+      status: "not_started",
+    }));
+    return route.fulfill({ json: { matches } });
+  });
+
+  await page.goto("/matchs-du-jour");
+  await dismissCookieBanner(page);
+
+  for (const [sport, comps] of Object.entries(COMPS)) {
+    const section = page.getByTestId(`sportscore-${sport}`);
+    const list = section.getByTestId(`sportscore-${sport}-list`);
+    await expect(list).toBeVisible();
+
+    // Ce que le composant DÉCLARE avoir reçu.
+    const declaredMatches = Number(await list.getAttribute("data-match-count"));
+    const declaredComps = Number(await list.getAttribute("data-competition-count"));
+
+    // Ce qui est RÉELLEMENT rendu dans le DOM.
+    const renderedMatches = await section.getByTestId("sportscore-match").count();
+    const renderedGroups = await section.getByTestId(`sportscore-${sport}-group`).count();
+
+    expect(declaredMatches).toBe(comps.length);
+    expect(declaredComps).toBe(comps.length);
+    expect(renderedMatches).toBe(comps.length);
+    expect(renderedGroups).toBe(comps.length);
+
+    // Chaque compétition, même la plus obscure, est réellement présente à l'écran.
+    for (const name of comps) {
+      await expect(section.getByRole("heading", { name, exact: true })).toBeVisible();
+    }
+  }
+
+  // Le journal de couverture confirme les mêmes nombres côté console.
+  expect(logs.some((l) => /football : 12 match\(s\), 12 compétition\(s\)/.test(l))).toBe(true);
+  expect(logs.some((l) => /tennis : 12 match\(s\), 12 compétition\(s\)/.test(l))).toBe(true);
+  expect(logs.some((l) => /basketball : 12 match\(s\), 12 compétition\(s\)/.test(l))).toBe(true);
+
+  await page.screenshot({ path: "e2e-out/matchs-du-jour-couverture.png", fullPage: true });
 });

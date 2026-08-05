@@ -148,10 +148,12 @@ test("les grandes compétitions sont affichées en haut de liste, sans jamais é
   render(<SportScoreSection sport="football" title="Football" testId="ss-f" />);
 
   await waitFor(() => expect(screen.getByTestId("ss-f-list")).toBeInTheDocument());
-  const cards = screen.getAllByTestId("sportscore-match");
-  expect(cards).toHaveLength(2);
-  expect(within(cards[0]).getByText("UEFA Champions League")).toBeInTheDocument();
-  expect(within(cards[1]).getByText("Club Friendlies")).toBeInTheDocument();
+  // Les matchs sont groupés par compétition, les grandes en tête — aucun match écarté.
+  const groups = screen.getAllByTestId("ss-f-group");
+  expect(groups).toHaveLength(2);
+  expect(within(groups[0]).getByRole("heading", { name: "UEFA Champions League" })).toBeInTheDocument();
+  expect(within(groups[1]).getByRole("heading", { name: "Club Friendlies" })).toBeInTheDocument();
+  expect(screen.getAllByTestId("sportscore-match")).toHaveLength(2);
 });
 
 test("appelle la bonne URL SportScore pour chaque sport, sans aucune clé API", async () => {
@@ -265,5 +267,62 @@ describe("pages/matchs-du-jour.js", () => {
     // page appartient à la navigation du site).
     const cards = screen.getAllByTestId("sportscore-match");
     cards.forEach((c) => expect(c.querySelectorAll("a")).toHaveLength(0));
+  });
+});
+
+// Point de contrôle central : RIEN n'est jamais exclu. Le nombre de matchs et de
+// compétitions RENDUS doit être strictement égal à ce que la source a renvoyé — sinon
+// c'est qu'un filtre traîne encore quelque part.
+describe("aucune compétition n'est jamais exclue : reçu == affiché", () => {
+  function diversePayload() {
+    // Compétitions volontairement hétéroclites : grandes, petites, jeunes, réserves,
+    // féminines, amicaux, fédérations obscures.
+    const comps = [
+      "UEFA Champions League", "Premier League", "Club Friendlies",
+      "Russia U20 League", "Latvia Virsliga Reserves", "Women's Cup",
+      "Bhutan Premier League", "ITF M15 Monastir", "Regional Amateur Cup",
+      "Serie D Girone C",
+    ];
+    return comps.map((name, i) => ({
+      id: 100 + i,
+      home_team: { name: `Équipe ${i}A` },
+      away_team: { name: `Équipe ${i}B` },
+      league: { name },
+      start_at: "2026-08-10T18:00:00Z",
+      status: "not_started",
+    }));
+  }
+
+  test("10 compétitions très diverses reçues : 10 groupes et 10 matchs affichés, aucun écarté", async () => {
+    global.fetch = jest.fn(() => Promise.resolve(payload(diversePayload())));
+    render(<SportScoreSection sport="football" title="Football" testId="ss-f" />);
+
+    await waitFor(() => expect(screen.getByTestId("ss-f-list")).toBeInTheDocument());
+
+    expect(screen.getAllByTestId("sportscore-match")).toHaveLength(10);
+    expect(screen.getAllByTestId("ss-f-group")).toHaveLength(10);
+
+    // Le composant expose lui-même son comptage : il doit refléter le rendu réel.
+    const list = screen.getByTestId("ss-f-list");
+    expect(Number(list.dataset.matchCount)).toBe(10);
+    expect(Number(list.dataset.competitionCount)).toBe(10);
+
+    // Les catégories que l'on pourrait croire filtrées sont bien présentes.
+    for (const name of ["Russia U20 League", "Latvia Virsliga Reserves", "Women's Cup", "Bhutan Premier League", "Regional Amateur Cup"]) {
+      expect(screen.getByRole("heading", { name })).toBeInTheDocument();
+    }
+  });
+
+  test("les grandes compétitions sont seulement REMONTÉES, jamais les autres écartées", async () => {
+    global.fetch = jest.fn(() => Promise.resolve(payload(diversePayload())));
+    render(<SportScoreSection sport="football" title="Football" testId="ss-f" />);
+    await waitFor(() => expect(screen.getByTestId("ss-f-list")).toBeInTheDocument());
+
+    const titles = screen.getAllByTestId("ss-f-group").map((g) => g.querySelector("h3").textContent);
+    expect(titles[0]).toBe("UEFA Champions League");
+    expect(titles[1]).toBe("Premier League");
+    // Toutes les autres suivent, aucune perdue.
+    expect(titles).toHaveLength(10);
+    expect(titles).toEqual(expect.arrayContaining(["Bhutan Premier League", "Serie D Girone C"]));
   });
 });

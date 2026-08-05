@@ -12,7 +12,7 @@ import {
   matchesUrl, unwrapMatches, mapStatus, mapSportScoreMatch,
   competitionRank, sortMatches, fetchSportScoreMatches,
   readCachedMatches, writeCachedMatches,
-  fetchMatchesWithFallback, mapBlumeMatch,
+  fetchMatchesWithFallback, mapBlumeMatch, groupByCompetition, countCoverage, nextPageUrl,
 } from "../lib/sportScore";
 
 function memoryStorage(initial = {}) {
@@ -385,5 +385,68 @@ describe("repli sur les sources Blume déjà connectées", () => {
     expect(mapBlumeMatch({ status: "IN_PLAY", homeTeam: { name: "A" }, awayTeam: { name: "B" } }, "football").status).toBe("live");
     expect(mapBlumeMatch({ status: "FINISHED", homeTeam: { name: "A" }, awayTeam: { name: "B" } }, "football").status).toBe("finished");
     expect(mapBlumeMatch({ status: "SCHEDULED", homeTeam: { name: "A" }, awayTeam: { name: "B" } }, "football").status).toBe("upcoming");
+  });
+});
+
+// Pagination : ne JAMAIS s'arrêter à la première page si la source en annonce d'autres.
+describe("pagination — toutes les pages sont concaténées", () => {
+  function page(matches, extra = {}) {
+    return { ok: true, json: () => Promise.resolve({ matches, ...extra }) };
+  }
+  const mk = (i) => ({ id: i, home_team: { name: `H${i}` }, away_team: { name: `A${i}` }, league: { name: `Ligue ${i}` } });
+
+  test("suit une URL `next` jusqu'à la dernière page et concatène tout", async () => {
+    const fetchImpl = jest.fn((url) => {
+      const u = String(url);
+      if (u.includes("page=3")) return Promise.resolve(page([mk(3)]));
+      if (u.includes("page=2")) return Promise.resolve(page([mk(2)], { next: "https://sportscore.com/api/widget/matches/?sport=football&page=3" }));
+      return Promise.resolve(page([mk(1)], { next: "https://sportscore.com/api/widget/matches/?sport=football&page=2" }));
+    });
+    const out = await fetchSportScoreMatches("football", { fetchImpl });
+    expect(out).toHaveLength(3);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  test("suit la forme page/total_pages", async () => {
+    const fetchImpl = jest.fn((url) =>
+      String(url).includes("page=2")
+        ? Promise.resolve(page([mk(2)], { page: 2, total_pages: 2 }))
+        : Promise.resolve(page([mk(1)], { page: 1, total_pages: 2 }))
+    );
+    expect(await fetchSportScoreMatches("football", { fetchImpl })).toHaveLength(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  test("aucune pagination annoncée : un seul appel, comportement inchangé", async () => {
+    const fetchImpl = jest.fn(() => Promise.resolve(page([mk(1)])));
+    expect(await fetchSportScoreMatches("football", { fetchImpl })).toHaveLength(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  test("pagination circulaire ou mal formée : la boucle s'arrête, jamais d'appels infinis", async () => {
+    const fetchImpl = jest.fn(() =>
+      Promise.resolve(page([mk(1)], { next: "https://sportscore.com/api/widget/matches/?sport=football&page=2" }))
+    );
+    await fetchSportScoreMatches("football", { fetchImpl });
+    expect(fetchImpl.mock.calls.length).toBeLessThanOrEqual(25);
+  });
+
+  test("une page suivante en erreur ne jette pas les pages déjà obtenues", async () => {
+    const fetchImpl = jest.fn((url) =>
+      String(url).includes("page=2")
+        ? Promise.resolve({ ok: false, status: 500 })
+        : Promise.resolve(page([mk(1)], { next: "https://sportscore.com/api/widget/matches/?sport=football&page=2" }))
+    );
+    expect(await fetchSportScoreMatches("football", { fetchImpl })).toHaveLength(1);
+  });
+
+  test("groupByCompetition ne perd jamais un match", () => {
+    const matches = [
+      { id: 1, competition: "A" }, { id: 2, competition: "B" },
+      { id: 3, competition: "A" }, { id: 4, competition: null },
+    ];
+    const groups = groupByCompetition(matches);
+    expect(groups.reduce((n, g) => n + g.matches.length, 0)).toBe(4);
+    expect(groups).toHaveLength(3);
   });
 });
