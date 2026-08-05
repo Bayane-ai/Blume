@@ -66,6 +66,8 @@ describe("Live (Basket) — tous les matchs en direct, toutes ligues confondues"
 
   test("affiche logos/noms des deux équipes, la compétition, le score, le quart-temps et le chrono", async () => {
     global.fetch = jest.fn((url) => {
+    // SportScore (agrégée par /a-venir) indisponible ici : la source maison suffit.
+    if (String(url).includes("sportscore")) return Promise.reject(new Error("indisponible"));
       if (url.startsWith("/api/live-matches")) return Promise.resolve({ json: () => Promise.resolve({ matches: [] }) });
       if (url.startsWith("/api/basketball/live-matches")) return Promise.resolve({ json: () => Promise.resolve(liveFixture()) });
       return Promise.reject(new Error(`URL inattendue : ${url}`));
@@ -231,7 +233,9 @@ describe("Matchs à venir (Basket) — groupés jour par jour, sans score", () =
     selectBasketball();
 
     await waitFor(() => expect(screen.getByText("Celtics")).toBeInTheDocument());
-    const scores = screen.getAllByTestId("card-score");
+    // La carte "à venir" porte l'heure dans son propre élément (voir
+    // components/UpcomingMatchCard.js) — jamais un score, le match n'a pas commencé.
+    const scores = screen.getAllByTestId("upcoming-kickoff");
     for (const s of scores) {
       expect(s.textContent).not.toMatch(/^\d+ - \d+$/);
     }

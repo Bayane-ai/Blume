@@ -117,12 +117,6 @@ export default function SiteHeader({ session, sport, onSportChange }) {
           Matchs à venir
         </a>
         <a
-          href="/matchs-du-jour"
-          style={{ ...st.navBtn, ...(router.pathname === "/matchs-du-jour" ? st.navBtnActive : {}) }}
-        >
-          Matchs du jour
-        </a>
-        <a
           href="/combine-vision"
           style={{ ...st.navBtn, ...(router.pathname === "/combine-vision" ? st.navBtnActive : {}) }}
         >

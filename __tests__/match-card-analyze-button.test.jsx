@@ -97,6 +97,8 @@ function upcomingMatchesFixture() {
 
 function mockFetchRouter() {
   global.fetch = jest.fn((url) => {
+    // SportScore (agrégée par /a-venir) indisponible ici : la source maison suffit.
+    if (String(url).includes("sportscore")) return Promise.reject(new Error("indisponible"));
     if (url.startsWith("/api/live-matches")) {
       return Promise.resolve({ json: () => Promise.resolve(liveMatchesFixture()) });
     }
@@ -156,7 +158,7 @@ test('"Matchs à venir" : chaque carte affiche compétition + équipes + heure (
 
   const buttons = within(list).getAllByRole("button", { name: /^analyser$/i });
   fixtures.forEach((f, i) => {
-    const card = within(buttons[i].closest("div"));
+    const card = within(buttons[i].closest("li"));
     expect(card.getByText(f.comp)).toBeInTheDocument();
     expect(card.getByText(f.home)).toBeInTheDocument();
     expect(card.getByText(f.away)).toBeInTheDocument();

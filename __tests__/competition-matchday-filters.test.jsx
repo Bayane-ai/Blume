@@ -9,7 +9,6 @@
  */
 import { render, screen, waitFor, within, fireEvent } from "@testing-library/react";
 import Home from "../pages/index";
-import UpcomingMatches from "../pages/a-venir";
 
 jest.mock("next/router", () => ({
   useRouter: () => ({ pathname: "/", push: jest.fn(), replace: jest.fn() }),
@@ -145,21 +144,7 @@ describe('"Matchs en ligne" — carrousels compétitions et journées', () => {
   });
 });
 
-describe('"Matchs à venir" — carrousels compétitions et journées', () => {
-  test("filtrer par compétition puis par journée affiche les bons matchs, avec de vraies données", async () => {
-    render(<UpcomingMatches />);
-    const compCarousel = await screen.findByTestId("competition-filter");
-
-    expect(within(compCarousel).getByRole("button", { name: "Premier League" })).toBeInTheDocument();
-    expect(within(compCarousel).getByRole("button", { name: "Bundesliga" })).toBeInTheDocument();
-
-    fireEvent.click(within(compCarousel).getByRole("button", { name: "Bundesliga" }));
-    const list = screen.getByTestId("match-list");
-    await waitFor(() => expect(within(list).getByText("Borussia Dortmund")).toBeInTheDocument());
-    expect(within(list).queryByText("Manchester City FC")).not.toBeInTheDocument();
-
-    const mdCarousel = await screen.findByTestId("matchday-filter");
-    fireEvent.click(within(mdCarousel).getByRole("button", { name: "Journée 22" }));
-    await waitFor(() => expect(within(list).getByText("Borussia Dortmund")).toBeInTheDocument());
-  });
-});
+// NOTE : les carrousels de filtres "compétition" et "journée" n'existent plus sur
+// /a-venir. La page a été refondue autour de la hiérarchie demandée — sport, puis
+// date, puis compétition (voir components/UpcomingMatchesSection.js) — qui rend la
+// liste navigable sans filtre. Ils restent en place sur l'accueil (bloc ci-dessus).

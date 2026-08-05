@@ -75,8 +75,10 @@ function mockFetchRouter() {
       return Promise.resolve({ json: () => Promise.resolve(liveFixture()) });
     }
     if (url.startsWith("/api/matches")) {
-      return Promise.resolve({ json: () => Promise.resolve(upcomingFixture()) });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(upcomingFixture()) });
     }
+    // SportScore indisponible dans ce test : la source Blume seule doit suffire.
+    if (String(url).includes("sportscore")) return Promise.reject(new Error("indisponible"));
     return Promise.reject(new Error(`URL inattendue dans le test : ${url}`));
   });
 }
@@ -85,36 +87,27 @@ beforeEach(() => {
   mockFetchRouter();
 });
 
-test('exactement neuf boutons de navigation existent : "Live", "Matchs à venir", "Matchs du jour", "Combiné Vision", "News", "Historique", "Probabilités réussies", "Probabilités échouées" et "Réglages", et rien d\'autre', async () => {
+test('les pills de navigation sont exactement, dans cet ordre : "Live", "Matchs à venir", "Combiné Vision", "News", "Historique", "Probabilités réussies", "Probabilités échouées" (+ "Réglages", accès au compte), et rien d\'autre', async () => {
   mockPathname = "/";
   render(<Home />);
 
   const nav = await screen.findByTestId("main-nav");
   const links = within(nav).getAllByRole("link");
-  expect(links).toHaveLength(9);
-  expect(links[0]).toHaveTextContent("Live");
-  expect(links[1]).toHaveTextContent("Matchs à venir");
-  expect(links[2]).toHaveTextContent("Matchs du jour");
-  expect(links[3]).toHaveTextContent("Combiné Vision");
-  expect(links[4]).toHaveTextContent("News");
-  expect(links[5]).toHaveTextContent("Historique");
-  expect(links[6]).toHaveTextContent("Probabilités réussies");
-  expect(links[7]).toHaveTextContent("Probabilités échouées");
-  expect(links[8]).toHaveTextContent("Réglages");
-  expect(links[0]).toHaveAttribute("href", "/");
-  expect(links[1]).toHaveAttribute("href", "/a-venir");
-  expect(links[2]).toHaveAttribute("href", "/matchs-du-jour");
-  expect(links[3]).toHaveAttribute("href", "/combine-vision");
-  expect(links[4]).toHaveAttribute("href", "/news");
-  expect(links[5]).toHaveAttribute("href", "/historique");
-  expect(links[6]).toHaveAttribute("href", "/probabilites-reussies");
-  expect(links[7]).toHaveAttribute("href", "/probabilites-echouees");
-  expect(links[8]).toHaveAttribute("href", "/reglages");
+  // Les 7 pills de contenu demandées, dans l'ordre exact, puis "Réglages" — conservé
+  // car c'est le seul accès à la page de compte (la retirer la rendrait inatteignable).
+  expect(links.map((l) => l.textContent.trim())).toEqual([
+    "Live", "Matchs à venir", "Combiné Vision", "News",
+    "Historique", "Probabilités réussies", "Probabilités échouées", "Réglages",
+  ]);
+  expect(links.map((l) => l.getAttribute("href"))).toEqual([
+    "/", "/a-venir", "/combine-vision", "/news",
+    "/historique", "/probabilites-reussies", "/probabilites-echouees", "/reglages",
+  ]);
 
-  // Aucun autre bouton de NAVIGATION (ancien onglet "Tous", ancien onglet
-  // "Compétitions" isolé, "Analyse IA") — le bouton "Toutes les compétitions" du
-  // carrousel de filtres (PROMPT 6) n'est pas un lien de navigation, c'est un filtre
-  // de la liste déjà affichée, donc légitime ici.
+  // L'onglet "Matchs du jour" a totalement disparu de l'interface (BLOC 1).
+  expect(within(nav).queryByText(/matchs du jour/i)).not.toBeInTheDocument();
+  expect(nav.querySelector('a[href="/matchs-du-jour"]')).toBeNull();
+
   expect(screen.queryByText(/^tous\b/i)).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Compétitions", exact: true })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /analyse ia/i })).not.toBeInTheDocument();
@@ -150,12 +143,13 @@ test('"Matchs à venir" affiche un message clair (jamais une page vide) quand l\
   mockPathname = "/a-venir";
   global.fetch = jest.fn((url) => {
     if (url.startsWith("/api/matches")) {
-      return Promise.resolve({ json: () => Promise.resolve({ competitions: [] }) });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ competitions: [] }) });
     }
+    if (String(url).includes("sportscore")) return Promise.reject(new Error("indisponible"));
     return Promise.reject(new Error(`URL inattendue : ${url}`));
   });
 
   render(<UpcomingMatches />);
-  expect(await screen.findByText("Aucun match à venir cette semaine.")).toBeInTheDocument();
+  expect(await screen.findByTestId("upcoming-empty")).toBeInTheDocument();
   expect(screen.queryAllByRole("button", { name: /^analyser$/i })).toHaveLength(0);
 });
