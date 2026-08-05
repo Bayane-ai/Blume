@@ -193,3 +193,67 @@ describe("les listes de « grandes compétitions » ne servent QU'AU TRI", () =>
       .toBeGreaterThan(competitionRank("UEFA Champions League", "football"));
   });
 });
+
+// Le flux LIVE souffrait exactement du même plafond que /api/matches : limit=100 sans
+// pagination. Non couvert par les tests existants, d'où ce verrou.
+describe("football-data.org (live) — pagination complète", () => {
+  test("suit toutes les pages et conserve les petites compétitions en direct", async () => {
+    jest.resetModules();
+    const live = (i, comp) => ({
+      id: 2000 + i,
+      status: "IN_PLAY",
+      utcDate: new Date().toISOString(),
+      competition: { code: `L${i}`, name: comp, area: "Monde" },
+      homeTeam: { id: i, name: `H${i}` },
+      awayTeam: { id: i + 1, name: `A${i}` },
+    });
+    // 150 matchs en direct : 2 pages. Les 50 derniers (petites compétitions) étaient
+    // perdus avant correction.
+    const all = [
+      ...Array.from({ length: 100 }, (_, i) => live(i, "UEFA Champions League")),
+      ...Array.from({ length: 50 }, (_, i) => live(100 + i, `Petite Ligue ${i}`)),
+    ];
+    const calls = [];
+    global.fetch = jest.fn((url) => {
+      calls.push(String(url));
+      const offset = Number(new URL(String(url)).searchParams.get("offset")) || 0;
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ resultSet: { count: all.length }, matches: all.slice(offset, offset + 100) }),
+      });
+    });
+
+    const { getLiveMatchesList } = await import("../lib/liveListCache.js");
+    const result = await getLiveMatchesList("fd-token");
+
+    expect(calls.length).toBe(2);
+    expect(calls.some((u) => u.includes("offset=100"))).toBe(true);
+    expect(result.matches).toHaveLength(150);
+    // La petite ligue de la 2e page est bien là.
+    expect(result.matches.some((m) => m.competition.name === "Petite Ligue 49")).toBe(true);
+  });
+
+  test("seuls les statuts réellement en cours sont gardés — aucun filtre de ligue", async () => {
+    jest.resetModules();
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({
+          resultSet: { count: 3 },
+          matches: [
+            { id: 1, status: "IN_PLAY", competition: { name: "Bhutan Premier League" }, homeTeam: {}, awayTeam: {} },
+            { id: 2, status: "PAUSED", competition: { name: "Iceland 3. deild" }, homeTeam: {}, awayTeam: {} },
+            { id: 3, status: "FINISHED", competition: { name: "UEFA Champions League" }, homeTeam: {}, awayTeam: {} },
+          ],
+        }),
+      })
+    );
+    const { getLiveMatchesList } = await import("../lib/liveListCache.js");
+    const { matches } = await getLiveMatchesList("fd-token");
+
+    expect(matches).toHaveLength(2);
+    // Les deux petites compétitions en cours sont conservées ; seul le match TERMINÉ
+    // est écarté (il appartient à l'historique), jamais une ligue à cause de son nom.
+    expect(matches.map((m) => m.competition.name).sort()).toEqual(["Bhutan Premier League", "Iceland 3. deild"]);
+  });
+});
