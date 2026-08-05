@@ -205,9 +205,50 @@ describe("fetchSportScoreMatches", () => {
     await expect(fetchSportScoreMatches("football", { fetchImpl })).rejects.toThrow(/503/);
   });
 
-  test("réseau indisponible : l'erreur remonte à l'appelant", async () => {
+  test("réseau indisponible sur les DEUX voies : l'erreur d'origine remonte à l'appelant", async () => {
     const fetchImpl = jest.fn(() => Promise.reject(new Error("network unreachable")));
     await expect(fetchSportScoreMatches("football", { fetchImpl })).rejects.toThrow("network unreachable");
+  });
+});
+
+// Le visiteur ne doit JAMAIS avoir à cliquer ni à quitter le site pour voir les matchs :
+// si l'appel direct navigateur vers sportscore.com est refusé (CORS, blocage réseau,
+// extension), la même donnée est récupérée via le relais du site (pages/api/sportscore.js)
+// — de façon totalement transparente.
+describe("repli automatique sur le relais same-origin", () => {
+  const okPayload = {
+    ok: true,
+    json: () => Promise.resolve({ matches: [{ id: 1, home_team: { name: "A" }, away_team: { name: "B" }, league: { name: "NBA" } }] }),
+  };
+
+  test("appel direct réussi : le relais n'est jamais sollicité", async () => {
+    const fetchImpl = jest.fn(() => Promise.resolve(okPayload));
+    const out = await fetchSportScoreMatches("basketball", { fetchImpl });
+    expect(out).toHaveLength(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl.mock.calls[0][0]).toContain("sportscore.com");
+  });
+
+  test("appel direct refusé (CORS) : bascule sur /api/sportscore et affiche quand même les matchs", async () => {
+    const fetchImpl = jest.fn((url) =>
+      String(url).includes("sportscore.com")
+        ? Promise.reject(new TypeError("Failed to fetch"))
+        : Promise.resolve(okPayload)
+    );
+    const out = await fetchSportScoreMatches("basketball", { fetchImpl });
+    expect(out).toHaveLength(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl.mock.calls[1][0]).toBe("/api/sportscore?sport=basketball&limit=50");
+  });
+
+  test("appel direct en erreur HTTP : bascule aussi sur le relais", async () => {
+    const fetchImpl = jest.fn((url) =>
+      String(url).includes("sportscore.com")
+        ? Promise.resolve({ ok: false, status: 403 })
+        : Promise.resolve(okPayload)
+    );
+    expect(await fetchSportScoreMatches("football", { fetchImpl })).toHaveLength(1);
+    expect(fetchImpl.mock.calls[1][0]).toContain("/api/sportscore");
   });
 });
 

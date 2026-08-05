@@ -179,3 +179,48 @@ test("visite suivante avec API en panne : les derniers vrais matchs connus reste
   await expect(page.getByTestId("sportscore-basketball").getByTestId("sportscore-match").first()).toContainText("NBA");
   await expect(page.getByTestId("sportscore-football-fallback")).toHaveCount(0);
 });
+
+test("appel direct à sportscore.com refusé (CORS) : les matchs s'affichent quand même, via le relais du site, sans aucun clic", async ({ page }) => {
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (msg) => { if (msg.type() === "error") errors.push(msg.text()); });
+
+  await page.route("**/api/**", (route) => route.fulfill({ json: {} }));
+  await page.route("**/api/auth/session", (route) =>
+    route.fulfill({ json: { session: { id: "u1", email: "test@example.com" } } })
+  );
+  // Le relais du site répond (comme en production : appel serveur à serveur).
+  await page.route("**/api/sportscore**", (route) => {
+    const sport = new URL(route.request().url()).searchParams.get("sport");
+    return route.fulfill({ json: { matches: ssMatches(sport) } });
+  });
+  // L'appel DIRECT vers sportscore.com est refusé, exactement comme le ferait un
+  // navigateur face à une réponse sans en-tête CORS.
+  await page.route("**sportscore.com/api/**", (route) => route.abort("failed"));
+
+  await page.goto("/matchs-du-jour");
+  await dismissCookieBanner(page);
+
+  // Les matchs sont bien là, affichés directement, sans que le visiteur clique.
+  await expect(page.getByTestId("sportscore-football").getByTestId("sportscore-match").first()).toContainText("Real Madrid");
+  await expect(page.getByTestId("sportscore-tennis").getByTestId("sportscore-match").first()).toContainText("Wimbledon");
+  await expect(page.getByTestId("sportscore-basketball").getByTestId("sportscore-match").first()).toContainText("NBA");
+  await expect(page.getByTestId("sportscore-football-fallback")).toHaveCount(0);
+
+  await page.screenshot({ path: "e2e-out/matchs-du-jour-proxy.png", fullPage: true });
+});
+
+test("le SEUL lien SportScore de la page est l'attribution — jamais un lien pour aller consulter les matchs ailleurs", async ({ page }) => {
+  await setup(page);
+  await page.goto("/matchs-du-jour");
+  await dismissCookieBanner(page);
+  await expect(page.getByTestId("sportscore-football").getByTestId("sportscore-match").first()).toBeVisible();
+
+  // Tous les liens vers sportscore.com pointent vers la racine (attribution) — aucun
+  // lien profond vers une page de matchs, et aucun lien à l'intérieur d'une carte.
+  const hrefs = await page.locator('a[href*="sportscore.com"]').evaluateAll((els) => els.map((e) => e.getAttribute("href")));
+  expect(hrefs).toEqual(["https://sportscore.com/", "https://sportscore.com/", "https://sportscore.com/"]);
+  for (const card of await page.getByTestId("sportscore-match").all()) {
+    expect(await card.locator("a").count()).toBe(0);
+  }
+});
