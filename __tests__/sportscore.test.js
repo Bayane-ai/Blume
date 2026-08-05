@@ -12,6 +12,7 @@ import {
   matchesUrl, unwrapMatches, mapStatus, mapSportScoreMatch,
   competitionRank, sortMatches, fetchSportScoreMatches,
   readCachedMatches, writeCachedMatches,
+  fetchMatchesWithFallback, mapBlumeMatch,
 } from "../lib/sportScore";
 
 function memoryStorage(initial = {}) {
@@ -313,5 +314,76 @@ describe("cache local — contenu par défaut au chargement suivant", () => {
     expect(readCachedMatches("football", memoryStorage({ blume_sportscore_football: "{pas du json" }))).toBeNull();
     expect(() => writeCachedMatches("football", list, null)).not.toThrow();
     expect(readCachedMatches("football", null)).toBeNull();
+  });
+});
+
+// Repli demandé explicitement : si SportScore ne répond pas, la page bascule sur les
+// sources DÉJÀ connectées de Blume au lieu d'afficher une section vide.
+describe("repli sur les sources Blume déjà connectées", () => {
+  const blumeFootball = {
+    ok: true,
+    json: () => Promise.resolve({
+      competitions: [{
+        code: "CL",
+        matches: [{
+          id: 77, status: "SCHEDULED", utcDate: "2026-08-10T20:00:00Z",
+          competition: { name: "UEFA Champions League" },
+          homeTeam: { name: "Real Madrid", crest: "https://x/rm.png" },
+          awayTeam: { name: "Manchester City", crest: "https://x/mc.png" },
+        }],
+      }],
+    }),
+  };
+
+  test("SportScore en panne (direct + relais) : bascule sur /api/matches et affiche de vrais matchs", async () => {
+    const fetchImpl = jest.fn((url) =>
+      String(url).includes("/api/matches")
+        ? Promise.resolve(blumeFootball)
+        : Promise.reject(new Error("Failed to fetch"))
+    );
+    const { matches, source, error } = await fetchMatchesWithFallback("football", { fetchImpl });
+
+    expect(source).toBe("blume");
+    expect(matches).toHaveLength(1);
+    expect(matches[0].home.name).toBe("Real Madrid");
+    expect(matches[0].home.logo).toBe("https://x/rm.png");
+    expect(matches[0].competition).toBe("UEFA Champions League");
+    expect(matches[0].status).toBe("upcoming");
+    // L'erreur SportScore réelle reste exposée : jamais avalée silencieusement.
+    expect(error).toMatch(/Failed to fetch/);
+  });
+
+  test("chaque sport a bien une source de repli connectée", async () => {
+    const seen = [];
+    const fetchImpl = jest.fn((url) => {
+      const u = String(url);
+      if (u.includes("sportscore")) return Promise.reject(new Error("down"));
+      seen.push(u);
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ matches: [] }) });
+    });
+    for (const sport of ["football", "tennis", "basketball"]) {
+      await fetchMatchesWithFallback(sport, { fetchImpl });
+    }
+    expect(seen).toEqual(["/api/matches", "/api/tennis/live-matches", "/api/basketball/matches"]);
+  });
+
+  test("SportScore répond correctement : le repli n'est jamais sollicité", async () => {
+    const fetchImpl = jest.fn(() =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve({ matches: [{ id: 1, home_team: { name: "A" }, away_team: { name: "B" } }] }) })
+    );
+    const { source } = await fetchMatchesWithFallback("football", { fetchImpl });
+    expect(source).toBe("sportscore");
+    expect(fetchImpl.mock.calls.every(([u]) => String(u).includes("sportscore"))).toBe(true);
+  });
+
+  test("les DEUX sources échouent : l'erreur cumulée nomme explicitement chaque cause", async () => {
+    const fetchImpl = jest.fn(() => Promise.reject(new Error("hors service")));
+    await expect(fetchMatchesWithFallback("football", { fetchImpl })).rejects.toThrow(/SportScore.*Repli Blume/s);
+  });
+
+  test("statuts Blume traduits correctement (IN_PLAY -> live, FINISHED -> terminé)", () => {
+    expect(mapBlumeMatch({ status: "IN_PLAY", homeTeam: { name: "A" }, awayTeam: { name: "B" } }, "football").status).toBe("live");
+    expect(mapBlumeMatch({ status: "FINISHED", homeTeam: { name: "A" }, awayTeam: { name: "B" } }, "football").status).toBe("finished");
+    expect(mapBlumeMatch({ status: "SCHEDULED", homeTeam: { name: "A" }, awayTeam: { name: "B" } }, "football").status).toBe("upcoming");
   });
 });

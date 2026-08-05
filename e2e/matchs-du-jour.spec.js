@@ -140,7 +140,7 @@ test("API en panne : message de secours lisible, section jamais vide ni cassée,
   await page.goto("/matchs-du-jour");
   await dismissCookieBanner(page);
 
-  await expect(page.getByTestId("sportscore-football-fallback")).toContainText(/ne sont pas disponibles/i);
+  await expect(page.getByTestId("sportscore-football-fallback")).toContainText(/aucune source de matchs n'a pu être jointe/i);
   await expect(page.getByTestId("sportscore-tennis-fallback")).toBeVisible();
   await expect(page.getByTestId("sportscore-football").getByRole("link", { name: "SportScore" })).toBeVisible();
 
@@ -223,4 +223,84 @@ test("le SEUL lien SportScore de la page est l'attribution — jamais un lien po
   for (const card of await page.getByTestId("sportscore-match").all()) {
     expect(await card.locator("a").count()).toBe(0);
   }
+});
+
+test("SportScore totalement en panne : les 3 sections basculent sur les sources Blume et affichent chacune au moins un vrai match", async ({ page }) => {
+  // Une requête réellement bloquée fait écrire au NAVIGATEUR lui-même une ligne
+  // "Failed to load resource" : c'est inhérent au blocage réseau, aucun code applicatif
+  // ne peut l'empêcher. On vérifie donc l'absence d'erreur venant du SITE (exception JS,
+  // erreur React), qui est la seule chose que le code contrôle.
+  const appErrors = [];
+  page.on("pageerror", (e) => appErrors.push(String(e)));
+  page.on("console", (msg) => {
+    if (msg.type() === "error" && !/Failed to load resource/i.test(msg.text())) appErrors.push(msg.text());
+  });
+
+  await page.route("**/api/**", (route) => route.fulfill({ json: {} }));
+  await page.route("**/api/auth/session", (route) =>
+    route.fulfill({ json: { session: { id: "u1", email: "test@example.com" } } })
+  );
+
+  // Sources Blume déjà connectées (forme interne réelle du site).
+  const blumeMatch = (name, comp) => ({
+    id: `${name}-1`, status: "SCHEDULED", utcDate: "2026-08-10T20:00:00Z",
+    competition: { name: comp },
+    homeTeam: { name, crest: "https://example.test/h.png" },
+    awayTeam: { name: `${name} Adverse`, crest: "https://example.test/a.png" },
+  });
+  await page.route("**/api/matches", (route) =>
+    route.fulfill({ json: { competitions: [{ code: "CL", matches: [blumeMatch("Real Madrid", "UEFA Champions League")] }] } })
+  );
+  await page.route("**/api/basketball/matches", (route) =>
+    route.fulfill({ json: { competitions: [{ code: "NBA", matches: [blumeMatch("Los Angeles Lakers", "NBA")] }] } })
+  );
+  await page.route("**/api/tennis/live-matches", (route) =>
+    route.fulfill({ json: { matches: [blumeMatch("Novak Djokovic", "Wimbledon")] } })
+  );
+  await page.route("**example.test/**", (route) =>
+    route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><circle cx="32" cy="32" r="30" fill="#39b577"/></svg>' })
+  );
+
+  // SportScore mort sur les DEUX voies (direct navigateur + relais du site).
+  await page.route("**sportscore.com/api/**", (route) => route.abort("failed"));
+  await page.route("**/api/sportscore**", (route) => route.fulfill({ status: 502, body: "down" }));
+
+  await page.goto("/matchs-du-jour");
+  await dismissCookieBanner(page);
+
+  // Chaque section affiche au moins un match RÉEL, issu des sources Blume.
+  await expect(page.getByTestId("sportscore-football").getByTestId("sportscore-match").first()).toContainText("Real Madrid");
+  await expect(page.getByTestId("sportscore-tennis").getByTestId("sportscore-match").first()).toContainText("Novak Djokovic");
+  await expect(page.getByTestId("sportscore-basketball").getByTestId("sportscore-match").first()).toContainText("Los Angeles Lakers");
+
+  // La provenance réelle est annoncée honnêtement, et aucune section n'est en erreur.
+  await expect(page.getByTestId("sportscore-football-source-blume")).toBeVisible();
+  await expect(page.getByTestId("sportscore-football-fallback")).toHaveCount(0);
+
+  expect(appErrors).toEqual([]);
+  await page.screenshot({ path: "e2e-out/matchs-du-jour-repli-blume.png", fullPage: true });
+});
+
+test("toutes les sources mortes : la cause technique réelle est affichée, plus aucun message générique masquant", async ({ page }) => {
+  await page.route("**/api/**", (route) => route.fulfill({ json: {} }));
+  await page.route("**/api/auth/session", (route) =>
+    route.fulfill({ json: { session: { id: "u1", email: "test@example.com" } } })
+  );
+  await page.route("**sportscore.com/api/**", (route) => route.fulfill({ status: 429, body: "quota" }));
+  await page.route("**/api/sportscore**", (route) => route.fulfill({ status: 429, body: "quota" }));
+  await page.route("**/api/matches", (route) => route.fulfill({ status: 500, body: "boom" }));
+  await page.route("**/api/tennis/live-matches", (route) => route.fulfill({ status: 500, body: "boom" }));
+  await page.route("**/api/basketball/matches", (route) => route.fulfill({ status: 500, body: "boom" }));
+
+  await page.goto("/matchs-du-jour");
+  await dismissCookieBanner(page);
+
+  const detail = page.getByTestId("sportscore-football-error-detail");
+  await expect(detail).toBeVisible();
+  // Les deux causes réelles sont nommées : plus rien n'est avalé par un message vague.
+  await expect(detail).toContainText("SportScore");
+  await expect(detail).toContainText("429");
+  await expect(detail).toContainText("Repli Blume");
+
+  await page.screenshot({ path: "e2e-out/matchs-du-jour-erreur-detaillee.png", fullPage: true });
 });

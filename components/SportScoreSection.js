@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchSportScoreMatches, readCachedMatches, writeCachedMatches } from "../lib/sportScore";
+import { fetchMatchesWithFallback, readCachedMatches, writeCachedMatches } from "../lib/sportScore";
 
 // Rechargement automatique toutes les 5 minutes (demandé) : retire les matchs terminés
 // de la tête de liste et fait apparaître les nouveaux sans que le visiteur recharge la
@@ -107,13 +107,23 @@ export default function SportScoreSection({ sport, title, subtitle, testId }) {
   // squelette est montré. Dès qu'une liste (fraîche OU issue du cache local) existe,
   // elle reste affichée quoi qu'il arrive ensuite.
   const [phase, setPhase] = useState("loading"); // loading | loaded | unavailable
+  // Provenance réelle des matchs affichés ("sportscore" ou "blume") et cause technique
+  // exacte en cas d'échec — ni l'une ni l'autre ne doit être masquée par un message
+  // générique (demande explicite).
+  const [source, setSource] = useState(null);
+  const [detail, setDetail] = useState(null);
   const hasDataRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
-      const list = await fetchSportScoreMatches(sport);
+      const { matches: list, source, error } = await fetchMatchesWithFallback(sport);
+      // SportScore a échoué mais le repli a fonctionné : l'incident reste tracé en
+      // console (jamais avalé silencieusement) même si le visiteur, lui, voit ses matchs.
+      if (error) console.warn(`[SportScore] ${sport} : bascule sur les sources Blume — ${error}`);
+
       if (list.length > 0) {
         setMatches(list);
+        setSource(source);
         setPhase("loaded");
         hasDataRef.current = true;
         writeCachedMatches(sport, list);
@@ -121,12 +131,20 @@ export default function SportScoreSection({ sport, title, subtitle, testId }) {
       }
       // Réponse valide mais vide : on ne vide JAMAIS une section qui affiche déjà des
       // matchs — on garde l'affichage précédent (demande explicite).
-      if (!hasDataRef.current) setPhase("unavailable");
+      if (!hasDataRef.current) {
+        setDetail("Aucun match renvoyé par les sources pour le moment.");
+        setPhase("unavailable");
+      }
     } catch (e) {
-      // console.warn (et non console.error) : une panne réseau de la source externe est
+      // console.warn (et non console.error) : une panne réseau d'une source externe est
       // un incident attendu et géré, pas un bug du site — la console reste propre.
-      console.warn(`[SportScore] ${sport} indisponible :`, e?.message || e);
-      if (!hasDataRef.current) setPhase("unavailable");
+      console.warn(`[SportScore] ${sport} : toutes les sources ont échoué —`, e?.message || e);
+      if (!hasDataRef.current) {
+        // Le message générique ne doit plus MASQUER la cause technique : on affiche la
+        // vraie erreur, courte, sous le message lisible.
+        setDetail(e?.message || String(e));
+        setPhase("unavailable");
+      }
     }
   }, [sport]);
 
@@ -158,8 +176,18 @@ export default function SportScoreSection({ sport, title, subtitle, testId }) {
           injoignable) : message court et lisible, jamais une erreur technique brute,
           jamais une section vide. */}
       {phase === "unavailable" && (
-        <p style={st.hint} data-testid={`${testId}-fallback`}>
-          Les matchs ne sont pas disponibles pour le moment. La liste se met à jour automatiquement.
+        <div data-testid={`${testId}-fallback`}>
+          <p style={st.hint}>
+            Aucune source de matchs n'a pu être jointe (SportScore et sources Blume). La liste se met à
+            jour automatiquement.
+          </p>
+          {detail && <p style={st.errorDetail} data-testid={`${testId}-error-detail`}>Détail technique : {detail}</p>}
+        </div>
+      )}
+
+      {phase === "loaded" && source === "blume" && (
+        <p style={st.sourceNote} data-testid={`${testId}-source-blume`}>
+          SportScore étant indisponible, ces matchs proviennent des sources habituelles de Blume.
         </p>
       )}
 
@@ -234,6 +262,10 @@ const st = {
   skelLine: { display: "block", height: 11, borderRadius: 6, background: "var(--border)", opacity: 0.55 },
   skelDot: { display: "block", width: 28, height: 28, borderRadius: "50%", background: "var(--border)", opacity: 0.55, flexShrink: 0 },
 
+  // Cause technique réelle, affichée sous le message lisible : discrète mais jamais
+  // cachée, pour qu'une panne soit diagnosticable sans ouvrir la console.
+  errorDetail: { fontSize: 10.5, color: "var(--text-secondary)", opacity: 0.8, margin: "4px 0 0", wordBreak: "break-word" },
+  sourceNote: { fontSize: 11, color: "var(--text-secondary)", fontStyle: "italic", margin: 0 },
   attribution: { fontSize: 11, color: "var(--text-secondary)", margin: "2px 0 0" },
   attributionLink: { color: "var(--accent)", textDecoration: "underline" },
 };

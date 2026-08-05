@@ -47,7 +47,7 @@ test("visiteur non-administrateur : 403, jamais le contenu du diagnostic", async
   expect(res.body).toBe("Non autorisé");
 });
 
-test("administrateur, aucune clé configurée : les 4 sources signalent keyPresent:false, jamais un plantage", async () => {
+test("administrateur, aucune clé configurée : les sources à clé signalent keyPresent:false, jamais un plantage", async () => {
   mockSession = { id: "u1", email: "admin@example.com" };
   // GET /health (Live Tennis API) est explicitement SANS clé (voir PROMPT) : appelé
   // même sans TENNIS_API_KEY, jamais compté comme un appel de données authentifié.
@@ -61,13 +61,22 @@ test("administrateur, aucune clé configurée : les 4 sources signalent keyPrese
   await handler(req, res);
 
   expect(res.statusCode).toBe(200);
-  expect(res.body.sources).toHaveLength(4);
-  for (const s of res.body.sources) {
+  expect(res.body.sources).toHaveLength(5);
+  // SportScore est volontairement exclu de cette boucle : c'est une API PUBLIQUE sans
+  // clé (voir pages/api/sportscore.js) — "keyPresent" y vaut toujours true par nature.
+  for (const s of res.body.sources.filter((x) => !x.name.startsWith("SportScore"))) {
     expect(s.keyPresent).toBe(false);
     expect(s.ok).toBe(false);
   }
-  expect(global.fetch).toHaveBeenCalledTimes(1);
-  expect(global.fetch.mock.calls[0][0]).toContain("/health");
+  const sportScore = res.body.sources.find((x) => x.name.startsWith("SportScore"));
+  expect(sportScore.keyEnvVar).toMatch(/aucune/i);
+  expect(Object.keys(sportScore.perSport)).toEqual(["football", "tennis", "basketball"]);
+  // 1 appel /health (Live Tennis API, sans clé par conception) + 3 appels SportScore
+  // (API publique sans clé) — aucune source À CLÉ n'est interrogée sans sa clé.
+  const urls = global.fetch.mock.calls.map(([u]) => String(u));
+  expect(urls.filter((u) => u.includes("/health"))).toHaveLength(1);
+  expect(urls.filter((u) => u.includes("sportscore.com"))).toHaveLength(3);
+  expect(urls.filter((u) => u.includes("api-sports.io") || u.includes("football-data.org"))).toHaveLength(0);
 });
 
 test("administrateur, toutes les clés présentes : renvoie le code HTTP réel, le corps de l'erreur ET le quota — jamais un plantage même si une source répond mal", async () => {

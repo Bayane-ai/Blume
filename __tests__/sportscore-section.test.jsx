@@ -183,7 +183,9 @@ test("API en erreur : message de secours clair, jamais une section vide ni cass�
   render(<SportScoreSection sport="football" title="Football" testId="ss-f" />);
 
   await waitFor(() => expect(screen.getByTestId("ss-f-fallback")).toBeInTheDocument());
-  expect(screen.getByTestId("ss-f-fallback")).toHaveTextContent(/ne sont pas disponibles/i);
+  expect(screen.getByTestId("ss-f-fallback")).toHaveTextContent(/aucune source de matchs n'a pu être jointe/i);
+  // La cause technique réelle n'est plus masquée par le message générique.
+  expect(screen.getByTestId("ss-f-error-detail")).toHaveTextContent(/HTTP 500/);
   expect(screen.queryByTestId("ss-f-list")).not.toBeInTheDocument();
   // L'attribution reste visible même en cas de panne.
   expect(screen.getByRole("link", { name: "SportScore" })).toBeInTheDocument();

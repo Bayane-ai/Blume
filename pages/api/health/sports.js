@@ -175,6 +175,57 @@ function settledToResult(settled, name) {
   };
 }
 
+// SportScore (sections "Matchs du jour") : API publique, SANS clé — un échec ici ne peut
+// donc JAMAIS venir d'une variable d'environnement. Interroge réellement les 3 sports
+// et remonte le code HTTP, le corps de l'erreur et le nombre de matchs, pour trancher
+// depuis la production ce que l'environnement de développement ne peut pas voir.
+async function checkSportScore() {
+  const sports = ["football", "tennis", "basketball"];
+  const perSport = {};
+  let anyOk = false;
+
+  for (const sport of sports) {
+    try {
+      const r = await fetch(`https://sportscore.com/api/widget/matches/?sport=${sport}&limit=50`, {
+        headers: { Accept: "application/json" },
+      });
+      const raw = await r.text();
+      let count = null;
+      let rootKeys = null;
+      try {
+        const payload = JSON.parse(raw);
+        rootKeys = Array.isArray(payload) ? ["(tableau nu)"] : Object.keys(payload || {}).slice(0, 10);
+        let list = Array.isArray(payload) ? payload : null;
+        if (!list) for (const k of ["matches", "data", "results", "items", "response"]) {
+          if (Array.isArray(payload?.[k])) { list = payload[k]; break; }
+        }
+        count = list ? list.length : null;
+      } catch {
+        count = null;
+      }
+      if (r.ok && count > 0) anyOk = true;
+      perSport[sport] = {
+        httpStatus: r.status,
+        ok: r.ok,
+        corsHeader: r.headers?.get?.("access-control-allow-origin") || null,
+        matchCount: count,
+        rootKeys,
+        errorBody: r.ok ? null : raw.slice(0, 300),
+      };
+    } catch (e) {
+      perSport[sport] = { httpStatus: null, ok: false, matchCount: null, errorBody: `Échec réseau : ${e.message}` };
+    }
+  }
+
+  return {
+    name: "SportScore (Matchs du jour)",
+    keyEnvVar: "(aucune — API publique sans clé)",
+    keyPresent: true,
+    ok: anyOk,
+    perSport,
+  };
+}
+
 export default async function handler(req, res) {
   const session = getSession(req);
   if (!isAdmin(session)) {
@@ -204,9 +255,10 @@ export default async function handler(req, res) {
       keyEnvVar: "API_BASKETBALL_KEY (ou API_FOOTBALL_KEY en repli)", key: apiBasketballKey,
     }),
     checkTennis(apiTennisKey),
+    checkSportScore(),
   ]);
 
-  const names = ["football-data.org", "API-Football", "API-Basketball", "API-Tennis (Live Tennis API)"];
+  const names = ["football-data.org", "API-Football", "API-Basketball", "API-Tennis (Live Tennis API)", "SportScore (Matchs du jour)"];
   const sources = settled.map((s, i) => settledToResult(s, names[i]));
 
   // Nombre de matchs RÉELLEMENT récupérés (pas juste "la clé est valide") : répond à
