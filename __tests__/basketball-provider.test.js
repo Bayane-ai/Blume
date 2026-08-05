@@ -48,7 +48,7 @@ describe("getLiveGames — TOUS les matchs en direct dans le monde, sans filtre 
 
     const games = await getLiveGames(KEY);
     expect(games).toEqual([{ id: 1 }]);
-    expect(fetchMock.mock.calls[0][0]).toBe("https://v1.basketball.api-sports.io/games?live=all");
+    expect(fetchMock.mock.calls[0][0]).toBe("https://v1.basketball.api-sports.io/games?live=all&page=1");
     expect(fetchMock.mock.calls[0][1].headers).toEqual({ "x-apisports-key": KEY });
   });
 
@@ -91,7 +91,7 @@ describe("getGamesByDate — matchs (tous statuts) d'une date précise, toutes c
 
     const games = await getGamesByDate("2026-08-01", KEY);
     expect(games).toEqual([{ id: 2 }]);
-    expect(fetchMock.mock.calls[0][0]).toBe("https://v1.basketball.api-sports.io/games?date=2026-08-01&timezone=UTC");
+    expect(fetchMock.mock.calls[0][0]).toBe("https://v1.basketball.api-sports.io/games?date=2026-08-01&timezone=UTC&page=1");
   });
 
   test("deux dates différentes sont mises en cache séparément (pas de collision)", async () => {
@@ -127,7 +127,7 @@ describe("getStandings / getTeamStatistics / getPlayerStatistics / getLeagues", 
 
     const table = await getStandings({ league: 12, season: "2025-2026" }, KEY);
     expect(table).toEqual([{ position: 1 }]);
-    expect(fetchMock.mock.calls[0][0]).toBe("https://v1.basketball.api-sports.io/standings?league=12&season=2025-2026");
+    expect(fetchMock.mock.calls[0][0]).toBe("https://v1.basketball.api-sports.io/standings?league=12&season=2025-2026&page=1");
   });
 
   test("getTeamStatistics appelle /teams/statistics?league=X&season=Y&team=Z et déballe l'objet unique", async () => {
@@ -140,7 +140,7 @@ describe("getStandings / getTeamStatistics / getPlayerStatistics / getLeagues", 
     const stats = await getTeamStatistics({ league: 12, season: "2025-2026", team: 5 }, KEY);
     expect(stats).toEqual({ team: { id: 5 } });
     expect(fetchMock.mock.calls[0][0]).toBe(
-      "https://v1.basketball.api-sports.io/teams/statistics?league=12&season=2025-2026&team=5"
+      "https://v1.basketball.api-sports.io/teams/statistics?league=12&season=2025-2026&team=5&page=1"
     );
   });
 
@@ -151,7 +151,7 @@ describe("getStandings / getTeamStatistics / getPlayerStatistics / getLeagues", 
 
     const stats = await getPlayerStatistics({ id: 99, season: "2025-2026" }, KEY);
     expect(stats).toEqual([{ points: 20 }]);
-    expect(fetchMock.mock.calls[0][0]).toBe("https://v1.basketball.api-sports.io/players/statistics?id=99&season=2025-2026");
+    expect(fetchMock.mock.calls[0][0]).toBe("https://v1.basketball.api-sports.io/players/statistics?id=99&season=2025-2026&page=1");
   });
 
   test("getLeagues n'ajoute AUCUN filtre — toutes les compétitions disponibles, sans exception", async () => {
@@ -161,7 +161,7 @@ describe("getStandings / getTeamStatistics / getPlayerStatistics / getLeagues", 
 
     const leagues = await getLeagues(KEY);
     expect(leagues).toHaveLength(2);
-    expect(fetchMock.mock.calls[0][0]).toBe("https://v1.basketball.api-sports.io/leagues");
+    expect(fetchMock.mock.calls[0][0]).toBe("https://v1.basketball.api-sports.io/leagues?page=1");
   });
 });
 
@@ -180,7 +180,7 @@ describe("getGameStatistics — statistiques d'équipe pour un match précis", (
 
     const stats = await getGameStatistics(555, KEY);
     expect(stats).toEqual([{ team: {} }]);
-    expect(fetchMock.mock.calls[0][0]).toBe("https://v1.basketball.api-sports.io/games/statistics?id=555");
+    expect(fetchMock.mock.calls[0][0]).toBe("https://v1.basketball.api-sports.io/games/statistics?id=555&page=1");
   });
 });
 

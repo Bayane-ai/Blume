@@ -57,11 +57,36 @@ export default async function handler(req, res) {
     let lastUpdated = null;
     let hardFailureStatus = null;
     try {
-      const r = await fetch(
-        `${BASE}/matches?dateFrom=${dateFrom}&dateTo=${dateTo}&status=SCHEDULED,TIMED,LIVE,IN_PLAY,PAUSED,FINISHED&limit=100`,
-        { headers: { "X-Auth-Token": token } }
-      );
-      if (!r.ok) {
+      // PAGINATION COMPLÈTE : `limit` plafonne chaque page à 100 résultats. Ne lire que
+      // la première page tronquait silencieusement les journées chargées — et coupait
+      // en priorité ce qui vient après les grandes compétitions dans l'ordre de l'API.
+      // On avance par `offset` tant que la page reçue est pleine ; `resultSet.count`,
+      // quand l'API le fournit, sert de garde-fou supplémentaire. Borne à 20 pages
+      // (2000 matchs sur 8 jours) contre une pagination mal formée.
+      const PAGE_SIZE = 100;
+      const MAX_PAGES = 20;
+      const collected = [];
+      let offset = 0;
+      let r = null;
+      for (let i = 0; i < MAX_PAGES; i += 1) {
+        r = await fetch(
+          `${BASE}/matches?dateFrom=${dateFrom}&dateTo=${dateTo}&status=SCHEDULED,TIMED,LIVE,IN_PLAY,PAUSED,FINISHED&limit=${PAGE_SIZE}&offset=${offset}`,
+          { headers: { "X-Auth-Token": token } }
+        );
+        if (!r.ok) break; // traité juste en dessous, avec les pages déjà obtenues
+        const page = await r.json();
+        const batch = page?.matches || [];
+        collected.push(...batch);
+        const total = Number(page?.resultSet?.count);
+        if (batch.length < PAGE_SIZE || (Number.isFinite(total) && collected.length >= total)) break;
+        offset += PAGE_SIZE;
+      }
+      if (!r.ok && collected.length > 0) {
+        // Une page suivante en erreur ne jette pas les précédentes.
+        console.warn(`[football-data] pagination interrompue à l'offset ${offset} (HTTP ${r.status}) — ${collected.length} match(s) conservé(s)`);
+        fdMatches = collected;
+        writePersistentCache(MATCHES_CACHE_KEY, fdMatches);
+      } else if (!r.ok) {
         // Jamais avalée silencieusement : cette source alimente TOUS les matchs des 12
         // grandes ligues (voir lib/competitions.js) — sa panne vide la quasi-totalité
         // de la page. Le corps de la réponse précise la vraie cause (jeton invalide,
@@ -73,11 +98,11 @@ export default async function handler(req, res) {
         recordLastError(SOURCE_KEY, message);
         hardFailureStatus = r.status;
       } else {
-        const data = await r.json();
         // Aucune restriction par ligue, pays, fédération ou catégorie d'âge : toute
         // compétition renvoyée par l'API (y compris jeunes, réserves, petits
         // championnats nationaux) est affichée telle quelle.
-        fdMatches = data.matches || [];
+        fdMatches = collected;
+        console.log(`[football-data] /matches : ${fdMatches.length} match(s) reçu(s) sur ${Math.ceil((offset / PAGE_SIZE) + 1)} page(s)`);
         writePersistentCache(MATCHES_CACHE_KEY, fdMatches);
       }
     } catch (e) {

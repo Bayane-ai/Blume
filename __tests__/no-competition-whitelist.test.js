@@ -24,7 +24,10 @@ test("pages/api/live-matches.js n'importe aucun filtre de compétition et transm
 
 test("pages/api/matches.js n'importe aucun filtre de compétition et transmet les matchs football-data.org tels quels", () => {
   expect(MATCHES_SRC).not.toMatch(/bettableFilter|isBettableCompetitionName/);
-  expect(MATCHES_SRC).toMatch(/fdMatches = data\.matches \|\| \[\];/);
+  // Les matchs sont désormais accumulés sur TOUTES les pages (pagination par offset)
+  // puis transmis tels quels : aucun filtre de ligue/pays entre les deux.
+  expect(MATCHES_SRC).toMatch(/fdMatches = collected;/);
+  expect(MATCHES_SRC).toMatch(/offset=\$\{offset\}/);
 });
 
 test("aucune liste fermée de compétitions (whitelist/blacklist) n'est utilisée pour filtrer les matchs API-Football", () => {

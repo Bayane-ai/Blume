@@ -64,7 +64,7 @@ describe("/api/basketball/live-matches", () => {
     expect(res.body.matches[0].homeTeam.name).toBe("Lakers");
     expect(res.body.matches[1].competition.name).toBe("EuroLeague");
     // Toutes compétitions confondues, sans filtre : un seul appel à /games?live=all.
-    expect(global.fetch.mock.calls[0][0]).toBe("https://v1.basketball.api-sports.io/games?live=all");
+    expect(global.fetch.mock.calls[0][0]).toBe("https://v1.basketball.api-sports.io/games?live=all&page=1");
     // Pas encore de pronostic (bloc 3) : honnêtement indisponible, jamais inventé.
     expect(res.body.matches[0].pronostic).toEqual({ available: false });
   });
