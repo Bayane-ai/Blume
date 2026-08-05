@@ -33,9 +33,99 @@ function footballMatches() {
   ];
 }
 
+beforeEach(() => {
+  window.localStorage.clear();
+});
+
 afterEach(() => {
   delete global.fetch;
   jest.useRealTimers();
+});
+
+describe("contenu par défaut : une section n'est JAMAIS vide", () => {
+  test("un squelette est visible immédiatement, avant même la réponse de l'API", () => {
+    global.fetch = jest.fn(() => new Promise(() => {})); // ne répond jamais
+    render(<SportScoreSection sport="football" title="Football" testId="ss-f" />);
+    const skeleton = screen.getByTestId("sportscore-skeleton");
+    expect(skeleton).toBeInTheDocument();
+    // Au moins 6 blocs, comme le minimum de matchs demandé par section.
+    expect(skeleton.querySelectorAll("li").length).toBeGreaterThanOrEqual(6);
+  });
+
+  test("le squelette ne contient aucune fausse donnée (ni équipe, ni horaire inventés)", () => {
+    global.fetch = jest.fn(() => new Promise(() => {}));
+    render(<SportScoreSection sport="football" title="Football" testId="ss-f" />);
+    const skeleton = screen.getByTestId("sportscore-skeleton");
+    expect(skeleton.textContent.trim()).toBe("");
+    expect(screen.queryAllByTestId("sportscore-match")).toHaveLength(0);
+  });
+
+  test("visite suivante : les derniers vrais matchs connus s'affichent immédiatement, avant la réponse de l'API", async () => {
+    window.localStorage.setItem(
+      "blume_sportscore_football",
+      JSON.stringify({
+        savedAt: Date.now(),
+        matches: [{ id: "ss-football-9", home: { name: "Équipe En Cache" }, away: { name: "Adversaire" }, competition: "Ligue 1", startTime: "2026-08-10T18:00:00Z", status: "upcoming" }],
+      })
+    );
+    global.fetch = jest.fn(() => new Promise(() => {})); // l'API ne répond pas encore
+    render(<SportScoreSection sport="football" title="Football" testId="ss-f" />);
+
+    expect(await screen.findByText("Équipe En Cache")).toBeInTheDocument();
+    expect(screen.queryByTestId("sportscore-skeleton")).not.toBeInTheDocument();
+  });
+
+  test("une réponse réelle remplace le cache et le met à jour", async () => {
+    global.fetch = jest.fn(() => Promise.resolve(payload(footballMatches())));
+    render(<SportScoreSection sport="football" title="Football" testId="ss-f" />);
+    await waitFor(() => expect(screen.getByText("Real Madrid")).toBeInTheDocument());
+
+    const cached = JSON.parse(window.localStorage.getItem("blume_sportscore_football"));
+    expect(cached.matches.some((m) => m.home.name === "Real Madrid")).toBe(true);
+  });
+});
+
+describe("un rafraîchissement raté ne vide jamais la section", () => {
+  test("l'affichage précédent est conservé quand un rafraîchissement échoue", async () => {
+    jest.useFakeTimers();
+    let call = 0;
+    global.fetch = jest.fn(() => {
+      call += 1;
+      return call === 1 ? Promise.resolve(payload(footballMatches())) : Promise.reject(new Error("panne réseau"));
+    });
+
+    render(<SportScoreSection sport="football" title="Football" testId="ss-f" />);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByText("Real Madrid")).toBeInTheDocument();
+
+    await act(async () => {
+      jest.advanceTimersByTime(5 * 60 * 1000);
+      await Promise.resolve();
+    });
+
+    // Toujours affiché : jamais vidé, jamais remplacé par un message d'erreur.
+    expect(screen.getByText("Real Madrid")).toBeInTheDocument();
+    expect(screen.queryByTestId("ss-f-fallback")).not.toBeInTheDocument();
+  });
+
+  test("une réponse vide ne vide pas non plus une section déjà remplie", async () => {
+    jest.useFakeTimers();
+    let call = 0;
+    global.fetch = jest.fn(() => {
+      call += 1;
+      return Promise.resolve(payload(call === 1 ? footballMatches() : []));
+    });
+
+    render(<SportScoreSection sport="football" title="Football" testId="ss-f" />);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByText("Real Madrid")).toBeInTheDocument();
+
+    await act(async () => {
+      jest.advanceTimersByTime(5 * 60 * 1000);
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Real Madrid")).toBeInTheDocument();
+  });
 });
 
 test("affiche les vrais matchs reçus : noms, logos, compétition, horaire et statut", async () => {
@@ -134,24 +224,32 @@ test("se recharge automatiquement toutes les 5 minutes", async () => {
 });
 
 describe("pages/matchs-du-jour.js", () => {
-  test("affiche les deux sections demandées, chacune avec son attribution", async () => {
+  test("affiche les trois sections demandées, chacune avec son attribution", async () => {
     global.fetch = jest.fn(() => Promise.resolve(payload(footballMatches())));
     render(<MatchsDuJour />);
 
     expect(await screen.findByText("Matchs de football à venir")).toBeInTheDocument();
     expect(screen.getByText("Matchs de tennis à venir")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getAllByRole("link", { name: "SportScore" })).toHaveLength(2));
+    expect(screen.getByText("Matchs de basketball à venir")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByRole("link", { name: "SportScore" })).toHaveLength(3));
   });
 
-  test("interroge bien football ET tennis", async () => {
+  test("interroge bien football, tennis ET basketball", async () => {
     global.fetch = jest.fn(() => Promise.resolve(payload([])));
     render(<MatchsDuJour />);
-    await waitFor(() => expect(global.fetch.mock.calls.length).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(global.fetch.mock.calls.length).toBeGreaterThanOrEqual(3));
     const urls = global.fetch.mock.calls.map(([u]) => u);
     expect(urls).toEqual(expect.arrayContaining([
       "https://sportscore.com/api/widget/matches/?sport=football&limit=50",
       "https://sportscore.com/api/widget/matches/?sport=tennis&limit=50",
+      "https://sportscore.com/api/widget/matches/?sport=basketball&limit=50",
     ]));
+  });
+
+  test("aucune section n'est vide au chargement : les trois affichent un contenu par défaut", async () => {
+    global.fetch = jest.fn(() => new Promise(() => {}));
+    render(<MatchsDuJour />);
+    expect(await screen.findAllByTestId("sportscore-skeleton")).toHaveLength(3);
   });
 
   test("aucun bouton ni lien de paiement : affichage purement informatif", async () => {

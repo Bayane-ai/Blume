@@ -37,8 +37,8 @@ export default function MatchsDuJour() {
         <section style={st.hero}>
           <h1 style={st.heroTitle}>Matchs du jour</h1>
           <p style={st.heroSubtitle}>
-            Football et tennis, toutes compétitions confondues — matchs amicaux et petites compétitions
-            compris. Liste actualisée automatiquement toutes les 5 minutes.
+            Football, tennis et basketball, toutes compétitions confondues — matchs amicaux et petites
+            compétitions compris. Liste actualisée automatiquement toutes les 5 minutes.
           </p>
         </section>
 
@@ -54,6 +54,13 @@ export default function MatchsDuJour() {
           title="Matchs de tennis à venir"
           subtitle="Grands tournois en tête (Grand Chelem, ATP, WTA), puis tous les autres."
           testId="sportscore-tennis"
+        />
+
+        <SportScoreSection
+          sport="basketball"
+          title="Matchs de basketball à venir"
+          subtitle="Grandes ligues en tête (NBA, EuroLeague), puis toutes les autres."
+          testId="sportscore-basketball"
         />
       </main>
     </div>

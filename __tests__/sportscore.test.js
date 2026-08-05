@@ -11,7 +11,17 @@
 import {
   matchesUrl, unwrapMatches, mapStatus, mapSportScoreMatch,
   competitionRank, sortMatches, fetchSportScoreMatches,
+  readCachedMatches, writeCachedMatches,
 } from "../lib/sportScore";
+
+function memoryStorage(initial = {}) {
+  const data = { ...initial };
+  return {
+    getItem: (k) => (k in data ? data[k] : null),
+    setItem: (k, v) => { data[k] = String(v); },
+    _data: data,
+  };
+}
 
 describe("matchesUrl", () => {
   test("construit exactement l'URL documentée, sans aucune clé API", () => {
@@ -138,6 +148,11 @@ describe("priorisation des grandes compétitions", () => {
     expect(competitionRank("ATP 250 Metz", "tennis")).toBeLessThan(competitionRank("ITF M15", "tennis"));
   });
 
+  test("basket : NBA puis EuroLeague, avant le reste", () => {
+    expect(competitionRank("NBA", "basketball")).toBeLessThan(competitionRank("EuroLeague", "basketball"));
+    expect(competitionRank("EuroLeague", "basketball")).toBeLessThan(competitionRank("Liga ACB", "basketball"));
+  });
+
   test("aucun match n'est jamais écarté : les amicaux et petites compétitions restent dans la liste, simplement plus bas", () => {
     const matches = [
       { competition: "Match amical", status: "upcoming", startTime: "2026-08-10T10:00:00Z" },
@@ -193,5 +208,69 @@ describe("fetchSportScoreMatches", () => {
   test("réseau indisponible : l'erreur remonte à l'appelant", async () => {
     const fetchImpl = jest.fn(() => Promise.reject(new Error("network unreachable")));
     await expect(fetchSportScoreMatches("football", { fetchImpl })).rejects.toThrow("network unreachable");
+  });
+});
+
+// Aucun "undefined", "null" ou "[object Object]" ne doit jamais atteindre l'écran :
+// les chemins de repli du mapper peuvent tomber sur un objet (ex. "league" au lieu de
+// "league.name"), que React refuserait d'afficher — ce qui casserait toute la section.
+describe("garde-fou d'affichage : jamais de valeur non affichable", () => {
+  test("une compétition renvoyée comme OBJET devient null, jamais un objet passé à React", () => {
+    const m = mapSportScoreMatch(
+      { home_team: { name: "A" }, away_team: { name: "B" }, league: { id: 7, country: { name: "X" } } },
+      "football"
+    );
+    expect(m.competition).toBeNull();
+  });
+
+  test("un nom ou un logo renvoyé comme objet/tableau devient null", () => {
+    const m = mapSportScoreMatch({ home_team: { name: { fr: "A" }, logo: ["x"] }, away_team: { name: "B" } }, "football");
+    expect(m.home.name).toBeNull();
+    expect(m.home.logo).toBeNull();
+  });
+
+  test("un nom numérique reste affichable (converti en texte)", () => {
+    const m = mapSportScoreMatch({ home_team: { name: 10 }, away_team: { name: "B" } }, "basketball");
+    expect(m.home.name).toBe("10");
+  });
+
+  test("les espaces seuls comptent comme absents", () => {
+    const m = mapSportScoreMatch({ home_team: { name: "   " }, away_team: { name: "B" } }, "football");
+    expect(m.home.name).toBeNull();
+  });
+});
+
+describe("cache local — contenu par défaut au chargement suivant", () => {
+  const list = [{ id: "ss-football-1", home: { name: "A" }, away: { name: "B" }, status: "upcoming" }];
+
+  test("écrit puis relit la dernière liste réelle connue", () => {
+    const store = memoryStorage();
+    writeCachedMatches("football", list, store);
+    expect(readCachedMatches("football", store)).toEqual(list);
+  });
+
+  test("cloisonné par sport : le basket ne relit jamais la liste du football", () => {
+    const store = memoryStorage();
+    writeCachedMatches("football", list, store);
+    expect(readCachedMatches("basketball", store)).toBeNull();
+  });
+
+  test("jamais de liste vide mise en cache (elle ne doit pas écraser une vraie liste)", () => {
+    const store = memoryStorage();
+    writeCachedMatches("football", [], store);
+    expect(readCachedMatches("football", store)).toBeNull();
+  });
+
+  test("au-delà de 24h, le cache est ignoré plutôt que présenté comme actuel", () => {
+    const store = memoryStorage({
+      blume_sportscore_football: JSON.stringify({ savedAt: Date.now() - 25 * 3600 * 1000, matches: list }),
+    });
+    expect(readCachedMatches("football", store)).toBeNull();
+  });
+
+  test("contenu corrompu ou storage indisponible : null honnête, jamais un plantage", () => {
+    expect(readCachedMatches("football", memoryStorage({ blume_sportscore_football: "{pas du json" }))).toBeNull();
+    expect(() => writeCachedMatches("football", list, null)).not.toThrow();
+    expect(readCachedMatches("football", null)).toBeNull();
   });
 });

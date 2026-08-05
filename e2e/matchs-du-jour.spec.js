@@ -7,6 +7,12 @@ const { test, expect } = require("@playwright/test");
 const IPHONE = { width: 390, height: 844 };
 
 function ssMatches(sport) {
+  if (sport === "basketball") {
+    return [
+      { id: 31, home_team: { name: "Los Angeles Lakers", logo: "https://example.test/lal.png" }, away_team: { name: "Boston Celtics", logo: "https://example.test/bos.png" }, league: { name: "NBA" }, start_at: "2026-08-11T02:00:00Z", status: "not_started" },
+      { id: 32, home_team: { name: "Petit Club Regional" }, away_team: { name: "Autre Club Regional" }, league: { name: "Liga ACB" }, start_at: "2026-08-10T18:00:00Z", status: "finished" },
+    ];
+  }
   if (sport === "tennis") {
     return [
       { id: 21, home_team: { name: "Novak Djokovic", logo: "https://example.test/nd.png" }, away_team: { name: "Carlos Alcaraz", logo: "https://example.test/ca.png" }, tournament: { name: "Wimbledon" }, start_at: "2026-08-10T13:00:00Z", status: "not_started" },
@@ -54,15 +60,18 @@ async function dismissCookieBanner(page) {
 test("desktop : les deux sections affichent les vrais matchs, triés, avec statut et attribution dofollow", async ({ page }) => {
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (msg) => { if (msg.type() === "error") errors.push(msg.text()); });
   await setup(page);
   await page.goto("/matchs-du-jour");
   await dismissCookieBanner(page);
 
   await expect(page.getByRole("heading", { name: "Matchs de football à venir" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Matchs de tennis à venir" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Matchs de basketball à venir" })).toBeVisible();
 
   const football = page.getByTestId("sportscore-football");
   const tennis = page.getByTestId("sportscore-tennis");
+  const basket = page.getByTestId("sportscore-basketball");
 
   // Grandes compétitions en tête, amicaux conservés en dessous.
   const fCards = football.getByTestId("sportscore-match");
@@ -76,8 +85,18 @@ test("desktop : les deux sections affichent les vrais matchs, triés, avec statu
   await expect(tCards.nth(0)).toContainText("Wimbledon");
   await expect(tennis.getByTestId("sportscore-status-live")).toContainText("En direct");
 
+  // Basket : NBA en tête, et le match terminé relégué en fin de liste (jamais en tête).
+  const bCards = basket.getByTestId("sportscore-match");
+  await expect(bCards.nth(0)).toContainText("NBA");
+  await expect(bCards.nth(1)).toContainText("Liga ACB");
+  await expect(bCards.nth(1).getByTestId("sportscore-status-finished")).toBeVisible();
+
+  // Aucun "undefined"/"null"/"[object Object]" nulle part à l'écran.
+  const body = await page.locator("body").innerText();
+  expect(body).not.toMatch(/undefined|\[object Object\]/);
+
   // Attribution obligatoire, en dofollow, sous chaque section.
-  for (const section of [football, tennis]) {
+  for (const section of [football, tennis, basket]) {
     const link = section.getByRole("link", { name: "SportScore" });
     await expect(link).toBeVisible();
     await expect(link).toHaveAttribute("href", "https://sportscore.com/");
@@ -87,6 +106,7 @@ test("desktop : les deux sections affichent les vrais matchs, triés, avec statu
   // Purement informatif : aucun bouton d'analyse ni lien de paiement.
   await expect(page.getByRole("button", { name: /analyser/i })).toHaveCount(0);
 
+  // Aucune erreur de console ni exception JavaScript en fonctionnement normal.
   expect(errors).toEqual([]);
   await page.screenshot({ path: "e2e-out/matchs-du-jour-desktop.png", fullPage: true });
 });
@@ -125,4 +145,37 @@ test("API en panne : message de secours lisible, section jamais vide ni cassée,
   await expect(page.getByTestId("sportscore-football").getByRole("link", { name: "SportScore" })).toBeVisible();
 
   await page.screenshot({ path: "e2e-out/matchs-du-jour-fallback.png", fullPage: true });
+});
+
+test("contenu par défaut : les trois sections affichent un squelette dès le premier rendu, avant toute réponse de l'API", async ({ page }) => {
+  await setup(page);
+  // L'API ne répond jamais : on observe donc uniquement ce qui est affiché AVANT elle.
+  await page.route("**sportscore.com/**", () => {});
+  await page.goto("/matchs-du-jour");
+
+  await expect(page.getByTestId("sportscore-skeleton")).toHaveCount(3);
+  // Aucune section vide, et surtout aucun match inventé.
+  await expect(page.getByTestId("sportscore-match")).toHaveCount(0);
+  for (const id of ["sportscore-football", "sportscore-tennis", "sportscore-basketball"]) {
+    await expect(page.getByTestId(id).getByRole("link", { name: "SportScore" })).toBeVisible();
+  }
+
+  await page.screenshot({ path: "e2e-out/matchs-du-jour-skeleton.png", fullPage: true });
+});
+
+test("visite suivante avec API en panne : les derniers vrais matchs connus restent affichés (jamais une section vide)", async ({ page }) => {
+  // 1re visite : l'API répond, les matchs sont mémorisés dans le navigateur.
+  await setup(page);
+  await page.goto("/matchs-du-jour");
+  await dismissCookieBanner(page);
+  await expect(page.getByTestId("sportscore-football").getByTestId("sportscore-match").first()).toContainText("Real Madrid");
+
+  // 2e visite, API totalement en panne : le contenu réel précédent doit rester visible.
+  await page.unroute("**sportscore.com/**");
+  await page.route("**sportscore.com/**", (route) => route.fulfill({ status: 503, body: "down" }));
+  await page.reload();
+
+  await expect(page.getByTestId("sportscore-football").getByTestId("sportscore-match").first()).toContainText("Real Madrid");
+  await expect(page.getByTestId("sportscore-basketball").getByTestId("sportscore-match").first()).toContainText("NBA");
+  await expect(page.getByTestId("sportscore-football-fallback")).toHaveCount(0);
 });
