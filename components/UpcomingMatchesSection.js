@@ -43,7 +43,7 @@ export default function UpcomingMatchesSection({ sport }) {
   const hasDataRef = useRef(false);
 
   const load = useCallback(async () => {
-    const { days: nextDays, coverage, errors, allSourcesFailed, unsupported } = await loadUpcoming(sport);
+    const { days: nextDays, coverage, errors, allSourcesFailed } = await loadUpcoming(sport);
 
     // Une source en échec est TOUJOURS journalisée, même quand l'autre a réussi :
     // aucune erreur ne disparaît en silence (BLOC 7).
@@ -73,7 +73,9 @@ export default function UpcomingMatchesSection({ sport }) {
       setDetail(`SportScore : ${errors.sportScore} | Source Blume : ${errors.blume}`);
       setPhase("error");
     } else {
-      setDetail(typeof unsupported === "string" ? unsupported : null);
+      // Vraiment aucun match à venir renvoyé par les sources : message neutre, jamais
+      // un blocage écrit en dur qui masquerait des matchs pourtant disponibles.
+      setDetail(null);
       setPhase("empty");
     }
   }, [sport]);

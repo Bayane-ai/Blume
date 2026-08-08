@@ -208,17 +208,34 @@ describe("loadUpcoming — agrégation réelle des sources", () => {
     for (const sport of ["football", "basketball", "tennis"]) {
       await loadUpcoming(sport, { fetchImpl, now: NOW });
     }
-    expect(seen).toEqual(["/api/matches", "/api/basketball/matches", "/api/tennis/matches"]);
+    // Le tennis n'a PAS de route maison pour les matchs à venir : sa seule source est
+    // SportScore (le plan gratuit de Live Tennis API n'expose pas de calendrier).
+    expect(seen).toEqual(["/api/matches", "/api/basketball/matches"]);
   });
 
-  test("tennis sans calendrier (plan gratuit) : signalé comme non supporté, jamais comme une erreur", async () => {
-    const fetchImpl = jest.fn((url) =>
-      String(url).includes("sportscore")
-        ? Promise.reject(new Error("x"))
-        : Promise.resolve({ ok: true, json: () => Promise.resolve({ unsupported: true, message: "Pas de calendrier tennis." }) })
-    );
-    const { unsupported, allSourcesFailed } = await loadUpcoming("tennis", { fetchImpl, now: NOW });
-    expect(unsupported).toBe("Pas de calendrier tennis.");
+  test("tennis : aucune route maison interrogée, et le blocage écrit en dur n'existe plus", async () => {
+    const seen = [];
+    const fetchImpl = jest.fn((url) => {
+      const u = String(url);
+      seen.push(u);
+      if (u.includes("sportscore")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            matches: [{ id: 1, home_team: { name: "Djokovic" }, away_team: { name: "Alcaraz" }, tournament: { name: "US Open" }, start_at: inHours(5), status: "not_started" }],
+          }),
+        });
+      }
+      return Promise.reject(new Error("aucune route maison ne doit être appelée pour le tennis"));
+    });
+
+    const { days, coverage, allSourcesFailed } = await loadUpcoming("tennis", { fetchImpl, now: NOW });
+
+    expect(seen.every((u) => u.includes("sportscore"))).toBe(true);
+    expect(seen.some((u) => u.includes("/api/tennis/matches"))).toBe(false);
     expect(allSourcesFailed).toBe(false);
+    // Le match SportScore remonte bien : plus rien ne l'éclipse.
+    expect(coverage.upcoming).toBe(1);
+    expect(days[0].competitions[0].competition).toBe("US Open");
   });
 });
