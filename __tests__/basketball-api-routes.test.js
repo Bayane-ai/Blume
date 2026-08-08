@@ -83,12 +83,22 @@ describe("/api/basketball/live-matches", () => {
 });
 
 describe("/api/basketball/matches", () => {
-  test("sans clé configurée, message clair en français", async () => {
+  // Cette route ne doit JAMAIS renvoyer d'erreur HTTP : c'est un 502 muet (Promise.all
+  // rejetée dès qu'UNE journée échouait) qui faisait disparaître les 7 autres journées
+  // et affichait "0 match" côté site. Toujours 200 + diagnostic exploitable.
+  test("sans clé configurée : 200 avec un diagnostic clair, jamais un 500", async () => {
+    global.fetch = jest.fn(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ matches: [] }) }));
     const { default: handler } = await import("../pages/api/basketball/matches.js");
     const res = mockRes();
     await handler({}, res);
-    expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.body.error).toMatch(/basket/i);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.status).not.toHaveBeenCalledWith(500);
+    const primary = res.body.diagnostic.sources[0];
+    expect(primary.skipped).toBe(true);
+    expect(primary.error).toMatch(/Clé API absente/i);
+    // La source de secours a quand même été interrogée : une clé manquante sur la
+    // source principale ne doit pas condamner tout le sport.
+    expect(res.body.diagnostic.sources.map((x) => x.name)).toContain("SportScore (secours)");
   });
 
   test("regroupe les matchs par compétition RÉELLEMENT présente, toutes compétitions confondues", async () => {
@@ -117,14 +127,64 @@ describe("/api/basketball/matches", () => {
     expect(global.fetch.mock.calls[0][1].headers).toEqual({ "x-apisports-key": "dedicated-key" });
   });
 
-  test("panne de l'API : message clair, jamais un plantage", async () => {
+  test("panne totale : 200 + cause exacte, jamais un 502 muet", async () => {
     process.env.API_BASKETBALL_KEY = "dedicated-key";
     global.fetch = jest.fn(() => Promise.reject(new Error("network down")));
     const { default: handler } = await import("../pages/api/basketball/matches.js");
     const res = mockRes();
     await handler({}, res);
 
-    expect(res.status).toHaveBeenCalledWith(502);
-    expect(res.body.error).toMatch(/pas disponibles/i);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.status).not.toHaveBeenCalledWith(502);
+    expect(res.body.competitions).toEqual([]);
+    expect(res.body.diagnostic.allSourcesFailed).toBe(true);
+    expect(res.body.diagnostic.error).toMatch(/network down/i);
+    expect(res.body.diagnostic.window.from).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  test("une seule journée en échec n'emporte plus les 7 autres (origine du 502)", async () => {
+    process.env.API_BASKETBALL_KEY = "dedicated-key";
+    let n = 0;
+    global.fetch = jest.fn(() => {
+      n += 1;
+      if (n === 3) return Promise.reject(new Error("timeout"));
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ response: [rawGame({ id: n, status: "NS", leagueId: 99, leagueName: "WNBA", homeId: 40, homeName: "Aces", awayId: 41, awayName: "Liberty" })] }),
+      });
+    });
+    const { default: handler } = await import("../pages/api/basketball/matches.js");
+    const res = mockRes();
+    await handler({}, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.body.competitions.map((c) => c.name)).toContain("WNBA");
+    expect(res.body.diagnostic.received).toBeGreaterThan(0);
+  });
+
+  test("cascade : API-Basketball répond 0, SportScore est interrogé AVANT de conclure au vide", async () => {
+    process.env.API_BASKETBALL_KEY = "dedicated-key";
+    const soon = new Date(Date.now() + 5 * 3600000).toISOString();
+    const calls = [];
+    global.fetch = jest.fn((url) => {
+      calls.push(String(url));
+      if (String(url).includes("sportscore")) {
+        return Promise.resolve({
+          ok: true, status: 200,
+          json: () => Promise.resolve({
+            matches: [{ id: 1, home_team: { name: "Minnesota Lynx" }, away_team: { name: "Las Vegas Aces" }, league: { name: "WNBA" }, start_at: soon, status: "not_started" }],
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ response: [] }) });
+    });
+
+    const { default: handler } = await import("../pages/api/basketball/matches.js");
+    const res = mockRes();
+    await handler({}, res);
+
+    expect(calls.some((u) => u.includes("sportscore"))).toBe(true);
+    expect(res.body.competitions.map((c) => c.name)).toEqual(["WNBA"]);
+    expect(res.body.diagnostic.sources.map((x) => x.received)).toEqual([0, 1]);
   });
 });

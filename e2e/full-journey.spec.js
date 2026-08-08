@@ -39,7 +39,9 @@ test.describe("Écran 1 — Matchs en ligne (accueil)", () => {
 
     // Navigation : exactement sept boutons.
     const nav = page.getByTestId("main-nav");
-    await expect(nav.getByRole("link")).toHaveCount(7);
+    // Huit boutons : les sept de navigation + "Réglages" (ajouté avec les préférences
+    // de compte et le consentement aux cookies).
+    await expect(nav.getByRole("link")).toHaveCount(8);
     const liveLink = nav.getByRole("link", { name: "Live" });
     await expect(liveLink).toBeVisible();
     // Bouton "Live" marqué visuellement par un point rouge à côté du texte.
@@ -165,7 +167,9 @@ test.describe("Écran — News", () => {
   });
 
   test("aucune actualité disponible : message clair, jamais une page blanche", async ({ page }) => {
-    await page.route("**/api/news", (route) => route.fulfill({ json: { articles: [] } }));
+    // Le motif doit couvrir la chaîne de requête : la page appelle /api/news?sport=…
+    // (voir pages/news.js) — sans le `**` final, ce mock n'interceptait plus rien.
+    await page.route("**/api/news**", (route) => route.fulfill({ json: { articles: [] } }));
     await page.goto("/news");
     await expect(page.getByText("Aucune actualité disponible pour le moment.")).toBeVisible();
   });
@@ -195,45 +199,40 @@ test.describe("PROMPT 6 — Carrousels de compétitions et de journées", () => 
     await expect(list.getByText("Arsenal FC")).toBeVisible();
   });
 
-  test('"Matchs à venir" : filtre par compétition puis par journée, sur de vraies compétitions et journées', async ({ page }) => {
+  // "Matchs à venir" n'a plus de carrousel de filtres : la page a été refondue en
+  // hiérarchie JOUR -> COMPÉTITION -> MATCHS, où toutes les compétitions sont visibles
+  // ensemble sans qu'aucun filtre ne soit à actionner. L'exigence de fond est
+  // inchangée et vérifiée ici : aucune compétition n'est jamais exclue.
+  test('"Matchs à venir" groupe par jour puis par compétition, sans filtre à actionner', async ({ page }) => {
     await page.goto("/a-venir");
-    const compCarousel = page.getByTestId("competition-filter");
     const list = page.getByTestId("match-list");
 
-    await compCarousel.getByRole("button", { name: "Premier League" }).click();
-    const mdCarousel = page.getByTestId("matchday-filter");
-    await expect(mdCarousel.getByRole("button", { name: "Journée 27" })).toBeVisible();
-    await mdCarousel.getByRole("button", { name: "Journée 27" }).click();
-    // Les deux matchs réels de cette journée sont bien affichés.
+    // Groupement par jour, puis par compétition, directement à l'ouverture.
+    await expect(page.getByTestId("day-section").first()).toBeVisible();
+    await expect(page.getByTestId("upcoming-competition").first()).toBeVisible();
+    // Plus aucun carrousel de filtres sur cette page.
+    await expect(page.getByTestId("competition-filter")).toHaveCount(0);
+    await expect(page.getByTestId("matchday-filter")).toHaveCount(0);
+
     await expect(list.getByText("Liverpool FC")).toBeVisible();
     await expect(list.getByText("Newcastle United FC")).toBeVisible();
-
-    // Coupe du Monde (phase à élimination directe, pas de champ "journée" exploitable) :
-    // aucun carrousel de journées vide ne doit s'afficher — pas de bouton sans effet.
-    await compCarousel.getByRole("button", { name: "Coupe du Monde", exact: true }).click();
-    await expect(list.getByText("France")).toBeVisible();
-    await expect(page.getByTestId("matchday-filter")).toHaveCount(0);
   });
 
   test('"Matchs à venir" affiche bien des compétitions de plusieurs fédérations différentes, y compris celles absentes de la liste des compétitions majeures connues et les catégories jeunes — aucun championnat n\'est jamais exclu', async ({ page }) => {
     await page.goto("/a-venir");
-    const compCarousel = page.getByTestId("competition-filter");
     const list = page.getByTestId("match-list");
 
-    // Par défaut ("Toutes les compétitions"), les matchs de fédérations variées sont
-    // déjà tous affichés ensemble, sans action de l'utilisateur.
+    // Toutes les fédérations sont affichées ensemble, sans action de l'utilisateur.
     await expect(list.getByText("Boca Juniors")).toBeVisible(); // Copa Libertadores (CONMEBOL)
+    await expect(list.getByText("River Plate")).toBeVisible();
 
     // Aucune restriction par ligue, pays ou catégorie d'âge : la Coupe du Monde U20
     // apparaît exactement comme Copa Libertadores (elle aussi absente de
-    // lib/competitions.js), aussi bien dans la liste que comme bouton de filtre.
+    // lib/competitions.js).
     await expect(list.getByText("Argentine U20")).toBeVisible();
-    await expect(compCarousel.getByRole("button", { name: "Copa Libertadores" })).toBeVisible();
-    await expect(compCarousel.getByRole("button", { name: "Coupe du Monde U20" })).toBeVisible();
-
-    await compCarousel.getByRole("button", { name: "Copa Libertadores" }).click();
-    await expect(list.getByText("Boca Juniors")).toBeVisible();
-    await expect(list.getByText("River Plate")).toBeVisible();
+    const titres = await page.getByTestId("upcoming-competition").locator("h3").allTextContents();
+    expect(titres.some((t) => t.includes("Copa Libertadores"))).toBe(true);
+    expect(titres.some((t) => t.includes("Coupe du Monde U20"))).toBe(true);
   });
 });
 

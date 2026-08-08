@@ -128,7 +128,25 @@ export default async function handler(req, res) {
     // pays, sans restriction. Une panne d'API-Football ne doit jamais vider la liste :
     // on garde alors simplement les matchs football-data.org.
     let afMatches = [];
+    // Suivi source par source, pour que la page puisse distinguer « les sources ont
+    // répondu et n'avaient rien » (vide légitime) de « une source est en panne »
+    // (nouvelle tentative), exactement comme le basket et le tennis.
+    const sourceReports = [
+      {
+        name: "football-data.org",
+        httpStatus: hardFailureStatus ? null : 200,
+        received: fdMatches.length,
+        error: hardFailureStatus ? `HTTP ${hardFailureStatus}` : null,
+      },
+    ];
     if (!apiFootballKey) {
+      sourceReports.push({
+        name: "API-Football",
+        httpStatus: null,
+        received: 0,
+        error: "Clé API absente (API_FOOTBALL_KEY)",
+        skipped: true,
+      });
       // Sans cette clé, TOUTE compétition absente de lib/competitions.js (la quasi-
       // totalité du monde du football hors 12 grandes ligues) reste invisible sur le
       // site — un écran vide silencieux en apparence, alors que la vraie cause est une
@@ -168,8 +186,10 @@ export default async function handler(req, res) {
           .filter((f) => !known.has(`${normalizeTeamName(f?.teams?.home?.name)}|${normalizeTeamName(f?.teams?.away?.name)}`))
           .map(mapFixtureToUpcomingMatch)
           .filter((m) => m.homeTeam.name && m.awayTeam.name && m.utcDate);
+        sourceReports.push({ name: "API-Football", httpStatus: 200, received: afMatches.length, error: null });
       } catch (e) {
         console.error("Erreur matchs à venir API-Football:", e.message);
+        sourceReports.push({ name: "API-Football", httpStatus: null, received: 0, error: e.message });
       }
     }
 
@@ -252,8 +272,22 @@ export default async function handler(req, res) {
       return { code, name: known?.name || entry.name, area: known?.area || entry.area, matches };
     });
 
+    const failedSources = sourceReports.filter((s) => s.error);
+    // Cache serveur/CDN de 60 s par sport (demandé) : protège le quota sans figer la liste.
     res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=120");
-    return res.status(200).json({ competitions: results, ...(stale ? { stale, lastUpdated } : {}) });
+    return res.status(200).json({
+      competitions: results,
+      ...(stale ? { stale, lastUpdated } : {}),
+      diagnostic: {
+        source: sourceReports.map((s) => s.name).join(" + "),
+        window: { from: isoDate(new Date()), to: isoDate(new Date(Date.now() + NUM_DAYS * 24 * 3600000)) },
+        received: fdMatches.length + afMatches.length,
+        sources: sourceReports,
+        anySourceFailed: failedSources.length > 0,
+        allSourcesFailed: failedSources.length === sourceReports.length,
+        error: failedSources[0]?.error || null,
+      },
+    });
   } catch (e) {
     console.error("[/api/matches] Erreur inattendue :", e.message);
     recordLastError(SOURCE_KEY, `Erreur inattendue /api/matches : ${e.message}`);

@@ -102,7 +102,7 @@ function mockFetchRouter() {
     if (url.startsWith("/api/live-matches")) {
       return Promise.resolve({ json: () => Promise.resolve(liveMatchesFixture()) });
     }
-    if (url.startsWith("/api/matches")) {
+    if (url.startsWith("/api/football/matches") || url.startsWith("/api/matches")) {
       return Promise.resolve({ json: () => Promise.resolve(upcomingMatchesFixture()) });
     }
     return Promise.reject(new Error(`URL inattendue : ${url}`));

@@ -104,8 +104,8 @@ describe("/api/tennis/live-matches", () => {
   });
 });
 
-describe("/api/tennis/matches (à venir) — interroge réellement SportScore", () => {
-  test("renvoie les vrais matchs à venir, groupés par tournoi, avec un diagnostic", async () => {
+describe("/api/tennis/matches — cascade SportScore puis Live Tennis API", () => {
+  test("renvoie les vrais matchs, groupés par tournoi, avec un diagnostic source par source", async () => {
     const soon = new Date(Date.now() + 5 * 3600000).toISOString();
     global.fetch = jest.fn(() =>
       Promise.resolve({
@@ -130,10 +130,13 @@ describe("/api/tennis/matches (à venir) — interroge réellement SportScore", 
     expect(res.body.unsupported).toBeUndefined();
     // Les deux tournois sont là, le petit ITF comme le Grand Chelem.
     expect(res.body.competitions.map((c) => c.name).sort()).toEqual(["ITF M15 Monastir", "US Open"]);
-    expect(res.body.diagnostic).toMatchObject({ source: "SportScore", httpStatus: 200, upcoming: 2 });
+    expect(res.body.diagnostic).toMatchObject({ received: 2, inWindow: 2, allSourcesFailed: false, anySourceFailed: false });
+    expect(res.body.diagnostic.sources[0]).toMatchObject({ name: "SportScore", httpStatus: 200, received: 2 });
+    expect(res.body.diagnostic.window.from).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(res.body.diagnostic.window.to).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
-  test("source en erreur : liste vide MAIS diagnostic exploitable (source, code HTTP, plage)", async () => {
+  test("source principale en erreur : liste vide MAIS diagnostic exploitable, jamais un 502", async () => {
     global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 503, text: () => Promise.resolve("down") }));
 
     const { default: handler } = await import("../pages/api/tennis/matches.js");
@@ -141,15 +144,47 @@ describe("/api/tennis/matches (à venir) — interroge réellement SportScore", 
     await handler({}, res);
 
     expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.status).not.toHaveBeenCalledWith(502);
     expect(res.body.competitions).toEqual([]);
-    expect(res.body.diagnostic.httpStatus).toBe(503);
-    expect(res.body.diagnostic.source).toBe("SportScore");
-    expect(res.body.diagnostic.from).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(res.body.diagnostic.to).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    const sportScore = res.body.diagnostic.sources.find((x) => x.name === "SportScore");
+    expect(sportScore.error).toBe("HTTP 503");
+    expect(sportScore.httpStatus).toBe(503);
+    expect(res.body.diagnostic.anySourceFailed).toBe(true);
+    expect(res.body.diagnostic.window.from).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
-  test("écarte les matchs déjà commencés et ceux au-delà de J+7, sans filtre de tournoi", async () => {
-    const past = new Date(Date.now() - 3600000).toISOString();
+  test("cascade : SportScore répond 0, Live Tennis API prend le relais AVANT toute conclusion au vide", async () => {
+    process.env.TENNIS_API_KEY = "real-key";
+    jest.doMock("../lib/apiSportsCache", () => makeCacheMock());
+
+    const calls = [];
+    global.fetch = jest.fn((url) => {
+      calls.push(String(url));
+      if (String(url).includes("sportscore")) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ matches: [] }) });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          matches: [rawMatch({ id: 77, tournamentName: "UTR Pro Tennis Hambourg", homeId: 1, homeName: "Joueur A", awayId: 2, awayName: "Joueur B", status: "live" })],
+        }),
+      });
+    });
+
+    const { default: handler } = await import("../pages/api/tennis/matches.js");
+    const res = mockRes();
+    await handler({}, res);
+
+    // La source de secours a bien été interrogée, et elle a fourni le match.
+    expect(calls.some((u) => u.includes("livetennisapi"))).toBe(true);
+    expect(res.body.competitions.map((c) => c.name)).toEqual(["UTR Pro Tennis Hambourg"]);
+    expect(res.body.diagnostic.sources.map((x) => x.name)).toEqual(["SportScore", "Live Tennis API (secours)"]);
+    expect(res.body.diagnostic.sources[0].received).toBe(0);
+    expect(res.body.diagnostic.sources[1].received).toBe(1);
+  });
+
+  test("aucun filtre de tournoi ni de circuit ; seule la fenêtre de dates écarte", async () => {
     const far = new Date(Date.now() + 9 * 24 * 3600000).toISOString();
     const soon = new Date(Date.now() + 2 * 3600000).toISOString();
     global.fetch = jest.fn(() =>
@@ -157,9 +192,9 @@ describe("/api/tennis/matches (à venir) — interroge réellement SportScore", 
         ok: true, status: 200,
         json: () => Promise.resolve({
           matches: [
-            { id: 1, home_team: { name: "A" }, away_team: { name: "B" }, tournament: { name: "Trop tôt" }, start_at: past, status: "not_started" },
             { id: 2, home_team: { name: "C" }, away_team: { name: "D" }, tournament: { name: "Trop tard" }, start_at: far, status: "not_started" },
             { id: 3, home_team: { name: "E" }, away_team: { name: "F" }, tournament: { name: "Challenger Obscur" }, start_at: soon, status: "not_started" },
+            { id: 4, home_team: { name: "G" }, away_team: { name: "H" }, tournament: { name: "UTR Pro Tennis Saitama" }, start_at: soon, status: "inprogress" },
           ],
         }),
       })
@@ -169,6 +204,7 @@ describe("/api/tennis/matches (à venir) — interroge réellement SportScore", 
     const res = mockRes();
     await handler({}, res);
 
-    expect(res.body.competitions.map((c) => c.name)).toEqual(["Challenger Obscur"]);
+    // Le circuit secondaire ET le match en cours passent ; seul le hors-fenêtre sort.
+    expect(res.body.competitions.map((c) => c.name).sort()).toEqual(["Challenger Obscur", "UTR Pro Tennis Saitama"]);
   });
 });

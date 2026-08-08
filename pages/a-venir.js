@@ -8,9 +8,9 @@ const SPORT_INTRO = {
   football:
     "Tous les matchs de football à venir, d'aujourd'hui à J+7 — toutes fédérations, toutes divisions, coupes, jeunes, réserves, féminines et amicaux compris.",
   basketball:
-    "Tous les matchs de basket à venir, d'aujourd'hui à J+7 — NBA et EuroLeague en tête, puis toutes les autres ligues sans exception.",
+    "Tous les matchs de basket à venir, d'aujourd'hui à J+7 — toutes fédérations et tous pays, WNBA, ligues d'été, championnats nationaux et coupes compris.",
   tennis:
-    "Tous les matchs de tennis à venir, d'aujourd'hui à J+7 — Grand Chelem, ATP et WTA en tête, puis tous les autres circuits.",
+    "Tous les matchs de tennis à venir, d'aujourd'hui à J+7 — tous les circuits sans exception, principaux comme secondaires.",
 };
 
 // Onglet unique "Matchs à venir" — fusion de l'ancienne page du même nom et de

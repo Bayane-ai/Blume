@@ -74,7 +74,7 @@ function mockFetchRouter() {
     if (url.startsWith("/api/live-matches")) {
       return Promise.resolve({ json: () => Promise.resolve(liveFixture()) });
     }
-    if (url.startsWith("/api/matches")) {
+    if (url.startsWith("/api/football/matches") || url.startsWith("/api/matches")) {
       return Promise.resolve({ ok: true, json: () => Promise.resolve(upcomingFixture()) });
     }
     // SportScore indisponible dans ce test : la source Blume seule doit suffire.
@@ -142,7 +142,7 @@ test('"Matchs à venir" mène à une vraie page (pas un lien mort) affichant le 
 test('"Matchs à venir" affiche un message clair (jamais une page vide) quand l\'API ne renvoie aucun match', async () => {
   mockPathname = "/a-venir";
   global.fetch = jest.fn((url) => {
-    if (url.startsWith("/api/matches")) {
+    if (url.startsWith("/api/football/matches") || url.startsWith("/api/matches")) {
       return Promise.resolve({ ok: true, json: () => Promise.resolve({ competitions: [] }) });
     }
     if (String(url).includes("sportscore")) return Promise.reject(new Error("indisponible"));

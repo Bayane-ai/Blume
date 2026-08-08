@@ -8,6 +8,20 @@ const REFRESH_MS = 5 * 60 * 1000;
 const SKELETON_DAYS = 2;
 const SKELETON_CARDS = 3;
 
+// Nouvelle tentative automatique quand au moins une source a échoué (demande
+// explicite). Bornée : au-delà, on arrête de marteler la source et on affiche la cause
+// technique plutôt que de laisser tourner un message d'attente indéfiniment.
+const RETRY_MS = 10 * 1000;
+const MAX_RETRIES = 6;
+
+// La ligne de diagnostic technique n'est affichée que sur demande explicite
+// (?debug=1) : elle reste disponible pour comprendre un écran vide, sans polluer
+// l'affichage de tous les visiteurs.
+function isDebug() {
+  if (typeof window === "undefined") return false;
+  return new URLSearchParams(window.location.search).get("debug") === "1";
+}
+
 // Squelettes de cartes pendant la récupération (BLOC 7) : structure seule, jamais des
 // matchs inventés — un site de suivi sportif ne doit pas afficher d'équipes ou
 // d'horaires fictifs (voir CLAUDE.md).
@@ -38,57 +52,85 @@ function Skeleton() {
 // un autre.
 export default function UpcomingMatchesSection({ sport }) {
   const [days, setDays] = useState([]);
-  const [phase, setPhase] = useState("loading"); // loading | loaded | empty | error
+  // loading | loaded | empty | retrying | error
+  const [phase, setPhase] = useState("loading");
   const [detail, setDetail] = useState(null);
   // Ce qui a réellement été interrogé (source, code HTTP, plage de dates) : affiché
   // sous un écran vide, pour qu'une section vide soit toujours explicable.
   const [diagnostic, setDiagnostic] = useState(null);
+  const [debug, setDebug] = useState(false);
   const hasDataRef = useRef(false);
+  const retriesRef = useRef(0);
+  const retryTimerRef = useRef(null);
 
   const load = useCallback(async () => {
-    const { days: nextDays, coverage, errors, allSourcesFailed, diagnostic } = await loadUpcoming(sport);
+    const { days: nextDays, coverage, errors, allSourcesFailed, anySourceFailed, diagnostic } =
+      await loadUpcoming(sport);
 
-    // Une source en échec est TOUJOURS journalisée, même quand l'autre a réussi :
+    // Une source en échec est TOUJOURS journalisée, même quand une autre a réussi :
     // aucune erreur ne disparaît en silence (BLOC 7).
-    if (errors.sportScore) console.warn(`[À venir] ${sport} — SportScore : ${errors.sportScore}`);
+    for (const s of diagnostic?.sources || []) {
+      if (s.error) console.warn(`[À venir] ${sport} — ${s.name} : ${s.error}`);
+    }
     if (errors.blume) console.warn(`[À venir] ${sport} — source Blume : ${errors.blume}`);
 
     // Comptage de couverture (BLOC 9) : ce qui est REÇU. Le rendu réel expose le sien
     // via data-* ci-dessous — les deux doivent coïncider.
     console.info(
       `[À venir] ${sport} : ${coverage.upcoming} match(s) à venir, ${coverage.competitions} compétition(s) distincte(s) ` +
-        `— SportScore ${coverage.fromSportScore}, Blume ${coverage.fromBlume}, ${coverage.afterDedupe} après déduplication` +
-        (coverage.pagesRead ? `, ${coverage.pagesRead} page(s) lue(s)` : "")
+        `— reçus ${coverage.fromBlume}, ${coverage.afterDedupe} après déduplication`
     );
 
     if (nextDays.length > 0) {
       setDays(nextDays);
       setPhase("loaded");
       hasDataRef.current = true;
+      retriesRef.current = 0;
       return;
     }
     // Ne jamais vider une liste déjà affichée sur un incident passager.
     if (hasDataRef.current) return;
 
     setDiagnostic(diagnostic || null);
-    if (allSourcesFailed) {
+    const sourceDetail = (diagnostic?.sources || [])
+      .map((s) => `${s.name} : ${s.error || `HTTP ${s.httpStatus ?? "?"}, ${s.received ?? 0} reçu(s)`}`)
+      .join(" | ");
+
+    // Une seule source en échec suffit à interdire le message "aucun match" : le vide
+    // n'est constatable que si TOUTES les sources ont répondu correctement. Tant qu'on
+    // a encore des tentatives, on le dit et on relance.
+    if (anySourceFailed && retriesRef.current < MAX_RETRIES) {
+      retriesRef.current += 1;
+      setDetail(sourceDetail || errors.blume || null);
+      setPhase("retrying");
+      retryTimerRef.current = setTimeout(load, RETRY_MS);
+      return;
+    }
+
+    if (anySourceFailed || allSourcesFailed) {
       // Message DISTINCT du "aucun match" : une panne technique ne doit pas être
       // maquillée en absence de matchs.
-      setDetail(`SportScore : ${errors.sportScore} | Source Blume : ${errors.blume}`);
+      setDetail(sourceDetail || errors.blume || null);
       setPhase("error");
-    } else {
-      // Vide constaté, jamais décidé : toutes les sources ont réellement répondu 0.
-      setDetail(null);
-      setPhase("empty");
+      return;
     }
+
+    // Vide constaté, jamais décidé : toutes les sources ont réellement répondu 0.
+    setDetail(null);
+    setPhase("empty");
   }, [sport]);
 
   useEffect(() => {
+    setDebug(isDebug());
     setPhase("loading");
     hasDataRef.current = false;
+    retriesRef.current = 0;
     load();
     const id = setInterval(load, REFRESH_MS);
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    };
   }, [sport, load]);
 
   const matchCount = days.reduce((n, d) => n + d.competitions.reduce((k, c) => k + c.matches.length, 0), 0);
@@ -96,13 +138,42 @@ export default function UpcomingMatchesSection({ sport }) {
     days.flatMap((d) => d.competitions.map((c) => c.competition))
   ).size;
 
+  // Ligne technique : conservée intégralement, mais réservée à ?debug=1 (demandé).
+  const diagnosticLine =
+    debug && diagnostic ? (
+      <p style={st.diagnostic} data-testid="upcoming-empty-diagnostic">
+        {diagnostic.sources
+          .map((s) => `${s.name} → ${s.error ? `échec (${s.error})` : `HTTP ${s.httpStatus ?? "?"}`}, ${s.received ?? 0} reçu(s)`)
+          .join(" · ")}{" "}
+        · plage {diagnostic.window.from} → {diagnostic.window.to}
+      </p>
+    ) : null;
+
   if (phase === "loading") return <Skeleton />;
+
+  if (phase === "retrying") {
+    // Situation à ne surtout PAS confondre avec "aucun match" : au moins une source
+    // n'a pas répondu, donc le vide n'est pas constatable. On le dit, et on relance.
+    return (
+      <div data-testid="upcoming-retrying">
+        <p style={st.retryTitle}>Problème de connexion à la source, nouvelle tentative en cours…</p>
+        {debug && detail && (
+          <p style={st.errorDetail} data-testid="upcoming-error-detail">Détail technique : {detail}</p>
+        )}
+        {diagnosticLine}
+        <Skeleton />
+      </div>
+    );
+  }
 
   if (phase === "error") {
     return (
       <div data-testid="upcoming-error">
-        <p style={st.errorTitle}>Impossible de récupérer les matchs : toutes les sources ont échoué.</p>
-        {detail && <p style={st.errorDetail} data-testid="upcoming-error-detail">Détail technique : {detail}</p>}
+        <p style={st.errorTitle}>Problème de connexion à la source. Réessaie dans quelques minutes.</p>
+        {debug && detail && (
+          <p style={st.errorDetail} data-testid="upcoming-error-detail">Détail technique : {detail}</p>
+        )}
+        {diagnosticLine}
       </div>
     );
   }
@@ -111,14 +182,7 @@ export default function UpcomingMatchesSection({ sport }) {
     return (
       <div data-testid="upcoming-empty">
         <p style={st.hint}>Aucun match à venir pour ce sport dans les 7 prochains jours.</p>
-        {diagnostic && (
-          <p style={st.diagnostic} data-testid="upcoming-empty-diagnostic">
-            {diagnostic.sources
-              .map((s) => `${s.name} → ${s.error ? `échec (${s.error})` : `HTTP ${s.httpStatus ?? "?"}`}, ${s.received} reçu(s)`)
-              .join(" · ")}{" "}
-            · plage {diagnostic.window.from} → {diagnostic.window.to}
-          </p>
-        )}
+        {diagnosticLine}
       </div>
     );
   }
@@ -170,6 +234,7 @@ const st = {
 
   hint: { fontSize: 12.5, color: "var(--text-secondary)" },
   errorTitle: { fontSize: 13, color: "var(--negative)", fontWeight: 700, margin: 0 },
+  retryTitle: { fontSize: 13, color: "var(--text-secondary)", fontWeight: 700, margin: "0 0 12px" },
   // Ligne technique discrète sous un écran vide : source interrogée, code HTTP réel et
   // plage de dates testée — visible sans ouvrir la console.
   diagnostic: { fontSize: 10.5, color: "var(--text-secondary)", opacity: 0.75, margin: "6px 0 0", wordBreak: "break-word" },

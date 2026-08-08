@@ -98,11 +98,30 @@ async function installApiMocks(page) {
     const path = url.pathname;
     const params = url.searchParams;
 
+    // Session : sans cette réponse, TOUTES les pages redirigent vers /connexion et
+    // aucun parcours n'est testable (voir lib/useRequireAuth.js). Le catch-all 404 en
+    // fin de fonction l'avalait silencieusement.
+    if (path === "/api/auth/session") {
+      return route.fulfill({ json: { session: { id: "u1", email: "test@example.com" } } });
+    }
+
+    // Personnalisation (historique de recherche, matchs consultés, favoris) : sans ces
+    // réponses, chaque page journalise une erreur en console, ce que les tests
+    // considèrent — à raison — comme un défaut. Stockage volontairement vide : aucun
+    // parcours ne dépend d'un contenu préexistant.
+    if (path === "/api/search-history" || path === "/api/match-history" || path === "/api/favorites") {
+      if (route.request().method() !== "GET") return route.fulfill({ json: { saved: true } });
+      return route.fulfill({ json: { items: [] } });
+    }
+
     if (path === "/api/live-matches") {
       return route.fulfill({ json: { matches: liveMatches } });
     }
 
-    if (path === "/api/matches") {
+    // /api/football/matches est l'alias serveur de /api/matches (voir pages/api/
+    // football/matches.js) : c'est LUI que la page "Matchs à venir" appelle désormais,
+    // le client n'ayant plus le droit d'appeler un domaine externe.
+    if (path === "/api/matches" || path === "/api/football/matches") {
       // Reflète pages/api/matches.js : toute compétition réellement présente dans les
       // matchs apparaît (pas seulement celles de lib/competitions.js), sans aucune
       // restriction — les compétitions majeures connues d'abord, dans leur ordre

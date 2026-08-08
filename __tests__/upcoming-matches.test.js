@@ -131,41 +131,53 @@ describe("groupement jour -> compétition", () => {
   });
 });
 
-describe("loadUpcoming — agrégation réelle des sources", () => {
-  function ssPayload(matches) {
-    return { ok: true, json: () => Promise.resolve({ matches }) };
+describe("loadUpcoming — une seule route same-origin par sport", () => {
+  // Depuis le correctif « aucun appel direct depuis le navigateur vers une API
+  // externe » : le client n'interroge QUE /api/<sport>/matches. La cascade de sources
+  // (source principale puis source de secours) vit côté serveur, dans la route, où
+  // CORS ne s'applique pas et où la clé n'est pas exposée.
+  function blumeRoute(payload) {
+    return { ok: true, json: () => Promise.resolve(payload) };
   }
 
-  test("fusionne SportScore et la source Blume, sans doublon, et rapporte la couverture", async () => {
+  test("AUCUN appel vers un domaine externe : le navigateur ne sort jamais de l'origine", async () => {
+    const seen = [];
     const fetchImpl = jest.fn((url) => {
-      if (String(url).includes("sportscore")) {
-        return Promise.resolve(ssPayload([
-          { id: 1, home_team: { name: "Real Madrid" }, away_team: { name: "Manchester City" }, league: { name: "UEFA Champions League" }, start_at: inHours(5), status: "not_started" },
-          { id: 2, home_team: { name: "Bhutan A" }, away_team: { name: "Bhutan B" }, league: { name: "Bhutan Premier League" }, start_at: inHours(8), status: "not_started" },
-        ]));
-      }
-      return Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({
-          competitions: [{
+      seen.push(String(url));
+      return blumeRoute({ competitions: [] });
+    });
+    for (const sport of ["football", "basketball", "tennis"]) {
+      await loadUpcoming(sport, { fetchImpl, now: NOW });
+    }
+    expect(seen).toEqual(["/api/football/matches", "/api/basketball/matches", "/api/tennis/matches"]);
+    // Toute URL absolue serait un appel hors origine — interdit.
+    expect(seen.every((u) => u.startsWith("/api/"))).toBe(true);
+  });
+
+  test("la route maison remplit la liste, déduplique et rapporte la couverture", async () => {
+    const fetchImpl = jest.fn(() =>
+      blumeRoute({
+        competitions: [
+          {
             code: "CL",
             matches: [
-              // Doublon du 1er match SportScore.
               { id: 99, status: "SCHEDULED", utcDate: inHours(5), competition: { name: "UEFA Champions League", area: "Europe" }, homeTeam: { name: "Real Madrid" }, awayTeam: { name: "Manchester City" } },
+              // Même match renvoyé deux fois par la cascade serveur : une seule carte.
+              { id: 98, status: "SCHEDULED", utcDate: inHours(5), competition: { name: "UEFA Champions League" }, homeTeam: { name: "Real Madrid CF" }, awayTeam: { name: "Manchester City FC" } },
               { id: 100, status: "SCHEDULED", utcDate: inHours(30), competition: { name: "LaLiga", area: "Espagne" }, homeTeam: { name: "Sevilla" }, awayTeam: { name: "Betis" } },
+              { id: 101, status: "SCHEDULED", utcDate: inHours(8), competition: { name: "Bhutan Premier League" }, homeTeam: { name: "Bhutan A" }, awayTeam: { name: "Bhutan B" } },
             ],
-          }],
-        }),
-      });
-    });
+          },
+        ],
+        diagnostic: { source: "football-data.org", window: { from: "2026-08-05", to: "2026-08-12" }, received: 4 },
+      })
+    );
 
-    const { days, coverage, allSourcesFailed } = await loadUpcoming("football", { fetchImpl, now: NOW });
+    const { days, coverage, allSourcesFailed, anySourceFailed } = await loadUpcoming("football", { fetchImpl, now: NOW });
 
     expect(allSourcesFailed).toBe(false);
-    expect(coverage.fromSportScore).toBe(2);
-    expect(coverage.fromBlume).toBe(2);
-    expect(coverage.afterDedupe).toBe(3); // le doublon a bien fusionné
-    expect(coverage.upcoming).toBe(3);
+    expect(anySourceFailed).toBe(false);
+    expect(coverage.upcoming).toBe(3); // le doublon a bien fusionné
     expect(coverage.competitions).toBe(3);
 
     const total = days.reduce((n, d) => n + d.competitions.reduce((k, c) => k + c.matches.length, 0), 0);
@@ -173,82 +185,78 @@ describe("loadUpcoming — agrégation réelle des sources", () => {
     expect(total).toBe(coverage.upcoming);
   });
 
-  test("une seule source en panne : la liste se remplit quand même, l'erreur est rapportée", async () => {
-    const fetchImpl = jest.fn((url) =>
-      String(url).includes("sportscore")
-        ? Promise.reject(new Error("CORS"))
-        : Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve({ competitions: [{ matches: [{ id: 1, status: "SCHEDULED", utcDate: inHours(5), competition: { name: "LaLiga" }, homeTeam: { name: "A" }, awayTeam: { name: "B" } }] }] }),
-          })
-    );
-    const { days, errors, allSourcesFailed } = await loadUpcoming("football", { fetchImpl, now: NOW });
-    expect(days).toHaveLength(1);
-    expect(errors.sportScore).toMatch(/CORS/);
-    expect(allSourcesFailed).toBe(false);
-  });
-
-  test("les deux sources en panne : signalé explicitement, jamais confondu avec « aucun match »", async () => {
+  test("la route en panne : signalé explicitement, jamais confondu avec « aucun match »", async () => {
     const fetchImpl = jest.fn(() => Promise.reject(new Error("hors service")));
-    const { days, allSourcesFailed, errors } = await loadUpcoming("football", { fetchImpl, now: NOW });
+    const { days, allSourcesFailed, anySourceFailed, errors } = await loadUpcoming("football", { fetchImpl, now: NOW });
     expect(days).toHaveLength(0);
     expect(allSourcesFailed).toBe(true);
-    expect(errors.sportScore).toMatch(/hors service/);
+    expect(anySourceFailed).toBe(true);
     expect(errors.blume).toMatch(/hors service/);
   });
 
-  test("chaque sport interroge bien SA route maison, jamais celle d'un autre sport", async () => {
-    const seen = [];
-    const fetchImpl = jest.fn((url) => {
-      const u = String(url);
-      if (u.includes("sportscore")) return Promise.reject(new Error("x"));
-      seen.push(u);
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({ competitions: [] }) });
-    });
-    for (const sport of ["football", "basketball", "tennis"]) {
-      await loadUpcoming(sport, { fetchImpl, now: NOW });
-    }
-    expect(seen).toEqual(["/api/matches", "/api/basketball/matches", "/api/tennis/matches"]);
+  test("cascade serveur : une source secondaire en échec suffit à interdire « aucun match »", async () => {
+    const fetchImpl = jest.fn(() =>
+      blumeRoute({
+        competitions: [],
+        diagnostic: {
+          source: "API-Basketball → SportScore (secours)",
+          window: { from: "2026-08-05", to: "2026-08-12" },
+          anySourceFailed: true,
+          allSourcesFailed: false,
+          sources: [
+            { name: "API-Basketball", httpStatus: 200, received: 0, error: null },
+            { name: "SportScore (secours)", httpStatus: null, received: 0, error: "Failed to fetch" },
+          ],
+        },
+      })
+    );
+    const { allSourcesFailed, anySourceFailed, diagnostic } = await loadUpcoming("basketball", { fetchImpl, now: NOW });
+    expect(allSourcesFailed).toBe(false);
+    expect(anySourceFailed).toBe(true);
+    // Le détail source par source de la cascade serveur est repris tel quel.
+    expect(diagnostic.sources).toHaveLength(2);
+    expect(diagnostic.sources[1].error).toBe("Failed to fetch");
   });
 
-  test("tennis : plus aucun blocage écrit en dur — un match SportScore remonte normalement", async () => {
-    const fetchImpl = jest.fn((url) => {
-      const u = String(url);
-      const match = { id: 1, home_team: { name: "Djokovic" }, away_team: { name: "Alcaraz" }, tournament: { name: "US Open" }, start_at: inHours(5), status: "not_started" };
-      if (u.includes("sportscore")) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ matches: [match] }) });
-      }
-      // La route maison du tennis interroge SportScore côté serveur : elle renvoie
-      // désormais de vrais matchs, jamais un refus « unsupported ».
-      return Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({
-          competitions: [{ name: "US Open", matches: [{ id: 1, status: "SCHEDULED", utcDate: inHours(5), competition: { name: "US Open" }, homeTeam: { name: "Djokovic" }, awayTeam: { name: "Alcaraz" } }] }],
-          diagnostic: { source: "SportScore", httpStatus: 200, from: "2026-08-05", to: "2026-08-12" },
-        }),
-      });
-    });
+  test("tennis : plus aucun blocage écrit en dur — un match remonte normalement", async () => {
+    const fetchImpl = jest.fn(() =>
+      blumeRoute({
+        competitions: [{ name: "US Open", matches: [{ id: 1, status: "SCHEDULED", utcDate: inHours(5), competition: { name: "US Open" }, homeTeam: { name: "Djokovic" }, awayTeam: { name: "Alcaraz" } }] }],
+        diagnostic: { source: "SportScore", window: { from: "2026-08-05", to: "2026-08-12" }, received: 1 },
+      })
+    );
 
     const { days, coverage, allSourcesFailed } = await loadUpcoming("tennis", { fetchImpl, now: NOW });
 
     expect(allSourcesFailed).toBe(false);
-    // Les deux sources décrivent le MÊME match : une seule carte après déduplication.
     expect(coverage.upcoming).toBe(1);
     expect(days[0].competitions[0].competition).toBe("US Open");
   });
 
   test("écran vide : le diagnostic expose source, code HTTP et plage de dates", async () => {
-    const fetchImpl = jest.fn((url) =>
-      String(url).includes("sportscore")
-        ? Promise.resolve({ ok: true, json: () => Promise.resolve({ matches: [] }) })
-        : Promise.resolve({ ok: true, json: () => Promise.resolve({ competitions: [], diagnostic: { httpStatus: 200 } }) })
+    const fetchImpl = jest.fn(() =>
+      blumeRoute({
+        competitions: [],
+        diagnostic: {
+          source: "API-Basketball → SportScore (secours)",
+          window: { from: "2026-08-05", to: "2026-08-12" },
+          sources: [
+            { name: "API-Basketball", httpStatus: 200, received: 0, error: null },
+            { name: "SportScore (secours)", httpStatus: 200, received: 0, error: null },
+          ],
+        },
+      })
     );
-    const { days, diagnostic, allSourcesFailed } = await loadUpcoming("basketball", { fetchImpl, now: NOW });
+    const { days, diagnostic, allSourcesFailed, anySourceFailed } = await loadUpcoming("basketball", { fetchImpl, now: NOW });
 
-    // Vide CONSTATÉ (les deux sources ont répondu 200 avec 0), jamais décidé.
+    // Vide CONSTATÉ (toutes les sources ont répondu 200 avec 0), jamais décidé.
     expect(days).toHaveLength(0);
     expect(allSourcesFailed).toBe(false);
-    expect(diagnostic.sources.map((s) => s.name)).toEqual(["SportScore", "/api/basketball/matches"]);
+    expect(anySourceFailed).toBe(false);
+    expect(diagnostic.sources.map((s) => s.name)).toEqual([
+      "/api/basketball/matches → API-Basketball",
+      "/api/basketball/matches → SportScore (secours)",
+    ]);
     expect(diagnostic.sources.every((s) => s.httpStatus === 200)).toBe(true);
     expect(diagnostic.sources.every((s) => s.received === 0)).toBe(true);
     expect(diagnostic.window.from).toBe("2026-08-05");

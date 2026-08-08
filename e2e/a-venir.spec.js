@@ -19,16 +19,31 @@ const COMPS = {
            "Wheelchair Open", "Exhibition Match"],
 };
 
-function ssMatches(sport) {
-  return (COMPS[sport] || []).map((name, i) => ({
-    id: `${sport}-${i}`,
-    home_team: { name: `${sport} H${i}` },
-    away_team: { name: `${sport} A${i}` },
-    league: { name },
-    // Étalés sur aujourd'hui et demain pour exercer le groupement par date.
-    start_at: H(i < 5 ? 3 + i : 27 + i),
-    status: "not_started",
-  }));
+// Réponse de la route MAISON du sport (une seule route same-origin par sport : le
+// navigateur n'appelle plus jamais un domaine externe, voir lib/upcomingMatches.js).
+function routePayload(sport) {
+  return {
+    competitions: (COMPS[sport] || []).map((name, i) => ({
+      code: name,
+      name,
+      matches: [
+        {
+          id: `${sport}-${i}`,
+          status: "SCHEDULED",
+          // Étalés sur aujourd'hui et demain pour exercer le groupement par date.
+          utcDate: H(i < 5 ? 3 + i : 27 + i),
+          competition: { code: name, name },
+          homeTeam: { name: `${sport} H${i}` },
+          awayTeam: { name: `${sport} A${i}` },
+        },
+      ],
+    })),
+    diagnostic: {
+      source: "source de test",
+      window: { from: "2026-01-01", to: "2026-01-08" },
+      sources: [{ name: "source de test", httpStatus: 200, received: (COMPS[sport] || []).length, error: null }],
+    },
+  };
 }
 
 async function setup(page) {
@@ -36,15 +51,13 @@ async function setup(page) {
   await page.route("**/api/auth/session", (route) =>
     route.fulfill({ json: { session: { id: "u1", email: "test@example.com" } } })
   );
-  // Sources maison vides ici : SportScore fournit tout, ce qui rend le comptage
-  // parfaitement prévisible.
-  for (const r of ["**/api/matches", "**/api/basketball/matches", "**/api/tennis/matches"]) {
-    await page.route(r, (route) => route.fulfill({ json: { competitions: [] } }));
+  for (const [sport, r] of [
+    ["football", "**/api/football/matches"],
+    ["basketball", "**/api/basketball/matches"],
+    ["tennis", "**/api/tennis/matches"],
+  ]) {
+    await page.route(r, (route) => route.fulfill({ json: routePayload(sport) }));
   }
-  await page.route("**sportscore.com/**", (route) => {
-    const sport = new URL(route.request().url()).searchParams.get("sport");
-    return route.fulfill({ json: { matches: ssMatches(sport) } });
-  });
 }
 
 async function dismissCookieBanner(page) {
@@ -172,24 +185,38 @@ test("BLOC 6 — le bouton ANALYSER est dans la carte et mène à la page de pro
   expect(page.url()).toContain("/match/");
 });
 
-test("BLOC 7 — toutes les sources en panne : message d'erreur DISTINCT et cause technique visible", async ({ page }) => {
+test("BLOC 7 — source en panne : jamais « aucun match », mais une nouvelle tentative annoncée", async ({ page }) => {
   await page.route("**/api/**", (route) => route.fulfill({ json: {} }));
   await page.route("**/api/auth/session", (route) =>
     route.fulfill({ json: { session: { id: "u1", email: "test@example.com" } } })
   );
-  await page.route("**/api/matches", (route) => route.fulfill({ status: 500, body: "boom" }));
-  await page.route("**sportscore.com/**", (route) => route.fulfill({ status: 503, body: "down" }));
-  await page.route("**/api/sportscore**", (route) => route.fulfill({ status: 503, body: "down" }));
+  await page.route("**/api/football/matches", (route) => route.fulfill({ status: 500, body: "boom" }));
+
+  await page.goto("/a-venir?debug=1");
+  await dismissCookieBanner(page);
+
+  const retry = page.getByTestId("upcoming-retrying");
+  await expect(retry).toBeVisible();
+  await expect(retry).toContainText(/Problème de connexion à la source, nouvelle tentative en cours/i);
+  // Surtout PAS le message « aucun match » : le vide n'est pas constatable ici.
+  await expect(page.getByTestId("upcoming-empty")).toHaveCount(0);
+  // La cause technique reste accessible, mais seulement en mode debug.
+  await expect(page.getByTestId("upcoming-error-detail")).toContainText("500");
+});
+
+test("BLOC 7 bis — sans ?debug=1, la panne est annoncée SANS ligne technique", async ({ page }) => {
+  await page.route("**/api/**", (route) => route.fulfill({ json: {} }));
+  await page.route("**/api/auth/session", (route) =>
+    route.fulfill({ json: { session: { id: "u1", email: "test@example.com" } } })
+  );
+  await page.route("**/api/football/matches", (route) => route.fulfill({ status: 500, body: "boom" }));
 
   await page.goto("/a-venir");
   await dismissCookieBanner(page);
 
-  const err = page.getByTestId("upcoming-error");
-  await expect(err).toBeVisible();
-  await expect(err).toContainText(/toutes les sources ont échoué/i);
-  // Le message générique "pas disponibles" ne doit plus masquer la cause.
-  await expect(page.getByTestId("upcoming-error-detail")).toContainText("503");
-  await expect(page.getByTestId("upcoming-error-detail")).toContainText("500");
+  await expect(page.getByTestId("upcoming-retrying")).toBeVisible();
+  await expect(page.getByTestId("upcoming-error-detail")).toHaveCount(0);
+  await expect(page.getByTestId("upcoming-empty-diagnostic")).toHaveCount(0);
 });
 
 test("BLOC 8 — mobile 390px : aucun débordement horizontal", async ({ page }) => {
@@ -205,19 +232,28 @@ test("BLOC 8 — mobile 390px : aucun débordement horizontal", async ({ page })
   await page.screenshot({ path: "e2e-out/a-venir-mobile.png", fullPage: true });
 });
 
-test("écran vide : jamais décidé par le code — source, code HTTP et plage de dates affichés", async ({ page }) => {
+test("écran vide : jamais décidé par le code — source, code HTTP et plage visibles en ?debug=1", async ({ page }) => {
   await page.route("**/api/**", (route) => route.fulfill({ json: {} }));
   await page.route("**/api/auth/session", (route) =>
     route.fulfill({ json: { session: { id: "u1", email: "test@example.com" } } })
   );
-  // Toutes les sources répondent 200 avec 0 match : le SEUL vide légitime.
-  await page.route("**sportscore.com/**", (route) => route.fulfill({ json: { matches: [] } }));
-  await page.route("**/api/sportscore**", (route) => route.fulfill({ json: { matches: [] } }));
-  for (const r of ["**/api/matches", "**/api/basketball/matches", "**/api/tennis/matches"]) {
-    await page.route(r, (route) => route.fulfill({ json: { competitions: [], diagnostic: { httpStatus: 200 } } }));
+  // Toutes les sources de la cascade répondent 200 avec 0 match : le SEUL vide légitime.
+  const emptyPayload = {
+    competitions: [],
+    diagnostic: {
+      source: "API principale → source de secours",
+      window: { from: "2026-08-08", to: "2026-08-15" },
+      sources: [
+        { name: "API principale", httpStatus: 200, received: 0, error: null },
+        { name: "source de secours", httpStatus: 200, received: 0, error: null },
+      ],
+    },
+  };
+  for (const r of ["**/api/football/matches", "**/api/basketball/matches", "**/api/tennis/matches"]) {
+    await page.route(r, (route) => route.fulfill({ json: emptyPayload }));
   }
 
-  await page.goto("/a-venir");
+  await page.goto("/a-venir?debug=1");
   await dismissCookieBanner(page);
 
   await expect(page.getByTestId("upcoming-empty")).toBeVisible();
@@ -225,9 +261,10 @@ test("écran vide : jamais décidé par le code — source, code HTTP et plage d
   await expect(diag).toBeVisible();
 
   const text = await diag.innerText();
-  // Source interrogée, code HTTP réel, et plage de dates testée.
-  expect(text).toContain("SportScore");
-  expect(text).toContain("/api/matches");
+  // Sources interrogées (cascade complète), code HTTP réel, et plage de dates testée.
+  expect(text).toContain("API principale");
+  expect(text).toContain("source de secours");
+  expect(text).toContain("/api/football/matches");
   expect(text).toContain("HTTP 200");
   expect(text).toMatch(/plage \d{4}-\d{2}-\d{2} → \d{4}-\d{2}-\d{2}/);
 
@@ -237,4 +274,22 @@ test("écran vide : jamais décidé par le code — source, code HTTP et plage d
   expect(body).not.toMatch(/non disponibles? (pour|avec) cette source/i);
 
   await page.screenshot({ path: "e2e-out/a-venir-vide-diagnostic.png", fullPage: true });
+});
+
+test("écran vide SANS ?debug=1 : message court seul, aucune ligne technique", async ({ page }) => {
+  await page.route("**/api/**", (route) => route.fulfill({ json: {} }));
+  await page.route("**/api/auth/session", (route) =>
+    route.fulfill({ json: { session: { id: "u1", email: "test@example.com" } } })
+  );
+  for (const r of ["**/api/football/matches", "**/api/basketball/matches", "**/api/tennis/matches"]) {
+    await page.route(r, (route) =>
+      route.fulfill({ json: { competitions: [], diagnostic: { window: { from: "2026-08-08", to: "2026-08-15" }, sources: [{ name: "S", httpStatus: 200, received: 0, error: null }] } } })
+    );
+  }
+
+  await page.goto("/a-venir");
+  await dismissCookieBanner(page);
+
+  await expect(page.getByTestId("upcoming-empty")).toBeVisible();
+  await expect(page.getByTestId("upcoming-empty-diagnostic")).toHaveCount(0);
 });

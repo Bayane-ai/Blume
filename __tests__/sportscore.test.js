@@ -144,14 +144,25 @@ describe("priorisation des grandes compétitions", () => {
     expect(competitionRank("LaLiga", "football")).toBeLessThan(competitionRank("Championnat inconnu", "football"));
   });
 
-  test("tennis : Grand Chelem puis ATP/WTA, avant le reste", () => {
-    expect(competitionRank("Wimbledon", "tennis")).toBeLessThan(competitionRank("ATP 250 Metz", "tennis"));
-    expect(competitionRank("ATP 250 Metz", "tennis")).toBeLessThan(competitionRank("ITF M15", "tennis"));
+  // Demande explicite : plus AUCUNE compétition privilégiée en basket ni en tennis.
+  // Le tri par mot-clé reléguait la WNBA, les ligues d'été et les circuits secondaires
+  // (UTR, ITF, exhibitions) en fin de liste — ils doivent être strictement à égalité.
+  test("tennis : aucun circuit privilégié — Grand Chelem, ATP, ITF et UTR au même rang", () => {
+    const ranks = ["Wimbledon", "ATP 250 Metz", "WTA 125 Contrexeville", "ITF M15 Monastir", "UTR Pro Tennis Hambourg"]
+      .map((c) => competitionRank(c, "tennis"));
+    expect(new Set(ranks).size).toBe(1);
   });
 
-  test("basket : NBA puis EuroLeague, avant le reste", () => {
-    expect(competitionRank("NBA", "basketball")).toBeLessThan(competitionRank("EuroLeague", "basketball"));
-    expect(competitionRank("EuroLeague", "basketball")).toBeLessThan(competitionRank("Liga ACB", "basketball"));
+  test("basket : aucune ligue privilégiée — NBA, EuroLeague, WNBA et ligue d'été au même rang", () => {
+    const ranks = ["NBA", "EuroLeague", "WNBA", "Liga ACB", "NBA Summer League"]
+      .map((c) => competitionRank(c, "basketball"));
+    expect(new Set(ranks).size).toBe(1);
+  });
+
+  test("aucune liste de ligues privilégiées ne subsiste dans le code pour le basket et le tennis", () => {
+    const src = require("fs").readFileSync(require("path").join(__dirname, "..", "lib", "sportScore.js"), "utf8");
+    expect(src).toMatch(/const TENNIS_MAJORS = \[\];/);
+    expect(src).toMatch(/const BASKETBALL_MAJORS = \[\];/);
   });
 
   test("aucun match n'est jamais écarté : les amicaux et petites compétitions restent dans la liste, simplement plus bas", () => {
@@ -217,10 +228,27 @@ describe("fetchSportScoreMatches", () => {
 // extension), la même donnée est récupérée via le relais du site (pages/api/sportscore.js)
 // — de façon totalement transparente.
 describe("repli automatique sur le relais same-origin", () => {
+  // Ce repli est réservé au NAVIGATEUR : une URL relative n'a aucun sens depuis le
+  // serveur, où elle échouerait toujours et masquerait l'erreur d'origine. Les tests
+  // se placent donc explicitement dans un contexte navigateur.
+  const hadWindow = "window" in global;
+  beforeAll(() => { if (!hadWindow) global.window = {}; });
+  afterAll(() => { if (!hadWindow) delete global.window; });
+
   const okPayload = {
     ok: true,
     json: () => Promise.resolve({ matches: [{ id: 1, home_team: { name: "A" }, away_team: { name: "B" }, league: { name: "NBA" } }] }),
   };
+
+  test("côté SERVEUR, le relais relatif n'est jamais tenté : l'erreur d'origine remonte", async () => {
+    const hadW = "window" in global;
+    const saved = global.window;
+    delete global.window;
+    const fetchImpl = jest.fn(() => Promise.reject(new TypeError("Failed to fetch")));
+    await expect(fetchSportScoreMatches("basketball", { fetchImpl })).rejects.toThrow("Failed to fetch");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    if (hadW) global.window = saved;
+  });
 
   test("appel direct réussi : le relais n'est jamais sollicité", async () => {
     const fetchImpl = jest.fn(() => Promise.resolve(okPayload));
