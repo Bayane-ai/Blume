@@ -93,6 +93,10 @@ const scorersFixture = [
 // injoignable depuis cet environnement (voir historique de session). Le code
 // applicatif réel (pages, composants) est testé sans modification.
 async function installApiMocks(page) {
+  // Un stockage par page (donc par test) : aucun test ne doit hériter de l'historique
+  // d'un autre.
+  let matchHistoryStore = [];
+
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
@@ -105,13 +109,37 @@ async function installApiMocks(page) {
       return route.fulfill({ json: { session: { id: "u1", email: "test@example.com" } } });
     }
 
-    // Personnalisation (historique de recherche, matchs consultés, favoris) : sans ces
-    // réponses, chaque page journalise une erreur en console, ce que les tests
-    // considèrent — à raison — comme un défaut. Stockage volontairement vide : aucun
-    // parcours ne dépend d'un contenu préexistant.
-    if (path === "/api/search-history" || path === "/api/match-history" || path === "/api/favorites") {
+    // Personnalisation. L'historique des matchs consultés est STOCKÉ pour la durée du
+    // test (le vrai stockage est Supabase, indisponible ici) : les parcours "Historique"
+    // vérifient justement qu'ouvrir un match l'ajoute en tête sans créer de doublon,
+    // ce qu'un mock renvoyant toujours une liste vide ne pourrait jamais montrer.
+    if (path === "/api/match-history") {
+      if (route.request().method() === "POST") {
+        const entry = JSON.parse(route.request().postData() || "{}").entry;
+        if (entry?.id) {
+          matchHistoryStore = matchHistoryStore.filter((e) => String(e.id) !== String(entry.id));
+          matchHistoryStore.unshift({ ...entry, viewedAt: new Date().toISOString() });
+        }
+        return route.fulfill({ json: { saved: true } });
+      }
+      return route.fulfill({ json: { items: matchHistoryStore } });
+    }
+
+    if (path === "/api/search-history" || path === "/api/favorites") {
       if (route.request().method() !== "GET") return route.fulfill({ json: { saved: true } });
       return route.fulfill({ json: { items: [] } });
+    }
+
+    if (path === "/api/whoami") {
+      return route.fulfill({ json: { email: "test@example.com", isAdmin: false } });
+    }
+
+    // Onglets Basket/Tennis : ces routes existent réellement et sont appelées dès que
+    // le sport change. Non simulées, elles renvoyaient un 404 que les tests comptent —
+    // à raison — comme une erreur console. Listes vides : ces parcours-là sont
+    // couverts par e2e/a-venir.spec.js.
+    if (path.startsWith("/api/basketball/") || path.startsWith("/api/tennis/")) {
+      return route.fulfill({ json: { matches: [], competitions: [] } });
     }
 
     if (path === "/api/live-matches") {

@@ -26,6 +26,13 @@ function trackErrors(page) {
 
 test.beforeEach(async ({ page }) => {
   await installApiMocks(page);
+  // Consentement aux cookies accepté d'avance : le bandeau est modal et intercepte les
+  // clics sur le contenu (constaté sur le bouton ANALYSER). Ces parcours-ci testent le
+  // site une fois le consentement donné ; le bandeau lui-même est couvert ailleurs.
+  // Cookie réel du bandeau (voir lib/consentCookie.js#COOKIE_NAME).
+  await page.context().addCookies([
+    { name: "blume_consent", value: "all", url: "http://localhost:3010" },
+  ]);
 });
 
 test.describe("Écran 1 — Matchs en ligne (accueil)", () => {
@@ -122,8 +129,12 @@ test.describe("Écran 2 — Matchs à venir", () => {
     const list = page.getByTestId("match-list");
     await expect(list.getByText("Liverpool FC")).toBeVisible();
     await expect(list.getByText("ANALYSER").first()).toBeVisible();
-    // Aucun score affiché pour un match pas encore joué.
-    await expect(list.getByText(/^\d{1,2}\s*:\s*\d{1,2}$/)).toHaveCount(0);
+    // Aucun score affiché pour un match pas encore joué. On vise l'élément de score
+    // lui-même : depuis la refonte de la carte, l'HEURE de coup d'envoi ("20:00") est
+    // affichée bien en vue et l'ancienne recherche par motif \d+:\d+ la confondait
+    // avec un score.
+    await expect(list.getByTestId("card-score")).toHaveCount(0);
+    await expect(page.getByTestId("upcoming-kickoff").first()).toBeVisible();
 
     expect(errors.consoleErrors, `Erreurs console : ${errors.consoleErrors.join(" | ")}`).toEqual([]);
   });
@@ -430,7 +441,12 @@ test.describe("BLOC — En-tête et timeline d'un match en direct", () => {
 
     const recap = page.getByTestId("match-outcome-recap");
     await expect(recap).toBeVisible();
-    await expect(recap.getByTestId("recap-win-probability")).toHaveText(/Probabilité de victoire : (Réussi|Échec)/);
+    // Libellé actuel du bilan (voir components/MatchOutcomeRecap.js) : la formulation
+    // "Probabilité de victoire : Réussi/Échec" a été remplacée par un bilan global
+    // calculé à la majorité des lignes.
+    await expect(recap.getByTestId("recap-win-probability")).toHaveText(
+      /Bilan global du match \(majorité des lignes\) : (Succès|Échec)/
+    );
     const successIcons = await recap.getByTestId("line-icon-success").count();
     const failureIcons = await recap.getByTestId("line-icon-failure").count();
     expect(successIcons + failureIcons).toBeGreaterThan(0);
