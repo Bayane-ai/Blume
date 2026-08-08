@@ -104,15 +104,71 @@ describe("/api/tennis/live-matches", () => {
   });
 });
 
-describe("/api/tennis/matches (à venir) — honnêtement non supporté par ce plan gratuit", () => {
-  test("répond 200 avec unsupported:true et un message clair, jamais une erreur ni un plantage", async () => {
+describe("/api/tennis/matches (à venir) — interroge réellement SportScore", () => {
+  test("renvoie les vrais matchs à venir, groupés par tournoi, avec un diagnostic", async () => {
+    const soon = new Date(Date.now() + 5 * 3600000).toISOString();
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          matches: [
+            { id: 1, home_team: { name: "Djokovic" }, away_team: { name: "Alcaraz" }, tournament: { name: "US Open" }, start_at: soon, status: "not_started" },
+            { id: 2, home_team: { name: "Joueur C" }, away_team: { name: "Joueur D" }, tournament: { name: "ITF M15 Monastir" }, start_at: soon, status: "not_started" },
+          ],
+        }),
+      })
+    );
+
+    const { default: handler } = await import("../pages/api/tennis/matches.js");
+    const res = mockRes();
+    await handler({}, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(global.fetch.mock.calls[0][0]).toContain("sportscore.com");
+    // Aucun refus écrit en dur : la liste dépend de ce que la source renvoie.
+    expect(res.body.unsupported).toBeUndefined();
+    // Les deux tournois sont là, le petit ITF comme le Grand Chelem.
+    expect(res.body.competitions.map((c) => c.name).sort()).toEqual(["ITF M15 Monastir", "US Open"]);
+    expect(res.body.diagnostic).toMatchObject({ source: "SportScore", httpStatus: 200, upcoming: 2 });
+  });
+
+  test("source en erreur : liste vide MAIS diagnostic exploitable (source, code HTTP, plage)", async () => {
+    global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 503, text: () => Promise.resolve("down") }));
+
     const { default: handler } = await import("../pages/api/tennis/matches.js");
     const res = mockRes();
     await handler({}, res);
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.body.competitions).toEqual([]);
-    expect(res.body.unsupported).toBe(true);
-    expect(res.body.message).toMatch(/tennis/i);
+    expect(res.body.diagnostic.httpStatus).toBe(503);
+    expect(res.body.diagnostic.source).toBe("SportScore");
+    expect(res.body.diagnostic.from).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(res.body.diagnostic.to).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  test("écarte les matchs déjà commencés et ceux au-delà de J+7, sans filtre de tournoi", async () => {
+    const past = new Date(Date.now() - 3600000).toISOString();
+    const far = new Date(Date.now() + 9 * 24 * 3600000).toISOString();
+    const soon = new Date(Date.now() + 2 * 3600000).toISOString();
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true, status: 200,
+        json: () => Promise.resolve({
+          matches: [
+            { id: 1, home_team: { name: "A" }, away_team: { name: "B" }, tournament: { name: "Trop tôt" }, start_at: past, status: "not_started" },
+            { id: 2, home_team: { name: "C" }, away_team: { name: "D" }, tournament: { name: "Trop tard" }, start_at: far, status: "not_started" },
+            { id: 3, home_team: { name: "E" }, away_team: { name: "F" }, tournament: { name: "Challenger Obscur" }, start_at: soon, status: "not_started" },
+          ],
+        }),
+      })
+    );
+
+    const { default: handler } = await import("../pages/api/tennis/matches.js");
+    const res = mockRes();
+    await handler({}, res);
+
+    expect(res.body.competitions.map((c) => c.name)).toEqual(["Challenger Obscur"]);
   });
 });

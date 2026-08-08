@@ -204,3 +204,37 @@ test("BLOC 8 — mobile 390px : aucun débordement horizontal", async ({ page })
 
   await page.screenshot({ path: "e2e-out/a-venir-mobile.png", fullPage: true });
 });
+
+test("écran vide : jamais décidé par le code — source, code HTTP et plage de dates affichés", async ({ page }) => {
+  await page.route("**/api/**", (route) => route.fulfill({ json: {} }));
+  await page.route("**/api/auth/session", (route) =>
+    route.fulfill({ json: { session: { id: "u1", email: "test@example.com" } } })
+  );
+  // Toutes les sources répondent 200 avec 0 match : le SEUL vide légitime.
+  await page.route("**sportscore.com/**", (route) => route.fulfill({ json: { matches: [] } }));
+  await page.route("**/api/sportscore**", (route) => route.fulfill({ json: { matches: [] } }));
+  for (const r of ["**/api/matches", "**/api/basketball/matches", "**/api/tennis/matches"]) {
+    await page.route(r, (route) => route.fulfill({ json: { competitions: [], diagnostic: { httpStatus: 200 } } }));
+  }
+
+  await page.goto("/a-venir");
+  await dismissCookieBanner(page);
+
+  await expect(page.getByTestId("upcoming-empty")).toBeVisible();
+  const diag = page.getByTestId("upcoming-empty-diagnostic");
+  await expect(diag).toBeVisible();
+
+  const text = await diag.innerText();
+  // Source interrogée, code HTTP réel, et plage de dates testée.
+  expect(text).toContain("SportScore");
+  expect(text).toContain("/api/matches");
+  expect(text).toContain("HTTP 200");
+  expect(text).toMatch(/plage \d{4}-\d{2}-\d{2} → \d{4}-\d{2}-\d{2}/);
+
+  // Et surtout : plus aucun message écrit en dur.
+  const body = await page.locator("body").innerText();
+  expect(body).not.toMatch(/plan gratuit/i);
+  expect(body).not.toMatch(/non disponibles? (pour|avec) cette source/i);
+
+  await page.screenshot({ path: "e2e-out/a-venir-vide-diagnostic.png", fullPage: true });
+});

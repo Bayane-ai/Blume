@@ -58,6 +58,7 @@ test("le module admin n'est utilisé que par les routes d'administration et /api
       f === "pages/api/admin/team-profile.js" ||
       f === "pages/api/health/sports.js" ||
       f === "pages/api/health/upcoming.js" ||
+      f === "pages/api/health/matchs.js" ||
       f === "pages/admin.js" ||
       f === "pages/api/whoami.js" ||
       f === "lib/auth/admin.js"

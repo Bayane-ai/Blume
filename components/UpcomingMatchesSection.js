@@ -40,10 +40,13 @@ export default function UpcomingMatchesSection({ sport }) {
   const [days, setDays] = useState([]);
   const [phase, setPhase] = useState("loading"); // loading | loaded | empty | error
   const [detail, setDetail] = useState(null);
+  // Ce qui a réellement été interrogé (source, code HTTP, plage de dates) : affiché
+  // sous un écran vide, pour qu'une section vide soit toujours explicable.
+  const [diagnostic, setDiagnostic] = useState(null);
   const hasDataRef = useRef(false);
 
   const load = useCallback(async () => {
-    const { days: nextDays, coverage, errors, allSourcesFailed } = await loadUpcoming(sport);
+    const { days: nextDays, coverage, errors, allSourcesFailed, diagnostic } = await loadUpcoming(sport);
 
     // Une source en échec est TOUJOURS journalisée, même quand l'autre a réussi :
     // aucune erreur ne disparaît en silence (BLOC 7).
@@ -67,14 +70,14 @@ export default function UpcomingMatchesSection({ sport }) {
     // Ne jamais vider une liste déjà affichée sur un incident passager.
     if (hasDataRef.current) return;
 
+    setDiagnostic(diagnostic || null);
     if (allSourcesFailed) {
       // Message DISTINCT du "aucun match" : une panne technique ne doit pas être
-      // maquillée en absence de matchs (BLOC 7).
+      // maquillée en absence de matchs.
       setDetail(`SportScore : ${errors.sportScore} | Source Blume : ${errors.blume}`);
       setPhase("error");
     } else {
-      // Vraiment aucun match à venir renvoyé par les sources : message neutre, jamais
-      // un blocage écrit en dur qui masquerait des matchs pourtant disponibles.
+      // Vide constaté, jamais décidé : toutes les sources ont réellement répondu 0.
       setDetail(null);
       setPhase("empty");
     }
@@ -106,9 +109,17 @@ export default function UpcomingMatchesSection({ sport }) {
 
   if (phase === "empty") {
     return (
-      <p style={st.hint} data-testid="upcoming-empty">
-        {detail || "Aucun match à venir pour ce sport dans les 7 prochains jours."}
-      </p>
+      <div data-testid="upcoming-empty">
+        <p style={st.hint}>Aucun match à venir pour ce sport dans les 7 prochains jours.</p>
+        {diagnostic && (
+          <p style={st.diagnostic} data-testid="upcoming-empty-diagnostic">
+            {diagnostic.sources
+              .map((s) => `${s.name} → ${s.error ? `échec (${s.error})` : `HTTP ${s.httpStatus ?? "?"}`}, ${s.received} reçu(s)`)
+              .join(" · ")}{" "}
+            · plage {diagnostic.window.from} → {diagnostic.window.to}
+          </p>
+        )}
+      </div>
     );
   }
 
@@ -159,6 +170,9 @@ const st = {
 
   hint: { fontSize: 12.5, color: "var(--text-secondary)" },
   errorTitle: { fontSize: 13, color: "var(--negative)", fontWeight: 700, margin: 0 },
+  // Ligne technique discrète sous un écran vide : source interrogée, code HTTP réel et
+  // plage de dates testée — visible sans ouvrir la console.
+  diagnostic: { fontSize: 10.5, color: "var(--text-secondary)", opacity: 0.75, margin: "6px 0 0", wordBreak: "break-word" },
   errorDetail: { fontSize: 10.5, color: "var(--text-secondary)", opacity: 0.85, margin: "6px 0 0", wordBreak: "break-word" },
 
   skelCard: {

@@ -208,34 +208,50 @@ describe("loadUpcoming — agrégation réelle des sources", () => {
     for (const sport of ["football", "basketball", "tennis"]) {
       await loadUpcoming(sport, { fetchImpl, now: NOW });
     }
-    // Le tennis n'a PAS de route maison pour les matchs à venir : sa seule source est
-    // SportScore (le plan gratuit de Live Tennis API n'expose pas de calendrier).
-    expect(seen).toEqual(["/api/matches", "/api/basketball/matches"]);
+    expect(seen).toEqual(["/api/matches", "/api/basketball/matches", "/api/tennis/matches"]);
   });
 
-  test("tennis : aucune route maison interrogée, et le blocage écrit en dur n'existe plus", async () => {
-    const seen = [];
+  test("tennis : plus aucun blocage écrit en dur — un match SportScore remonte normalement", async () => {
     const fetchImpl = jest.fn((url) => {
       const u = String(url);
-      seen.push(u);
+      const match = { id: 1, home_team: { name: "Djokovic" }, away_team: { name: "Alcaraz" }, tournament: { name: "US Open" }, start_at: inHours(5), status: "not_started" };
       if (u.includes("sportscore")) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({
-            matches: [{ id: 1, home_team: { name: "Djokovic" }, away_team: { name: "Alcaraz" }, tournament: { name: "US Open" }, start_at: inHours(5), status: "not_started" }],
-          }),
-        });
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ matches: [match] }) });
       }
-      return Promise.reject(new Error("aucune route maison ne doit être appelée pour le tennis"));
+      // La route maison du tennis interroge SportScore côté serveur : elle renvoie
+      // désormais de vrais matchs, jamais un refus « unsupported ».
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({
+          competitions: [{ name: "US Open", matches: [{ id: 1, status: "SCHEDULED", utcDate: inHours(5), competition: { name: "US Open" }, homeTeam: { name: "Djokovic" }, awayTeam: { name: "Alcaraz" } }] }],
+          diagnostic: { source: "SportScore", httpStatus: 200, from: "2026-08-05", to: "2026-08-12" },
+        }),
+      });
     });
 
     const { days, coverage, allSourcesFailed } = await loadUpcoming("tennis", { fetchImpl, now: NOW });
 
-    expect(seen.every((u) => u.includes("sportscore"))).toBe(true);
-    expect(seen.some((u) => u.includes("/api/tennis/matches"))).toBe(false);
     expect(allSourcesFailed).toBe(false);
-    // Le match SportScore remonte bien : plus rien ne l'éclipse.
+    // Les deux sources décrivent le MÊME match : une seule carte après déduplication.
     expect(coverage.upcoming).toBe(1);
     expect(days[0].competitions[0].competition).toBe("US Open");
+  });
+
+  test("écran vide : le diagnostic expose source, code HTTP et plage de dates", async () => {
+    const fetchImpl = jest.fn((url) =>
+      String(url).includes("sportscore")
+        ? Promise.resolve({ ok: true, json: () => Promise.resolve({ matches: [] }) })
+        : Promise.resolve({ ok: true, json: () => Promise.resolve({ competitions: [], diagnostic: { httpStatus: 200 } }) })
+    );
+    const { days, diagnostic, allSourcesFailed } = await loadUpcoming("basketball", { fetchImpl, now: NOW });
+
+    // Vide CONSTATÉ (les deux sources ont répondu 200 avec 0), jamais décidé.
+    expect(days).toHaveLength(0);
+    expect(allSourcesFailed).toBe(false);
+    expect(diagnostic.sources.map((s) => s.name)).toEqual(["SportScore", "/api/basketball/matches"]);
+    expect(diagnostic.sources.every((s) => s.httpStatus === 200)).toBe(true);
+    expect(diagnostic.sources.every((s) => s.received === 0)).toBe(true);
+    expect(diagnostic.window.from).toBe("2026-08-05");
+    expect(diagnostic.window.to).toBe("2026-08-12");
   });
 });
