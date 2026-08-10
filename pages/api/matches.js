@@ -208,10 +208,13 @@ export default async function handler(req, res) {
     // au lieu d'être silencieusement écartée.
     const byCode = new Map(); // code -> { name, area, matches: [] }
     for (const m of [...fdMatches, ...afMatches]) {
-      const code = m.competition?.code;
-      if (!code) continue;
+      // Jamais écarté pour un identifiant manquant : à défaut de code, le NOM de la
+      // compétition en tient lieu. Un `continue` ici supprimait silencieusement des
+      // matchs pourtant reçus de la source.
+      const name = m.competition?.name || "Compétition non communiquée";
+      const code = m.competition?.code || name;
       if (!byCode.has(code)) {
-        byCode.set(code, { name: m.competition?.name || code, area: m.competition?.area || "", matches: [] });
+        byCode.set(code, { name, area: m.competition?.area || "", matches: [] });
       }
       byCode.get(code).matches.push(m);
     }

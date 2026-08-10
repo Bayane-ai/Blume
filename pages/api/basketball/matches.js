@@ -81,9 +81,14 @@ function groupByCompetition(matches, { from, to }) {
     if (!m.homeTeam?.name || !m.awayTeam?.name || !m.utcDate) continue;
     const t = Date.parse(m.utcDate);
     if (!Number.isFinite(t) || t < fromMs || t > toMs) continue;
-    const code = m.competition?.code;
-    if (!code) continue;
-    if (!byCode.has(code)) byCode.set(code, { name: m.competition.name, area: m.competition.area, matches: [] });
+    // Un match n'est JAMAIS écarté pour un identifiant de compétition manquant :
+    // mapCompetition renvoie un code vide dès que `league.id` est absent (fréquent sur
+    // les compétitions secondaires et les tournois d'été), et l'ancien `continue` les
+    // faisait disparaître en silence — exactement le genre de perte qu'on traque ici.
+    // À défaut d'identifiant, le NOM sert de code.
+    const name = m.competition?.name || "Compétition non communiquée";
+    const code = m.competition?.code || name;
+    if (!byCode.has(code)) byCode.set(code, { name, area: m.competition?.area || "", matches: [] });
     byCode.get(code).matches.push({ ...m, pronostic: { available: false } });
   }
   return [...byCode.entries()]

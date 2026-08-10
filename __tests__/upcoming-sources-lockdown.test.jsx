@@ -92,6 +92,53 @@ describe("3. aucune compétition privilégiée ni liste blanche en basket et ten
   });
 });
 
+describe("aucun match n'est écarté par le code lui-même", () => {
+  // Régression traquée : `if (!code) continue` supprimait en silence tout match dont
+  // la compétition n'a pas d'identifiant chez la source (fréquent sur les tournois
+  // d'été et les compétitions secondaires). La source l'avait renvoyé, le site ne
+  // l'affichait pas — indiscernable d'un "aucun match" légitime.
+  test("les routes ne sautent plus un match faute d'identifiant de compétition", () => {
+    for (const p of [
+      ["pages", "api", "matches.js"],
+      ["pages", "api", "basketball", "matches.js"],
+    ]) {
+      expect(read(...p)).not.toMatch(/if \(!code\) continue;/);
+    }
+  });
+
+  test("un match sans identifiant de compétition est quand même groupé, sous son nom", async () => {
+    process.env.API_BASKETBALL_KEY = "k";
+    jest.resetModules();
+    const soon = new Date(Date.now() + 5 * 3600000).toISOString();
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({
+          response: [
+            {
+              id: 1,
+              date: soon,
+              status: { short: "NS" },
+              // league.id ABSENT : c'est le cas qui faisait disparaître le match.
+              league: { name: "WNBA" },
+              country: { name: "USA" },
+              teams: { home: { id: 40, name: "Minnesota Lynx" }, away: { id: 41, name: "Las Vegas Aces" } },
+              scores: { home: {}, away: {} },
+            },
+          ],
+        }),
+      })
+    );
+    const { default: handler } = await import("../pages/api/basketball/matches.js");
+    const res = { status: jest.fn(function () { return this; }), setHeader: jest.fn(), json: jest.fn(function (b) { this.body = b; return this; }) };
+    await handler({}, res);
+
+    expect(res.body.competitions.map((c) => c.name)).toContain("WNBA");
+    const wnba = res.body.competitions.find((c) => c.name === "WNBA");
+    expect(wnba.matches.map((m) => m.homeTeam.name)).toContain("Minnesota Lynx");
+  });
+});
+
 describe("6. cascade de sources", () => {
   test("une source principale à 0 déclenche la source secondaire", async () => {
     const calls = [];

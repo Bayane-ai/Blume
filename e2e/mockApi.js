@@ -92,10 +92,27 @@ const scorersFixture = [
 // reçoive) et rejoue des données réalistes — le vrai football-data.org est
 // injoignable depuis cet environnement (voir historique de session). Le code
 // applicatif réel (pages, composants) est testé sans modification.
+// PNG transparent 1x1, servi à la place de toute image distante.
+const BLANK_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+  "base64"
+);
+
 async function installApiMocks(page) {
   // Un stockage par page (donc par test) : aucun test ne doit hériter de l'historique
   // d'un autre.
   let matchHistoryStore = [];
+
+  // Aucune requête vers un hôte externe : les visuels d'articles et les blasons
+  // pointent vers de vrais domaines, injoignables ici (ERR_TUNNEL_CONNECTION_FAILED),
+  // ce que les tests comptent — à raison — comme une erreur console. La suite doit
+  // dépendre uniquement du code du site, jamais du réseau.
+  await page.route(/^https?:\/\/(?!localhost|127\.0\.0\.1)/, (route) => {
+    if (route.request().resourceType() === "image") {
+      return route.fulfill({ contentType: "image/png", body: BLANK_PNG });
+    }
+    return route.abort();
+  });
 
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
