@@ -149,3 +149,93 @@ Ce qui reste non vérifiable d'ici : que les clés API en production soient vali
 non expirées. Si `API_BASKETBALL_KEY` est absente ou révoquée, aucun correctif de code
 ne peut y suppléer — la réponse `/api/basketball/matches?debug=1` le dira explicitement
 (`statut: "non configurée"` ou l'erreur exacte du fournisseur).
+
+
+---
+
+# Couverture des compétitions — audit du 10/08/2026
+
+## Ce qui a été cherché, et ce qui a été trouvé
+
+Recherche sur **tout** le projet (hors `node_modules`, `.next`, tests) des mots-clés
+`whitelist`, `allowedLeagues`, `TOP_LEAGUES`, `MAJOR`, `popularLeagues`, `leagueIds`,
+`includeLeagues`, `filter(league…)`, `country ===`, `tier`, `priority`.
+
+| Trouvé | Nature réelle | Verdict |
+|---|---|---|
+| `ALLOWED_SPORTS` (`pages/api/sportscore.js`) | énumération des 4 sports acceptés par SportScore (`football`, `tennis`, `basketball`, `cricket`) | garde-fou de paramètre, aucune compétition concernée — **conservé** |
+| `PRIORITY_CODES` (`lib/matchFilters.js`) | ordre d'affichage des boutons de filtre | **tri seul** : toute compétition présente ressort, prioritaire ou non — vérifié par test |
+| `FOOTBALL_MAJORS` (`lib/sportScore.js`) | remontée des grandes compétitions en tête | **tri seul**, aucune exclusion — vérifié par test |
+| `isFeaturedSpecificCompetition` | remontée de 4 championnats demandés | **tri seul** |
+| `TENNIS_MAJORS` / `BASKETBALL_MAJORS` | anciens tris privilégiés | **vidés** au correctif précédent |
+| `.slice(0, 100)` sur les matchs (`pages/api/competition-matches.js`) | **vraie troncature** : une page lue, puis retronquée à 100 | **SUPPRIMÉ** — pagination complète par `offset` |
+
+Aucune liste blanche, aucun filtre par pays, continent, fédération, niveau, popularité,
+genre ou catégorie d'âge n'existe dans le chemin de données. La seule restriction
+supprimée était le plafond de 100 matchs ci-dessus.
+
+## Découverte dynamique — comment elle est réellement assurée
+
+Aucune liste de compétitions n'est écrite en dur. Les trois sports interrogent leur
+source **par DATE**, ce qui rapporte d'un coup **toutes** les compétitions de la
+journée :
+
+| Sport | Appel | Effet |
+|---|---|---|
+| Football | `/matches?dateFrom=…&dateTo=…` (football-data.org) + `/fixtures?date=` (API-Football) | toutes compétitions des deux fournisseurs |
+| Basket | `/games?date=…&timezone=UTC` | toutes ligues, sans paramètre `league` |
+| Tennis | `/fixtures` (Live Tennis API) | tous tournois, sans paramètre `tour` |
+
+Une compétition nouvelle chez un fournisseur apparaît donc **sans modification de
+code**. C'est plus complet qu'une énumération ligue par ligue, et sans commune mesure
+en coût : énumérer les centaines de ligues puis les interroger une à une multiplierait
+les appels par cent — exactement le mécanisme qui a fait exploser le quota basket
+(voir plus haut). `getActiveLeagues` reste appelé, mais **uniquement comme mesure de
+contrôle** : il compare le nombre de compétitions actives au nombre réellement affiché
+et journalise l'écart.
+
+## Comptage des compétitions distinctes (fenêtre J → J+7)
+
+Le contrôle quotidien (`lib/healthMatches.mjs`, cron 06:00 UTC, et
+`npm run test:matches`) compte désormais les compétitions distinctes par sport et rend
+un verdict **`COUVERTURE FAIBLE`** en dessous de **15** — le seuil demandé — avec la
+mention explicite « chercher un filtre résiduel ».
+
+Mesure obtenue ici, sur un flux tennis volontairement hétéroclite (les hôtes tiers
+étant inaccessibles depuis cet environnement, voir l'avertissement en tête de
+document) :
+
+```
+SPORT        VERDICT      MATCHS       COMPÉT.      HTTP    DURÉE
+tennis       OK           20           19           200     136 ms
+```
+
+Les 19 compétitions traversées, sans qu'aucune catégorie ne soit écartée :
+
+```
+ATP 250 Kitzbuhel        ATP 500 Washington      ATP Masters 1000 Cincinnati
+Billie Jean King Cup     Challenger Como         Coupe Davis Groupe IV
+Exhibition Abu Dhabi     ITF M15 Monastir        ITF W25 Bastad
+ITF Wheelchair Open      NCAA Tennis             US Open Doubles
+UTR Pro Tennis Hambourg  UTR Pro Tennis Saitama  United Cup
+WTA 1000 Montreal        WTA 250 Prague          Wimbledon
+Wimbledon Juniors
+```
+
+Grand Chelem, Masters, 500/250, Challenger, ITF hommes **et** femmes, United Cup,
+Coupe Davis, Billie Jean King Cup, exhibitions, double, juniors, handisport et NCAA :
+tout passe. La pagination a bien parcouru les 4 pages (6 + 6 + 6 + 2).
+
+**Les chiffres de production restent à relever** : football et basket ne peuvent pas
+être mesurés d'ici (fournisseurs injoignables, et clés absentes de cet
+environnement). Le cron de 06:00 UTC les publie chaque jour dans les logs Vercel sous
+le tag `blume.health.matches`, avec le champ `competitions` et le verdict. Un sport
+sous les 15 y apparaîtra explicitement comme `COUVERTURE FAIBLE`.
+
+## Affichage
+
+Le regroupement jour → compétition → matchs est conservé. Les grandes compétitions
+remontent en tête pour la lisibilité (football uniquement ; basket et tennis sont
+strictement à égalité). **Aucune coupure à N éléments** : ni la liste des jours, ni
+celle des compétitions, ni celle des matchs ne sont tronquées à l'affichage — vérifié
+par test.

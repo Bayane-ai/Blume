@@ -13,7 +13,7 @@ import { controlerTous } from "../lib/healthMatches.mjs";
 
 const base = process.env.BLUME_BASE_URL || "http://localhost:3000";
 
-const LARGEUR = 12;
+const LARGEUR = 13;
 const pad = (s) => String(s).padEnd(LARGEUR);
 
 async function main() {
@@ -27,10 +27,10 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`${pad("SPORT")}${pad("VERDICT")}${pad("MATCHS")}${pad("HTTP")}${pad("DURÉE")}RAISON`);
+  console.log(`${pad("SPORT")}${pad("VERDICT")}${pad("MATCHS")}${pad("COMPÉT.")}${pad("HTTP")}${pad("DURÉE")}RAISON`);
   for (const [sport, r] of Object.entries(rapport.sports)) {
     console.log(
-      `${pad(sport)}${pad(r.verdict)}${pad(r.matchs)}${pad(r.httpCode ?? "—")}${pad(`${r.dureeMs} ms`)}${r.raison || ""}`
+      `${pad(sport)}${pad(r.verdict)}${pad(r.matchs)}${pad(r.competitions ?? 0)}${pad(r.httpCode ?? "—")}${pad(`${r.dureeMs} ms`)}${r.raison || ""}`
     );
     for (const s of r.sources || []) {
       const detail = s.erreur ? `échec — ${s.erreur}` : `${s.statut}, ${s.recus ?? 0} reçu(s)`;

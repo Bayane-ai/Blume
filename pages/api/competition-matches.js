@@ -25,17 +25,35 @@ export default async function handler(req, res) {
   const status = isResults ? "FINISHED" : "SCHEDULED,TIMED,LIVE,IN_PLAY,PAUSED";
 
   try {
-    const [r, table] = await Promise.all([
-      fetch(
-        `${BASE}/competitions/${comp.code}/matches?status=${status}&dateFrom=${dateFrom}&dateTo=${dateTo}&limit=100`,
+    // PAGINATION COMPLÈTE, aucun plafond : `limit` borne chaque PAGE à 100, il ne dit
+    // rien du nombre total de matchs d'une compétition. L'ancien code lisait une seule
+    // page PUIS retronquait à 100 — une compétition chargée perdait silencieusement
+    // tout ce qui dépassait. On avance par `offset` tant que la page reçue est pleine.
+    const PAGE_SIZE = 100;
+    const MAX_PAGES = 20;
+    const collected = [];
+    let r = null;
+    let offset = 0;
+    const table = await getStandingsTable(comp.code, token);
+    for (let i = 0; i < MAX_PAGES; i += 1) {
+      r = await fetch(
+        `${BASE}/competitions/${comp.code}/matches?status=${status}&dateFrom=${dateFrom}&dateTo=${dateTo}&limit=${PAGE_SIZE}&offset=${offset}`,
         { headers: { "X-Auth-Token": token } }
-      ),
-      getStandingsTable(comp.code, token),
-    ]);
-    if (!r.ok) return res.status(r.status).json({ ...comp, error: `Erreur API football-data (code ${r.status})`, matches: [] });
-    const data = await r.json();
+      );
+      if (!r.ok) break; // traité juste en dessous, avec les pages déjà obtenues
+      const page = await r.json();
+      const batch = page?.matches || [];
+      collected.push(...batch);
+      const total = Number(page?.resultSet?.count);
+      if (batch.length < PAGE_SIZE || (Number.isFinite(total) && collected.length >= total)) break;
+      offset += PAGE_SIZE;
+    }
+    // Une page suivante en erreur ne jette jamais les précédentes.
+    if (!r.ok && collected.length === 0) {
+      return res.status(r.status).json({ ...comp, error: `Erreur API football-data (code ${r.status})`, matches: [] });
+    }
 
-    let matches = (data.matches || []).slice(0, 100).map((m) => {
+    let matches = collected.map((m) => {
       const homeRow = table?.find((row) => String(row.team.id) === String(m.homeTeam?.id));
       const awayRow = table?.find((row) => String(row.team.id) === String(m.awayTeam?.id));
       const pronostic = computePronostic({
