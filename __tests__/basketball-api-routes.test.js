@@ -27,6 +27,9 @@ function rawGame({ id, leagueId = 12, leagueName = "NBA", homeId, homeName, away
 
 beforeEach(() => {
   jest.resetModules();
+  delete process.env.BALLDONTLIE_API_KEY;
+  delete process.env.FORCE_SPORTSCORE_FAIL;
+  jest.isolateModules(() => { require("../lib/routeCache").clearRouteCache(); });
   delete process.env.API_FOOTBALL_KEY;
   delete process.env.API_BASKETBALL_KEY;
 });
@@ -79,6 +82,87 @@ describe("/api/basketball/live-matches", () => {
     expect(res.status).toHaveBeenCalledWith(502);
     expect(res.body.error).toMatch(/basket/i);
     expect(res.body.error).not.toMatch(/Error:|undefined|stack/i);
+  });
+});
+
+describe("/api/basketball/matches — cascade complète jusqu'à balldontlie", () => {
+  // Contrat balldontlie repris du SDK OFFICIEL (@balldontlie/sdk) : base
+  // https://api.balldontlie.io, chemin /nba/v1/games, en-tête `Authorization: <clé>`
+  // (clé BRUTE, sans « Bearer »), paramètres start_date/end_date/per_page/cursor,
+  // pagination par `meta.next_cursor`.
+  test("API-Basketball et SportScore à 0 : balldontlie prend le relais, curseur suivi", async () => {
+    process.env.API_BASKETBALL_KEY = "cle";
+    process.env.BALLDONTLIE_API_KEY = "bdl_test";
+    const soon = new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
+    const appels = [];
+    let page = 0;
+
+    global.fetch = jest.fn((url, init) => {
+      const u = String(url);
+      appels.push({ u, auth: init?.headers?.Authorization });
+      if (u.includes("api-sports.io")) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ response: [] }) });
+      }
+      if (u.includes("sportscore")) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ matches: [] }) });
+      }
+      page += 1;
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          data: [
+            {
+              id: page,
+              date: soon,
+              status: "7:00 pm ET",
+              home_team: { full_name: `Domicile ${page}` },
+              visitor_team: { full_name: `Visiteur ${page}` },
+            },
+          ],
+          meta: { next_cursor: page < 3 ? page + 1 : null },
+        }),
+      });
+    });
+
+    const { default: handler } = await import("../pages/api/basketball/matches.js");
+    const res = mockRes();
+    await handler({}, res);
+
+    const bdl = appels.filter((a) => a.u.includes("/nba/v1/games"));
+    expect(bdl.length).toBe(3); // les 3 pages du curseur ont bien été parcourues
+    // Clé brute, jamais préfixée « Bearer » : c'est ce qu'attend l'API.
+    expect(bdl[0].auth).toBe("bdl_test");
+    expect(bdl[0].u).toContain("start_date=");
+    expect(bdl[0].u).toContain("end_date=");
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.body.matches).toHaveLength(3);
+    expect(res.body.sources.map((x) => x.nom)).toEqual([
+      "API-Basketball (v1.basketball.api-sports.io)",
+      "SportScore (secours)",
+      "balldontlie (NBA uniquement)",
+    ]);
+  });
+
+  test("sans BALLDONTLIE_API_KEY : source déclarée non configurée, jamais une panne", async () => {
+    process.env.API_BASKETBALL_KEY = "cle";
+    delete process.env.BALLDONTLIE_API_KEY;
+    global.fetch = jest.fn(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ response: [], matches: [] }) }));
+
+    const { default: handler } = await import("../pages/api/basketball/matches.js");
+    const res = mockRes();
+    await handler({}, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    const bdl = res.body.sources.find((x) => x.nom.startsWith("balldontlie"));
+    expect(bdl).toMatchObject({ statut: "non configurée" });
+    expect(bdl.erreur).toMatch(/BALLDONTLIE_API_KEY/);
+  });
+
+  test("timeout de 10 s posé sur chaque appel externe", () => {
+    const src = require("fs").readFileSync(require("path").join(__dirname, "..", "lib", "sports", "basketball", "sources.js"), "utf8");
+    expect(src).toContain("const TIMEOUT_MS = 10 * 1000");
+    expect(src).toMatch(/AbortSignal\.timeout\(TIMEOUT_MS\)/);
   });
 });
 

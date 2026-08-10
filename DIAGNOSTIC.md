@@ -239,3 +239,80 @@ remontent en tête pour la lisibilité (football uniquement ; basket et tennis s
 strictement à égalité). **Aucune coupure à N éléments** : ni la liste des jours, ni
 celle des compétitions, ni celle des matchs ne sont tronquées à l'affichage — vérifié
 par test.
+
+
+---
+
+# Basket — troisième source et vérification du contrat SportScore (10/08/2026)
+
+## SportScore ne peut pas fournir de matchs par date — vérifié, pas supposé
+
+Demande : « le bon endpoint de matchs par date, le bon format de date (UTC), et la
+pagination ». Ces trois choses **n'existent pas** sur cette API. Relu dans le wrapper
+officiel du fournisseur (`Backspace-me/sportscore-mcp`), qui déclare l'intégralité de
+sa surface :
+
+| Outil | Chemin | Paramètres |
+|---|---|---|
+| `get_matches` | `/api/widget/matches/` | `sport` (enum), `limit` (1–50) |
+| `get_match_detail` | `/api/widget/match/` | `sport`, `slug` |
+| `get_team_schedule` | `/api/widget/team/` | `sport`, `slug` |
+| `get_standings`, `get_top_scorers`, `get_player`, `get_bracket`, `get_tracker` | … | `sport`, `slug` |
+
+`get_matches` n'accepte **que** `sport` et `limit`. Sa description officielle est
+« List live and **recent** matches ». Aucun paramètre de date, aucun curseur, aucune
+page. Le seul endpoint daté, `get_team_schedule`, exige le slug d'une équipe —
+inutilisable pour balayer toutes les compétitions.
+
+Conclusion : le « HTTP 200 avec 0 match » de SportScore n'est pas un bug d'appel, c'est
+une réponse correcte à une question que cette API ne sait pas traiter. SportScore reste
+en **deuxième** position, jamais en principale. `sport=basketball` est bien la valeur
+attendue par l'enum.
+
+## Troisième source : balldontlie
+
+Contrat repris du **SDK officiel** du fournisseur (`npm @balldontlie/sdk`) :
+
+| | |
+|---|---|
+| base | `https://api.balldontlie.io` |
+| chemin | `/nba/v1/games` |
+| authentification | en-tête `Authorization: <clé>` — clé **brute**, sans « Bearer » |
+| paramètres | `start_date`, `end_date` (AAAA-MM-JJ), `per_page`, `cursor` |
+| pagination | `meta.next_cursor`, suivi jusqu'à épuisement |
+
+Chaîne basket désormais : **API-Basketball → SportScore → balldontlie**, passage
+automatique dès qu'une source échoue ou renvoie 0.
+
+### Limite à connaître avant de compter dessus
+
+Le SDK officiel n'expose que **NBA, MLB, NFL et EPL** : **il n'y a pas de WNBA**.
+balldontlie ne couvre donc ni la WNBA, ni les ligues d'été, ni les championnats
+nationaux, et ne renvoie rien pendant l'intersaison NBA (juillet → septembre). C'est un
+vrai troisième fournisseur, indépendant des deux autres, mais **il ne répond pas au
+besoin d'août** : la seule source qui porte la WNBA et les championnats nationaux reste
+API-Basketball. Si l'onglet basket est vide en août, c'est cette clé-là qu'il faut
+regarder, pas balldontlie.
+
+## Vérification exécutée
+
+Cascade complète éprouvée en local, les deux premières sources réellement en échec
+(403 du pare-feu de cet environnement), la troisième servant le contrat documenté :
+
+```
+API-Basketball (v1.basketball.api-sports.io)  statut=échec   http=None recus=0
+SportScore (secours)                          statut=échec   http=403  recus=0
+balldontlie (NBA uniquement)                  statut=ok      http=200  recus=6
+
+TOTAL 6 matchs, pagination parcourue sur 3 pages (curseur 0 → 2 → 4)
+2026-08-10  NBA  Los Angeles Lakers vs Boston Celtics
+2026-08-10  NBA  Golden State Warriors vs Denver Nuggets
+2026-08-11  NBA  Miami Heat vs New York Knicks
+2026-08-12  NBA  Phoenix Suns vs Dallas Mavericks
+2026-08-13  NBA  Milwaukee Bucks vs Philadelphia 76ers
+2026-08-15  NBA  Chicago Bulls vs Detroit Pistons
+```
+
+La route a répondu **HTTP 200 avec des matchs** alors que deux sources sur trois
+étaient tombées — c'est exactement le comportement attendu, et l'inverse du bandeau
+rouge signalé.

@@ -17,7 +17,7 @@ import { getBasketballApiKey, getGamesByDate } from "../../../lib/sports/basketb
 import { mapGameToUpcoming } from "../../../lib/sports/basketball/mapper";
 import { isQuotaExhausted, getLastError } from "../../../lib/apiQuota";
 import { readPersistentCache } from "../../../lib/apiSportsCache";
-import { fetchSportScoreMatches, sportScoreToBlumeMatch } from "../../../lib/sportScore";
+import { sourceSportScore, sourceBalldontlie, getBalldontlieKey } from "../../../lib/sports/basketball/sources";
 import { runCascade } from "../../../lib/sourceCascade";
 import { readRouteCache, writeRouteCache } from "../../../lib/routeCache";
 import { fenetreUtc, normaliserMatch, dedupliquer, trierParDebut, dansLaFenetre } from "../../../lib/normalizedMatch";
@@ -61,16 +61,6 @@ async function loadApiBasketball(dateStrings, key, window) {
     throw err;
   }
   return { matches, httpStatus: 200, partialFailures: failedDays };
-}
-
-// Source 2 (secours) — SportScore, sans clé. Son endpoint public ne prend qu'un sport
-// et une limite : il ne remonte que des matchs récents/en cours, donc il ne remplace
-// pas API-Basketball, mais il évite d'afficher "aucun match" quand le fournisseur
-// principal répond à vide.
-async function loadSportScore(sport) {
-  const list = await fetchSportScoreMatches(sport);
-  console.log(`[SportScore ${sport}] ${list.length} match(s) reçu(s) (source de secours)`);
-  return { matches: list.map(sportScoreToBlumeMatch), httpStatus: 200 };
 }
 
 // Regroupe par compétition RÉELLEMENT présente : aucune liste fixée à l'avance.
@@ -119,9 +109,12 @@ export default async function handler(req, res) {
       skip: key ? null : "Clé API absente (API_BASKETBALL_KEY ou API_FOOTBALL_KEY)",
       run: () => loadApiBasketball(dateStrings, key, window),
     },
+    { name: "SportScore (secours)", run: sourceSportScore },
     {
-      name: "SportScore (secours)",
-      run: () => loadSportScore("basketball"),
+      name: "balldontlie (NBA uniquement)",
+      // Clé absente : source déclarée non configurée, jamais une panne.
+      skip: getBalldontlieKey() ? null : "non configurée (BALLDONTLIE_API_KEY absente)",
+      run: () => sourceBalldontlie(getBalldontlieKey(), { from: window.from, to: window.to }),
     },
   ]);
 
