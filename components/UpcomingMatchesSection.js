@@ -23,6 +23,37 @@ function isDebug() {
   return new URLSearchParams(window.location.search).get("debug") === "1";
 }
 
+// Dernière liste RÉELLEMENT affichée, par sport, conservée dans le navigateur.
+// Raison d'être : une panne de source ne doit jamais faire disparaître des matchs déjà
+// obtenus. Tant qu'on a une liste connue, on la montre — datée et signalée — plutôt
+// qu'un bandeau rouge. Une donnée un peu ancienne est toujours plus utile qu'un écran
+// d'erreur. Rien n'est jamais inventé : ce sont de vrais matchs, déjà servis.
+const CACHE_PREFIX = "blume:a-venir:";
+const CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000; // au-delà, la liste n'est plus crédible
+
+function lireCache(sport) {
+  if (typeof window === "undefined") return null;
+  try {
+    const brut = window.localStorage.getItem(CACHE_PREFIX + sport);
+    if (!brut) return null;
+    const { days, at } = JSON.parse(brut);
+    if (!Array.isArray(days) || !days.length) return null;
+    if (Date.now() - at > CACHE_MAX_AGE_MS) return null;
+    return { days, at };
+  } catch {
+    return null;
+  }
+}
+
+function ecrireCache(sport, days) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(CACHE_PREFIX + sport, JSON.stringify({ days, at: Date.now() }));
+  } catch {
+    // Stockage plein ou refusé : sans conséquence, le cache n'est qu'un confort.
+  }
+}
+
 // Squelettes de cartes pendant la récupération (BLOC 7) : structure seule, jamais des
 // matchs inventés — un site de suivi sportif ne doit pas afficher d'équipes ou
 // d'horaires fictifs (voir CLAUDE.md).
@@ -60,6 +91,8 @@ export default function UpcomingMatchesSection({ sport }) {
   // sous un écran vide, pour qu'une section vide soit toujours explicable.
   const [diagnostic, setDiagnostic] = useState(null);
   const [debug, setDebug] = useState(false);
+  // Horodatage de la liste quand elle vient du cache navigateur (source en panne).
+  const [stale, setStale] = useState(null);
   const hasDataRef = useRef(false);
   const retriesRef = useRef(0);
   const retryTimerRef = useRef(null);
@@ -85,12 +118,27 @@ export default function UpcomingMatchesSection({ sport }) {
     if (nextDays.length > 0) {
       setDays(nextDays);
       setPhase("loaded");
+      setStale(null);
       hasDataRef.current = true;
       retriesRef.current = 0;
+      ecrireCache(sport, nextDays);
       return;
     }
     // Ne jamais vider une liste déjà affichée sur un incident passager.
     if (hasDataRef.current) return;
+
+    // Une source en panne, mais une liste connue en réserve : on montre les matchs.
+    // Le bandeau d'erreur est réservé au cas où l'on n'a VRAIMENT rien à afficher.
+    if (anySourceFailed) {
+      const cache = lireCache(sport);
+      if (cache) {
+        setDays(cache.days);
+        setStale(cache.at);
+        setPhase("loaded");
+        hasDataRef.current = true;
+        return;
+      }
+    }
 
     setDiagnostic(diagnostic || null);
     const sourceDetail = (diagnostic?.sources || [])
@@ -123,6 +171,7 @@ export default function UpcomingMatchesSection({ sport }) {
 
   useEffect(() => {
     setDebug(isDebug());
+    setStale(null);
     setPhase("loading");
     hasDataRef.current = false;
     retriesRef.current = 0;
@@ -194,7 +243,14 @@ export default function UpcomingMatchesSection({ sport }) {
       data-sport={sport}
       data-match-count={matchCount}
       data-competition-count={competitionCount}
+      data-stale={stale ? "1" : undefined}
     >
+      {stale && (
+        <p style={st.stale} data-testid="upcoming-stale">
+          Source momentanément indisponible — matchs affichés tels que connus à{" "}
+          {new Date(stale).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}.
+        </p>
+      )}
       {days.map((day) => (
         <section key={day.key} style={st.day} data-testid="day-section">
           <h2 style={st.dayLabel}>{day.label}</h2>
@@ -235,6 +291,10 @@ const st = {
 
   hint: { fontSize: 12.5, color: "var(--text-secondary)" },
   errorTitle: { fontSize: 13, color: "var(--negative)", fontWeight: 700, margin: 0 },
+  stale: {
+    fontSize: 11.5, color: "var(--text-secondary)", margin: "0 0 12px",
+    padding: "8px 10px", borderRadius: 10, background: "var(--card-bg)", border: "1px solid var(--border)",
+  },
   retryTitle: { fontSize: 13, color: "var(--text-secondary)", fontWeight: 700, margin: "0 0 12px" },
   // Ligne technique discrète sous un écran vide : source interrogée, code HTTP réel et
   // plage de dates testée — visible sans ouvrir la console.
