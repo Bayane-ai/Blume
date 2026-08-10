@@ -20,6 +20,7 @@ import { readPersistentCache } from "../../../lib/apiSportsCache";
 import { fetchSportScoreMatches, sportScoreToBlumeMatch } from "../../../lib/sportScore";
 import { runCascade } from "../../../lib/sourceCascade";
 import { readRouteCache, writeRouteCache } from "../../../lib/routeCache";
+import { fenetreUtc, normaliserMatch, dedupliquer, trierParDebut, dansLaFenetre } from "../../../lib/normalizedMatch";
 
 const NUM_DAYS = 8; // aujourd'hui + 7 jours
 
@@ -107,7 +108,7 @@ export default async function handler(req, res) {
   const cached = readRouteCache(cacheKey);
   if (cached) {
     res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=120");
-    return res.status(200).json({ ...cached, diagnostic: { ...cached.diagnostic, cached: true } });
+    return res.status(200).json({ ...cached, cache: true, diagnostic: { ...cached.diagnostic, cached: true } });
   }
 
   const cascade = await runCascade([
@@ -136,8 +137,54 @@ export default async function handler(req, res) {
     }
   }
 
+  // MÊME format normalisé que le tennis (bloc 2, point 2) : le jour où une source de
+  // secours basket existera, elle se branchera sans rien réécrire ici.
+  const fenetre = fenetreUtc();
+  const normalises = trierParDebut(
+    dedupliquer(
+      cascade.matches.map((m) =>
+        normaliserMatch({
+          id: m.id,
+          sport: "basketball",
+          tournoi: m.competition?.name,
+          pays: m.competition?.area,
+          categorie: m.competition?.season || null,
+          joueur1: m.homeTeam?.name,
+          joueur2: m.awayTeam?.name,
+          debutUtc: m.utcDate,
+          statut: m.status === "IN_PLAY" ? "en_cours" : m.status === "FINISHED" ? "termine" : "a_venir",
+          source: cascade.attempts.find((a) => a.recus > 0)?.nom || null,
+        })
+      )
+    )
+  ).filter((m) => dansLaFenetre(m, fenetre));
+
+  const sources = cascade.attempts.map((a) => ({
+    nom: a.nom,
+    statut: a.statut,
+    httpCode: a.httpCode,
+    recus: a.recus,
+    erreur: a.erreur,
+  }));
+
+  console.log(
+    JSON.stringify({
+      tag: "blume.matches",
+      sport: "basketball",
+      fenetre,
+      matchs: normalises.length,
+      sources,
+    })
+  );
+
   const primary = cascade.attempts[0] || {};
   const payload = {
+    // Forme exigée par le bloc 2.
+    matches: normalises,
+    sources,
+    fenetre,
+    cache: false,
+    // Forme historique, lue par l'affichage.
     competitions: results,
     ...(stale ? { stale, lastUpdated } : {}),
     diagnostic: {

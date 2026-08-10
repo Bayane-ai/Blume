@@ -1,5 +1,12 @@
 {
   "crons": [
-    { "path": "/api/cron/settle-predictions", "schedule": "0 3 * * *" }
+    {
+      "path": "/api/cron/settle-predictions",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/health/matches",
+      "schedule": "0 6 * * *"
+    }
   ]
 }

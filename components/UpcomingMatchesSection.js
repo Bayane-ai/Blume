@@ -8,11 +8,12 @@ const REFRESH_MS = 5 * 60 * 1000;
 const SKELETON_DAYS = 2;
 const SKELETON_CARDS = 3;
 
-// Nouvelle tentative automatique quand au moins une source a échoué (demande
-// explicite). Bornée : au-delà, on arrête de marteler la source et on affiche la cause
-// technique plutôt que de laisser tourner un message d'attente indéfiniment.
-const RETRY_MS = 10 * 1000;
-const MAX_RETRIES = 6;
+// Nouvelle tentative automatique quand au moins une source a échoué : relance après
+// 5 s, 3 tentatives maximum (bloc 2, point 3). Bornée volontairement — au-delà, on
+// arrête de marteler la source et on affiche la cause plutôt que de laisser tourner un
+// message d'attente indéfiniment.
+const RETRY_MS = 5 * 1000;
+const MAX_RETRIES = 3;
 
 // La ligne de diagnostic technique n'est affichée que sur demande explicite
 // (?debug=1) : elle reste disponible pour comprendre un écran vide, sans polluer

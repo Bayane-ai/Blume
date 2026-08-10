@@ -5,6 +5,7 @@ import { getFixturesByDate, getActiveLeagues, mapFixtureToUpcomingMatch, normali
 import { maybeSweepFinishedPredictions } from "../../lib/pronosticHistory";
 import { recordLastError } from "../../lib/apiQuota";
 import { readPersistentCache, writePersistentCache } from "../../lib/apiSportsCache";
+import { fenetreUtc } from "../../lib/normalizedMatch";
 
 const BASE = "https://api.football-data.org/v4";
 const SOURCE_KEY = "football-data";
@@ -29,7 +30,32 @@ function attachPronostic(m, table) {
 export default async function handler(req, res) {
   const token = process.env.FOOTBALL_DATA_TOKEN;
   const apiFootballKey = process.env.API_FOOTBALL_KEY;
-  if (!token) return res.status(500).json({ error: "Clé API manquante" });
+  // Clé absente : ce n'est pas une panne, c'est une CONFIGURATION — dit tel quel, en
+  // 200 avec un diagnostic, exactement comme les routes basket et tennis. Un 500 ici
+  // faisait croire à un bug du site et empêchait le contrôle de santé de distinguer
+  // « variable d'environnement oubliée » de « fournisseur en panne ».
+  if (!token) {
+    console.warn("[/api/matches] FOOTBALL_DATA_TOKEN absente : aucun match de football récupérable");
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(200).json({
+      matches: [],
+      competitions: [],
+      sources: [
+        { nom: "football-data.org", statut: "non configurée", httpCode: null, recus: 0, erreur: "Clé API absente (FOOTBALL_DATA_TOKEN)" },
+      ],
+      fenetre: fenetreUtc(),
+      cache: false,
+      diagnostic: {
+        source: "football-data.org",
+        window: { from: isoDate(new Date()), to: isoDate(new Date(Date.now() + NUM_DAYS * 24 * 3600000)) },
+        received: 0,
+        sources: [{ name: "football-data.org", httpStatus: null, received: 0, error: "Clé API absente (FOOTBALL_DATA_TOKEN)", skipped: true }],
+        anySourceFailed: true,
+        allSourcesFailed: true,
+        error: "Clé API absente (FOOTBALL_DATA_TOKEN)",
+      },
+    });
+  }
 
   // RÈGLEMENT AUTOMATIQUE DE FIN DE MATCH (voir lib/pronosticHistory.js) : cette page
   // est visitée bien plus souvent que "Probabilités réussies/échouées" — en profiter

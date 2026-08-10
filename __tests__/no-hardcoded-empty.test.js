@@ -44,12 +44,19 @@ describe("1. aucun écran vide décidé par le code", () => {
     expect(code).not.toMatch(/\bunsupported\b/);
   });
 
-  test("/api/tennis/matches interroge réellement une source, au lieu de refuser d'emblée", () => {
+  test("/api/tennis/matches interroge réellement une CHAÎNE de sources, au lieu de refuser d'emblée", () => {
     const code = read("pages/api/tennis/matches.js");
-    expect(code).toMatch(/fetch\(/);
-    expect(code).toMatch(/matchesUrl\(/);
-    // Aucune réponse constante : la liste dépend de ce que la source renvoie.
+    // La route ne fait plus l'appel elle-même : elle enchaîne les sources déclarées
+    // dans lib/sports/tennis/sources.js (SportScore, puis Live Tennis API).
+    expect(code).toMatch(/chaineTennis\(\)/);
+    expect(code).toMatch(/runCascade\(/);
+    // Aucune réponse constante : la liste dépend de ce que les sources renvoient.
     expect(stripComments(code)).not.toMatch(/unsupported:\s*true/);
+
+    const sources = read("lib/sports/tennis/sources.js");
+    expect(sources).toMatch(/fetch\(/);
+    expect(sources).toMatch(/matchesUrl\(/);
+    expect(sources).toMatch(/\/fixtures/);
   });
 
   test("l'écran vide affiche la source, le code HTTP et la plage de dates", () => {
